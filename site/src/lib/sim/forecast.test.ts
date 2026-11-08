@@ -41,6 +41,14 @@ describe('forecast helpers', () => {
     expect(likelyWontFill(0.3)).toBe(false);
     expect(pooledText('subject', 12)).toContain('subject');
   });
+
+  it('shows a count only at course x instructor level (nObs is 0 at coarser levels)', () => {
+    expect(pooledText('course×instructor', 4)).toBe('4 past results for this course and instructor');
+    for (const level of ['course', 'subject', 'global'] as const) {
+      expect(pooledText(level, 0)).not.toMatch(/\d/);
+    }
+    expect(pooledText('course', 0)).toContain('other instructors');
+  });
 });
 
 describe('paramRows', () => {

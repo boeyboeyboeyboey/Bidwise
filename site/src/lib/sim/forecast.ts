@@ -55,12 +55,13 @@ export const isLowConfidence = (m: ForecastWindowMeta | undefined): boolean => !
 
 export const likelyWontFill = (pFill: number): boolean => pFill < WONT_FILL_BELOW;
 
+/** nObs counts only this course and instructor, so a coarser pooling level has no count to show. */
 export function pooledText(level: ForecastWindow['pooledLevel'], nObs: number): string {
   switch (level) {
     case 'course×instructor': return `${nObs} past results for this course and instructor`;
-    case 'course': return `${nObs} past results for this course (other instructors)`;
-    case 'subject': return `${nObs} past results for other courses in this subject`;
-    default: return `${nObs} past results across all courses`;
+    case 'course': return "Based on this course's other instructors";
+    case 'subject': return 'Based on other courses in this subject';
+    default: return 'Based on all courses';
   }
 }
 

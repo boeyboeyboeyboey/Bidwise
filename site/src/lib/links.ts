@@ -1,7 +1,6 @@
 // External profile links shown in the footer and on the contact page.
-// TODO(owner): replace GITHUB_URL with the public repo once it exists.
-export const GITHUB_URL = 'https://github.com/';
-// Left empty: no profile link is shown while this is blank.
+export const GITHUB_URL: string = 'https://github.com/boeyboeyboeyboey/Bidwise';
+// Hidden during the friends-only trial (owner, 11-07). Restore at public launch:
 export const LINKEDIN_URL = '';
 // Contact and takedown form (e.g. a Tally share link). Empty shows a "coming soon" line.
 export const CONTACT_FORM_URL = 'https://tally.so/r/dbNQdK';

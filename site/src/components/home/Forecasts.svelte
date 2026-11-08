@@ -55,10 +55,9 @@
       <span class="inp"><span class="cur" aria-hidden="true">e$</span><input class="num" type="text" inputmode="decimal" autocomplete="off" placeholder="optional" bind:value={balanceText} oninput={onBalance} /></span>
     </label>
   </div>
-  <div class="colhead cols"><span>Section, day and time</span><span>Seats left</span><span>Bid → chance</span></div>
   <ul>
     {#each rows as h, i (h.classNumber)}
-      <li class:extra={i >= 5} class:extra2={i >= 4} class:phone-cut={i >= 3}>
+      <li>
         <a class="row-link" href={`/course/${h.code}?s=${encodeURIComponent(h.section)}`} aria-label={`${h.code} ${h.section}, ${slots[h.classNumber] || 'time not set'}, ${seatText(h)}, bid ${eS(h.bidCents)} for about a ${target} chance of a seat`}>
           <span class="id"><b>{h.code}</b> {h.section} <span class="when">· {slots[h.classNumber] || 'Time not set'}</span><span class="who">{h.instructor ?? 'Instructor not listed'}</span></span>
           <span class="seats">{seatText(h)}</span>
@@ -86,12 +85,7 @@
   .ar { color: var(--muted); }
   .ch { color: var(--muted); font-weight: 400; font-size: var(--fs-xs); }
   .none { margin: var(--s3) 0 0; font-size: var(--fs-sm); color: var(--muted); }
-  /* Rows 5 and 6 only on screens over 1199px tall, so the page fits one 1080px screen. Phones show 3 rows. */
-  @media (max-width: 1023px), (max-height: 999px) { .extra2 { display: none; } }
-  @media (max-width: 1023px), (max-height: 1199px) { .extra { display: none; } }
-  @media (max-width: 767px) { .phone-cut { display: none; } }
 
-  .cols { display: none; }
   .row-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'id id' 'seats fig'; align-items: baseline; column-gap: var(--s3); row-gap: 2px; padding-top: 8px; padding-bottom: 8px; }
   .id { grid-area: id; display: block; min-width: 0; overflow-wrap: break-word; }
   .id b { font-weight: 600; white-space: nowrap; }
@@ -100,10 +94,8 @@
   .seats { grid-area: seats; font-size: var(--fs-xs); color: var(--muted); }
   .fig { grid-area: fig; justify-self: end; font-weight: 600; font-size: var(--fs-sm); white-space: nowrap; }
   @container (min-width: 480px) {
-    .cols, .row-link { display: grid; grid-template-columns: minmax(0, 1fr) 150px 190px; grid-template-areas: none; column-gap: var(--s3); }
+    .row-link { display: grid; grid-template-columns: minmax(0, 1fr) 150px 190px; grid-template-areas: none; column-gap: var(--s3); }
     .ch { font-size: inherit; color: inherit; }
-    .cols { margin: 0 calc(var(--s2) * -1); padding: var(--s2) 28px var(--s2) var(--s2); }
-    .cols > :not(:first-child) { text-align: right; line-height: 1.2; }
     .row-link { align-items: center; }
     .id, .seats, .fig { grid-area: auto; }
     .seats { text-align: right; font-size: var(--fs-sm); color: var(--text); }

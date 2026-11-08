@@ -1,19 +1,19 @@
-// Chart builder field registry: every field the builder can put on an axis, colour, facet or filter, read from a decoded Browse row.
-// Pure and DOM-free. Row semantics (BOSS Overall Results): vacancy = seats in the section, before = seats offered in this window
+// Chart builder field registry: every field the builder can put on an axis or narrow a line by, read from a decoded Browse row.
+// Pure and DOM-free. Row semantics follow BOSS_FACTS.md: vacancy = seats in the section, before = seats offered in this window
 // (before-process vacancy), after = seats left after allocation, taken = before - after (successful bids).
-import { WINDOW_ORDER, windowRank, type BrowseRow } from '../browse';
+import { windowRank, type BrowseRow } from '../browse';
 import { band } from '../rows';
 
-export type FieldKind = 'category' | 'number' | 'bool';
+export type FieldKind = 'category' | 'number';
 export type FieldUnit = 'e$' | 'seats' | '%' | 'none';
-export type Value = string | number | boolean | null;
+export type Value = string | number | null;
 
 export interface Field {
   id: string;
   label: string;
   kind: FieldKind;
   unit: FieldUnit;
-  /** The row's value: string | null for a category, number | null for a number, boolean for a bool. */
+  /** The row's value: string | null for a category, number | null for a number. */
   get: (r: BrowseRow) => Value;
   /** Natural order of two non-null values (terms chronological, windows in BOSS order, sections numeric). */
   compare: (a: Value, b: Value) => number;
@@ -37,25 +37,6 @@ export function shortWindow(w: string): string {
   const pre = m[1] ? (/exchange/i.test(m[1]) ? 'Exch ' : 'Fresh ') : '';
   return `${pre}R${m[2]} W${m[3]}`;
 }
-
-/** "Round 2A Window 1" -> "R2A"; exchange and freshmen rounds are kept apart ("Exch R1C", "Fresh R1"). null when the label is not a round window. */
-export function roundOf(w: string): string | null {
-  const m = /^(Incoming Exchange|Incoming Freshmen)?\s*R(?:ou)?nd\s+(\w+)\s+Win/i.exec(w.trim());
-  if (!m) return null;
-  const pre = m[1] ? (/exchange/i.test(m[1]) ? 'Exch ' : 'Fresh ') : '';
-  return `${pre}R${m[2]}`;
-}
-
-const roundRanks = new Map<string, number>();
-const roundRank = (r: string): number => {
-  if (!roundRanks.size) {
-    for (const w of WINDOW_ORDER) {
-      const x = roundOf(w);
-      if (x && !roundRanks.has(x)) roundRanks.set(x, roundRanks.size);
-    }
-  }
-  return roundRanks.get(r) ?? roundRanks.size + 1;
-};
 
 // ---- Timetable (parsed from the decoded slot text, memoised: a few hundred distinct strings across all rows)
 
@@ -102,13 +83,6 @@ export const BANDS = ['Morning', 'Afternoon', 'Evening'];
 /** Minutes after midnight as "08:15". */
 export const fmtMinutes = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-/** Course code prefix before the first digit, without a trailing hyphen: ACCT101 -> "ACCT", COR-ACM2624 -> "COR-ACM". */
-export function subjectOf(code: string): string | null {
-  const m = /^[A-Za-z]+(?:-[A-Za-z]+)*/.exec(code);
-  return m ? m[0] : null;
-}
-
-
 // ---- Registry
 
 const cat = (id: string, label: string, get: (r: BrowseRow) => string | null, extra: Partial<Pick<Field, 'compare' | 'fmt' | 'noneLabel'>> = {}): Field => ({
@@ -122,29 +96,37 @@ const fmtE = (v: Value) => (v as number).toFixed(2);
 const fmtInt = (v: Value) => String(Math.round(v as number));
 const taken = (r: BrowseRow) => (r.before === null || r.after === null ? null : r.before - r.after);
 
+/** Term and window in one label: "2025-26 Term 1 \u00b7 Round 1 Window 1" is stored in full and shown as "2025-26 Term 1 \u00b7 R1 W1". */
+const TW_SEP = ' \u00b7 ';
+const termWindowCmp = (a: Value, b: Value) => {
+  const [ta, wa = ''] = String(a).split(TW_SEP);
+  const [tb, wb = ''] = String(b).split(TW_SEP);
+  return natural(ta, tb) || windowRank(wa) - windowRank(wb) || natural(wa, wb);
+};
+
 export const FIELDS: Field[] = [
   cat('term', 'Term', (r) => r.term),
   cat('window', 'Window', (r) => r.window || null, { compare: (a, b) => windowRank(String(a)) - windowRank(String(b)) || strCmp(a, b), fmt: (v) => shortWindow(String(v)) }),
-  cat('round', 'Round', (r) => roundOf(r.window), { compare: (a, b) => roundRank(String(a)) - roundRank(String(b)) || strCmp(a, b) }),
+  cat('termWindow', 'Term \u00d7 window', (r) => (r.window ? `${r.term}${TW_SEP}${r.window}` : null), {
+    compare: termWindowCmp,
+    fmt: (v) => { const [t, w = ''] = String(v).split(TW_SEP); return `${t}${TW_SEP}${shortWindow(w)}`; },
+  }),
   cat('course', 'Course', (r) => r.code),
-  cat('subject', 'Subject', (r) => subjectOf(r.code)),
   cat('section', 'Section', (r) => r.section || null),
-  cat('instructor', 'Instructor', (r) => r.instructor),
+  cat('instructor', 'Professor', (r) => r.instructor),
   cat('day', 'Day', (r) => parseSlot(r.slot).days, { compare: dayCmp, noneLabel: 'No time set' }),
   cat('band', 'Time of day', (r) => {
     const s = parseSlot(r.slot).start;
     return s === null ? null : band(fmtMinutes(s));
   }, { compare: (a, b) => BANDS.indexOf(String(a)) - BANDS.indexOf(String(b)), noneLabel: 'No time set' }),
-  { ...num('start', 'Start time', 'none', (r) => parseSlot(r.slot).start, (v) => fmtMinutes(v as number)), noneLabel: 'No time set' },
-  num('vacancy', 'Section seats', 'seats', (r) => r.vacancy, fmtInt),
+  num('vacancy', 'Seats in section', 'seats', (r) => r.vacancy, fmtInt),
   num('before', 'Seats offered', 'seats', (r) => r.before, fmtInt),
   num('after', 'Seats left', 'seats', (r) => r.after, fmtInt),
   num('taken', 'Seats taken', 'seats', taken, fmtInt),
-  num('fillPct', 'Seats taken (%)', '%', (r) => {
+  num('fillPct', '% filled', '%', (r) => {
     const t = taken(r);
     return t === null || !r.before ? null : (t / r.before) * 100;
   }, (v) => `${Math.round(v as number)}%`),
-  { id: 'filled', label: 'Filled', kind: 'bool', unit: 'none', get: (r) => r.filled, compare: (a, b) => Number(a) - Number(b), fmt: (v) => (v ? 'Filled' : 'Not filled') },
   num('median', 'Median bid', 'e$', (r) => (r.medianCents === null ? null : r.medianCents / 100), fmtE),
   num('min', 'Lowest bid', 'e$', (r) => (r.minCents === null ? null : r.minCents / 100), fmtE),
 ];

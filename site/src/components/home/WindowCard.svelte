@@ -5,7 +5,9 @@
   import { liveWindow, nowMs } from '../../lib/data/window';
 
   interface Win { label: string; opensAt: string; closesAt: string; opens: string; closes: string }
-  let { label, closesLabel, closesAt, status, windows }: {
+  let { label, closesLabel, closesAt, status, windows, quiet = false }: {
+    /** Plain centred text for the home page; off keeps the boxed link. */
+    quiet?: boolean;
     label: string;
     closesLabel: string;
     closesAt: string;
@@ -64,11 +66,11 @@
   const viewSentence = $derived(view ? `Viewing ${view.label}: ${viewing}` : '');
 </script>
 
-<a class="status" href="/schedule/" aria-label={`${sentence}${viewSentence} Open the full schedule.`}>
+<a class="status" class:quiet href="/schedule/" aria-label={`${sentence}${viewSentence} Open the full schedule.`}>
   <span class="txt">
     {sentence}{#if viewSentence}<span class="mu"> {viewSentence}</span>{/if}
   </span>
-  <span class="chev" aria-hidden="true">›</span>
+  {#if !quiet}<span class="chev" aria-hidden="true">›</span>{/if}
 </a>
 
 <style>
@@ -78,6 +80,8 @@
     font-size: var(--fs-sm); line-height: 1.4;
   }
   .status:hover { background: var(--accent-soft); }
+  .status.quiet { justify-content: center; text-align: center; background: none; color: var(--muted); }
+  .status.quiet:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
   .txt { flex: 1; min-width: 0; }
   .mu { color: var(--muted); }
   .chev { flex: none; font-size: 20px; line-height: 1; color: var(--muted); }

@@ -1,8 +1,8 @@
-// The aggregated result as a table (shown in the table view and for screen readers) and as CSV. Never raw rows beyond what is plotted.
+// The merged result as a table (shown for screen readers) and as CSV. CSV is the plotted points only, never source rows.
 import { fieldById } from './fields';
-import { isRaw } from './controls';
 import { fmtY, xLabel, yLabel } from './plan';
 import { xText } from './plot';
+import { isRawChart } from './lines';
 import type { QueryResult } from './query';
 import type { BuilderSpec } from './spec';
 
@@ -16,25 +16,17 @@ export interface ResultTable {
 }
 
 export function resultTable(spec: BuilderSpec, result: QueryResult, cap = Infinity): ResultTable {
-  const raw = isRaw(spec);
+  const raw = isRawChart(spec);
   const xf = fieldById(spec.x);
-  const heads = [
-    ...(raw ? ['Section'] : []),
-    xLabel(spec),
-    ...(spec.color ? [fieldById(spec.color)?.label ?? 'Colour'] : []),
-    ...(spec.facet ? [fieldById(spec.facet)?.label ?? 'Facet'] : []),
-    yLabel(spec),
-    ...(raw ? [] : ['n']),
-  ];
+  const heads = ['Line', ...(raw ? ['Section'] : []), xLabel(spec), yLabel(spec), ...(raw ? [] : ['n'])];
   const body = result.points.slice(0, cap).map((p) => [
-    ...(raw ? [p.row ? `${p.row.code} ${p.row.section}` : ''] : []),
+    p.series ?? '',
+    ...(raw ? [p.row ? `${p.row.term} ${p.row.code} ${p.row.section}` : ''] : []),
     xText(p, xf),
-    ...(spec.color ? [p.color ?? ''] : []),
-    ...(spec.facet ? [p.facet ?? ''] : []),
     fmtY(spec, p.y),
     ...(raw ? [] : [String(p.n)]),
   ]);
-  return { heads, body, more: result.points.length - body.length, nNum: raw ? 1 : 2 };
+  return { heads, body, more: result.points.length - body.length, nNum: raw ? 2 : 3 };
 }
 
 /** One CSV cell: quoted when needed, and text that a spreadsheet would run as a formula is prefixed with an apostrophe. */
@@ -43,10 +35,10 @@ export function csvCell(v: string): string {
   return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
-/** CSV is aggregated only: a raw chart (one point per section) has none. */
-export const csvAllowed = (spec: BuilderSpec): boolean => !isRaw(spec);
+/** CSV is for the aggregated charts (Line, Bar); a Scatter plots one point per section, so it has none. */
+export const csvAllowed = (spec: BuilderSpec): boolean => !isRawChart(spec);
 
-/** CSV of the plotted points (every one, not the capped table). Empty for a raw chart. */
+/** CSV of the plotted points (every one, not the capped table): line, x, value, n. Empty for a Scatter. */
 export function resultCsv(spec: BuilderSpec, result: QueryResult): string {
   if (!csvAllowed(spec)) return '';
   const t = resultTable(spec, result);

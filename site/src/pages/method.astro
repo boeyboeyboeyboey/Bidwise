@@ -1,10 +1,13 @@
 ---
 import Base from '../layouts/Base.astro';
+import 'katex/dist/katex.min.css';
 import { FORECASTS_ENABLED } from '../lib/flags';
 import { FILLED_TESTS, HELD_OUT_TEST } from '../lib/data/accuracy';
 import { dataMeta, getForecastMeta } from '../lib/data';
+import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
 import AccuracyChart from '../components/home/AccuracyChart.svelte';
+import Formula from '../components/method/Formula.astro';
 const bars = [60, 75, 60, 42, 28, 18, 12, 8, 5, 3];
 const notes = [
   ['Chance of a seat', ''],
@@ -12,43 +15,28 @@ const notes = [
   ['Bid needed', 'Lowest winning bid'],
 ];
 const leads = [[450, 120], [112, 210], [450, 290]];
-const sections = [
-  ['demand', 'How many people bid', [
-    'For each section, the number of bidders is modelled as a negative binomial: an average, plus extra spread so a busy section can be much busier than average.',
-    'The average comes from past terms of the same course and instructor. Recent terms count more, and Term 1 results count half as much when the forecast is for Term 2.',
-    'Each bidding window is fitted separately, so Round 2 Window 1 never borrows demand from Round 1B Window 2.',
-    'Early (8:15), evening and Friday sections get their own adjustment to demand and bid level, measured per window against other sections of the same course. They usually draw fewer bidders and clear lower, most of all in the first windows.',
-  ]],
-  ['bids', 'How much they bid', [
-    'Some bidders bid the minimum, or just above it. The rest bid around a typical level for that section, with a lognormal spread: most close to the level, a few much higher.',
-    'In each replay, a section with S seats clears at the S-th highest bid. If fewer than S people bid, the minimum bid gets in.',
-  ]],
-  ['vacancy', 'Seats and sections that filled', [
-    'The seat count is the section\'s vacancy before BOSS processed bids in that window.',
-    'If a section had seats left after processing, the number of bidders is known exactly. If it filled, we only know at least that many people bid, and the model treats it that way instead of as an exact count.',
-    'Seat counts for the open term come from a live scan of BOSS class search. It does not show every section to every student, so some sections cannot be scanned live. For those, marked ≈, seats are estimated from the previous window\'s results (seats left after processing). The estimate can be wrong if reserved seats are released or students drop, and an estimated zero may not be full.',
-  ]],
-  ['history', 'Professor and course history', [
-    'Estimates start from all courses and are adjusted for the subject, then the course, then the course with that instructor, as far as the history supports.',
-    'With little history, the estimate stays close to the broader group (course, then subject, then all courses). With more, the section\'s own record counts for more. This is partial pooling, also called shrinkage.',
-  ]],
-  ['swap-chance', 'Swap chance', [
-    'Swap mode on a course page shows how likely a swap from your section into each other section is. The chance depends on how much more or less wanted the other section is than yours. Wantedness is the log of the predicted Round 1 Window 1 median clearing bid, the first bidding window after the swap round, from the same simulation as the bids on the page (one person, the section\'s full seat count). That already reflects day, time and instructor. Many sections clear at the minimum bid, so ties are broken by expected bidders per seat, which counts for a quarter as much as the bid on a log scale. Where a section has no such forecast, it uses last term\'s clearing bids for the same instructor (or the same day and start time), compared with the course\'s other sections.',
-    'Pre-assigned courses (131 of them, including COR1100, COR2100 and COR3001) are different. When the median share of a section\'s seats offered in Round 1 Window 1 has been under 25%, nearly everyone is placed before bidding and the simulation would give every section the minimum bid. For these we skip it and use the forecast bid level for the section\'s instructor and time slot (early, mid or late, and Friday). The people holding a section are its seats minus the seats usually offered in bidding.',
+const accounts = [
+  ['Seats against bidders', 'The chance depends on how many people bid for the seats, not on one typical bid.'],
+  ['One seat or many', 'With one seat left you must beat nearly every other bid. With many, the cutoff sits near the minimum.'],
+  ['Bids bunch at the minimum', 'Many bid the minimum or just above it. The forecast keeps that pile, so a section that does not fill clears at the minimum.'],
+  ['Professor and time slot', 'Each is read from that professor\'s history. Early, evening and Friday sections get their own adjustment per window.'],
+];
+const swap = [
+    'Swap mode on a course page shows how likely a swap from your section into each other section is. The chance depends on how much more or less wanted the other section is than yours. Wantedness is the log of the predicted Round 1 Window 1 clearing bid, the first bidding window after the swap round, from the same simulation as the bids on the page (one person, the section\'s full seat count). That already reflects day, time and instructor. Many sections clear at the minimum bid, so ties are broken by expected bidders per seat, which counts for a quarter as much as the bid on a log scale. Where a section has no such forecast, it uses last term\'s clearing bids for the same instructor (or the same day and start time), compared with the course\'s other sections.',
+    'Pre-assigned courses (including COR1100, COR2100 and COR3001) are different. When the median share of a section\'s seats offered in Round 1 Window 1 has been under 25%, nearly everyone is placed before bidding and the simulation would give every section the minimum bid. For these we skip it and use the forecast bid level for the section\'s instructor and time slot (early, mid or late, and Friday). The people holding a section are its seats minus the seats usually offered in bidding.',
     'The model is a direct pair: you get section B only if someone in B swaps into your section A, and other people in A who want B compete for the same people. Cycles through three or more sections are ignored, so the chance is, if anything, understated. Each holder applies to swap with a probability of 10% times a factor that grows with how much more wanted the destination is, so students lean towards the pricier section and a swap into one is harder.',
     'The two settings, the 10% and how sharply preference follows price, are our judgment, not fitted to swap outcomes, because SMU publishes none. They are set so the typical chance matches what we expect: about 60 to 70% when the other section is about as wanted as yours (a gap of 0.03 or less in log bid), 80 to 90% when it is clearly less wanted (a gap of 0.12 to 0.25 the cheap way), 20 to 40% when more wanted (0.15 to 0.25), and under 15% when much more wanted (0.40 or more). Those gaps are taken from the spread within courses: among courses bid for normally, the typical gap between two sections of one course is 0.10, and a quarter of pairs differ by more than 0.28. In between, the chance moves smoothly.',
     'The tooltip shows a rough percentage, rounded to the nearest 5, and a range from varying the two settings by a moderate amount (the 10% by half as much again either way, the sharpness by a quarter). Likely means a central chance of 75% or more, Unlikely means under 40%, and Possible is in between. The range does not change the label.',
     'Limits: none of this has been tested against real swaps, and no student-submitted data is used. The percentages are rough guides for ranking your options, not probabilities. The sample size shown is the number of past results behind the bid prediction.',
-  ]],
-] as const;
-// Filled-section figures live in lib/data/accuracy.ts (shared with the home page strip). All-forecast figures for
-// 2025-26 Term 2 come from forecast-meta.json (build_site_data.py); 2026-27 Term 1 (held out) comes from accuracy.json, via lib/data/accuracy.ts.
-const fmAll = getForecastMeta();
+];
+// Figures come from lib/data/accuracy.ts (generated from the backtest, shared with the home strip). All-forecast figures for
+// 2025-26 Term 2 come from forecast-meta.json; 2026-27 Term 1 (held out) comes from accuracy.json.
+const fm = getForecastMeta();
 const tests = [
   {
     ...FILLED_TESTS[0],
-    n: fmAll.samples, baseN: fmAll.baseline?.samples ?? fmAll.samples,
-    mae: fmAll.maeCents ?? 359.34, base: fmAll.baseline?.maeCents ?? 619.31, cov: fmAll.coverage80 ?? 0.8192,
+    n: fm.samples, baseN: fm.baseline?.samples ?? fm.samples,
+    mae: fm.maeCents ?? null, base: fm.baseline?.maeCents ?? null, cov: fm.coverage80 ?? null,
   },
   {
     ...FILLED_TESTS[1],
@@ -56,7 +44,8 @@ const tests = [
     n: HELD_OUT_TEST.n, baseN: HELD_OUT_TEST.baseN, mae: HELD_OUT_TEST.mae, base: HELD_OUT_TEST.base, cov: HELD_OUT_TEST.cov,
   },
 ];
-const fm = getForecastMeta();
+const e = (c: number | null) => (c === null ? '–' : eS(c));
+const p = (v: number | null) => (v === null ? '–' : pct(v));
 const { sourceRows: results, sourceTerms: terms } = dataMeta as { sourceRows?: number; sourceTerms?: number };
 const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
 ---
@@ -97,130 +86,148 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   </>) : null}
 
   {FORECASTS_ENABLED && (<>
-  <section class="plain" aria-label="Summary">
+  <section class="plain" id="plain" aria-label="Summary">
     <div class="card">
-      <h2>Forecast</h2>
+      <h2>What it predicts</h2>
       <ul class="bul">
-        <li>Bidders and their bids, per section and window</li>
-        <li>From past terms of that course and instructor</li>
-        <li>Output: chance of a seat at each bid</li>
+        <li>The bid needed for a seat, with a range</li>
+        <li>The chance that a given bid gets one</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>What it learns from</h2>
+      <ul class="bul">
+        <li>Past BOSS results: seats offered, seats taken, lowest and median winning bids</li>
+        <li>A section that filled only shows that at least that many bid</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>What it adjusts for</h2>
+      <ul class="bul">
+        <li>Course, professor, time slot (early, evening, Friday)</li>
+        <li>Seats on offer, and each bidding window</li>
+        <li>Little history on a professor: it leans on the course, then the subject, then all courses</li>
+        <li>Recent terms count more</li>
       </ul>
     </div>
     <div class="card" id="replay">
       <h2>“e$X → about 90%”</h2>
       <ul class="bul">
-        <li>The window is replayed thousands of times</li>
+        <li>It estimates how many students bid, and how much each bids</li>
+        <li>The window is replayed {FORECAST_RUNS.toLocaleString('en-US')} times; the highest bids get the seats</li>
         <li>e$X won a seat in about 90 of 100 replays</li>
         <li>Groups: every member needs a seat</li>
       </ul>
-      <p class="disc">Estimated from past bids; not a guarantee.</p>
-    </div>
-    <div class="card" id="accuracy-summary">
-      <h2>Accuracy, sections that filled</h2>
-      <ul class="acc-list">
-        {tests.map((t) => (
-          <li><b>{t.term}, {t.filled.toLocaleString('en-US')} sections</b><span>average miss <b class="num">{eS(t.fMae)}</b> vs <b class="num">{eS(t.fBase)}</b> reusing last term · <b class="num">{pct(t.fCov)}</b> inside our 80% range</span></li>
-        ))}
-      </ul>
     </div>
     <div class="card" id="limits">
-      <h2>Limits</h2>
+      <h2>What it can’t know</h2>
       <ul class="bul">
-        <li>Past results only; a new instructor falls back to the course</li>
-        <li>Each window is fitted separately</li>
+        <li>A new professor, or rule changes</li>
+        <li>Drops and released seats</li>
+        <li>What this term’s students decide</li>
         <li>Seats marked ≈ are estimates and can be wrong</li>
       </ul>
     </div>
   </section>
+  <p class="disc discs">Estimated from past bids; not a guarantee. Not affiliated with SMU.</p>
 
-  <details id="model" class="more">
-    <summary>Details: the model</summary>
-    <div class="inner models">
-      {sections.map((x) => (
-        <section id={x[0]} class="how">
-          <h3>{x[1]}</h3>
-          {x[2].map((t) => <p>{t}</p>)}
-        </section>
-      ))}
-      <section id="not-used" class="how">
-        <h3>What it does not use</h3>
-        <p>Window timing is not modelled beyond fitting each window separately. The model does not track how demand changes from one window to the next.</p>
-        <p>A section whose instructor has never taught the course before has no instructor history, so its estimate falls back to the course.</p>
-      </section>
-    </div>
-  </details>
-
-  {bt.length > 0 && (
-  <details id="accuracy" class="bt more">
-    <summary>Details: accuracy tables</summary>
-    <div class="inner">
-    <p class="acc">Each test fits the model only on terms before the test term, then forecasts every section in every bidding window of that term. The baseline reuses last term's clearing bid for the same section, else the same instructor, else the same course. Average miss is the average gap between the forecast's middle value and the real clearing bid. The model's settings were tuned on an earlier term (2024-25 Term 2), so neither test term was used for tuning.</p>
-    <h3>Sections that filled</h3>
-    <p class="acc">The real test of a forecast is a section that filled, where the clearing bid is above the minimum. The range here is the forecast's 10th to 90th percentile, so a good forecast has the real bid inside it about 80% of the time. On filled sections it was inside {tests.map((t) => pct(t.fCov)).join(' and ')} of the time on the two tests, slightly over that target, so the ranges are a little wide. The home page shows the 2026-27 Term 1 row of this table.</p>
-    <div class="tbl t5" role="table" aria-label="Accuracy on sections that filled">
+  <section id="accuracy" class="acc-sec">
+    <h2>How accurate it is</h2>
+    <p class="acc">Tested on terms the model had not seen. Sections that filled are the real test: only there is the clearing bid above the minimum.</p>
+    <div class="tbl t4" role="table" aria-label="Accuracy on sections that filled" id="accuracy-summary">
       <div class="th" role="row">
         <span role="columnheader">Test term</span>
-        <span role="columnheader" class="r">Average miss, forecast</span>
-        <span role="columnheader" class="r">Average miss, baseline</span>
-        <span role="columnheader" class="r">Real bid inside 80% range</span>
+        <span role="columnheader" class="r">Average miss</span>
+        <span role="columnheader" class="r">Average miss, reusing last term’s bid</span>
+        <span role="columnheader" class="r">Real bid inside our 80% range</span>
         <span role="columnheader" class="r">Filled sections</span>
       </div>
       {tests.map((t) => (
         <div class="tr" role="row">
           <span role="cell"><b>{t.term}</b></span>
-          <span role="cell" class="r num" data-label="Average miss, forecast">{eS(t.fMae)}</span>
-          <span role="cell" class="r num" data-label="Average miss, baseline">{eS(t.fBase)}</span>
-          <span role="cell" class="r num" data-label="Real bid inside 80% range">{pct(t.fCov)}</span>
+          <span role="cell" class="r num" data-label="Average miss">{eS(t.fMae)}</span>
+          <span role="cell" class="r num" data-label="Reusing last term’s bid">{eS(t.fBase)}</span>
+          <span role="cell" class="r num" data-label="Inside our 80% range">{pct(t.fCov)}</span>
           <span role="cell" class="r num" data-label="Filled sections">{t.filled.toLocaleString('en-US')}</span>
         </div>
       ))}
     </div>
-    <h3>All forecasts</h3>
-    <p class="acc">Most section-windows do not fill and clear at the minimum bid, where the miss is tiny. That keeps the average over all forecasts small, so read it alongside the filled-section figures above. Here the 80% range is checked with ties at the minimum bid broken at random, so it can land on exactly 80% when the forecast is well calibrated.</p>
-    <div class="tbl t5" role="table" aria-label="Accuracy on all forecasts">
-      <div class="th" role="row">
-        <span role="columnheader">Test term</span>
-        <span role="columnheader" class="r">Average miss, forecast</span>
-        <span role="columnheader" class="r">Average miss, baseline</span>
-        <span role="columnheader" class="r">Real bid inside 80% range</span>
-        <span role="columnheader" class="r">Forecasts (section-windows)</span>
-      </div>
-      {tests.map((t) => (
-        <div class="tr" role="row">
-          <span role="cell"><b>{t.term}</b></span>
-          <span role="cell" class="r num" data-label="Average miss, forecast">{eS(t.mae)}</span>
-          <span role="cell" class="r num" data-label="Average miss, baseline">{eS(t.base)}</span>
-          <span role="cell" class="r num" data-label="Real bid inside 80% range">{pct(t.cov)}</span>
-          <span role="cell" class="r num" data-label="Forecasts (section-windows)">{t.n.toLocaleString('en-US')}</span>
+    <ul class="bul notes">
+      <li>Average miss: how far our predicted clearing bid (the lowest bid that got in) was from the real one, on sections that filled.</li>
+      <li>Last term’s bid: the last term of the same type, for the same section, else the instructor, else the course.</li>
+      <li>Our 80% range: the forecast’s 10th to 90th percentile. About 80% is the target.</li>
+      <li>Weak spot: for sections with a middling chance of filling, it said “fills” more often than it happened.</li>
+    </ul>
+
+    <h3 id="accounts">What it accounts for</h3>
+    <ul class="acc-points">
+      {accounts.map((a) => <li><b>{a[0]}</b><span>{a[1]}</span></li>)}
+    </ul>
+
+    {bt.length > 0 && (
+    <details id="accuracy-more" class="bt more">
+      <summary>More accuracy detail</summary>
+      <div class="inner">
+      <p class="acc">Each test fits the model only on terms before the test term, then forecasts every section in every bidding window of that term. The model’s settings were tuned on an earlier term (2024-25 Term 2), so neither test term was used for tuning. The home page shows the 2026-27 Term 1 row of the table above.</p>
+      <h3>All forecasts</h3>
+      <p class="acc">Most section-windows do not fill and clear at the minimum bid, where the miss is tiny. That keeps the average over all forecasts small, so read it alongside the filled-section figures above. Here the 80% range is checked with ties at the minimum bid broken at random, so it can land on exactly 80% when the forecast is well calibrated.</p>
+      <div class="tbl t5" role="table" aria-label="Accuracy on all forecasts">
+        <div class="th" role="row">
+          <span role="columnheader">Test term</span>
+          <span role="columnheader" class="r">Average miss, forecast</span>
+          <span role="columnheader" class="r">Average miss, reusing last term’s bid</span>
+          <span role="columnheader" class="r">Real bid inside 80% range</span>
+          <span role="columnheader" class="r">Forecasts (section-windows)</span>
         </div>
-      ))}
-    </div>
-    <p class="acc">The baseline can only forecast sections that had a bid to reuse, so it is scored on fewer forecasts ({tests.map((t) => t.baseN.toLocaleString('en-US')).join(' and ')}). The filled-section misses compare both on the filled sections the baseline could forecast.</p>
-    <h3>By window, 2025-26 Term 2</h3>
-    <p class="acc">The average miss is across all forecasts in the window. The range and the sections tested count only sections that filled.</p>
-    <AccuracyChart client:load byWindow={fm.byWindow} />
-    <div class="tbl" role="table" aria-label="Backtest by window">
-      <div class="th" role="row">
-        <span role="columnheader">Window</span>
-        <span role="columnheader" class="r">Real bid inside our range, filled sections</span>
-        <span role="columnheader" class="r">Filled sections tested</span>
-        <span role="columnheader" class="r">Average miss, all forecasts</span>
-        <span role="columnheader" class="r">Reliable: ≥70% right on ≥50 filled sections</span>
+        {tests.map((t) => (
+          <div class="tr" role="row">
+            <span role="cell"><b>{t.term}</b></span>
+            <span role="cell" class="r num" data-label="Average miss, forecast">{e(t.mae)}</span>
+            <span role="cell" class="r num" data-label="Average miss, reusing last term’s bid">{e(t.base)}</span>
+            <span role="cell" class="r num" data-label="Real bid inside 80% range">{p(t.cov)}</span>
+            <span role="cell" class="r num" data-label="Forecasts (section-windows)">{t.n.toLocaleString('en-US')}</span>
+          </div>
+        ))}
       </div>
-      {bt.map((r) => (
-        <div class="tr" role="row">
-          <span role="cell"><b>{r.w}</b></span>
-          <span role="cell" class="r num" data-label="Real bid inside our range, filled sections">{r.coverage80Filled === null ? '–' : pct(r.coverage80Filled)}</span>
-          <span role="cell" class="r num" data-label="Filled sections tested">{r.filled}</span>
-          <span role="cell" class="r num" data-label="Average miss, all forecasts">{r.maeCents === null ? '–' : eS(r.maeCents)}</span>
-          <span role="cell" class="r" data-label="Reliable">{r.confidence === 'ok' ? 'Yes' : <span class="caution">Use with caution</span>}</span>
+      <p class="acc">The last-term baseline can only forecast sections that had a bid to reuse, so it is scored on fewer forecasts ({tests.map((t) => t.baseN.toLocaleString('en-US')).join(' and ')}). The filled-section misses compare both on the filled sections the baseline could forecast.</p>
+      <h3>By window, 2025-26 Term 2</h3>
+      <p class="acc">The average miss is across all forecasts in the window. The range and the sections tested count only sections that filled.</p>
+      <AccuracyChart client:load byWindow={fm.byWindow} />
+      <div class="tbl" role="table" aria-label="Backtest by window">
+        <div class="th" role="row">
+          <span role="columnheader">Window</span>
+          <span role="columnheader" class="r">Real bid inside our range, filled sections</span>
+          <span role="columnheader" class="r">Filled sections tested</span>
+          <span role="columnheader" class="r">Average miss, all forecasts</span>
+          <span role="columnheader" class="r">Reliable: ≥70% right on ≥50 filled sections</span>
         </div>
-      ))}
-    </div>
-    <p class="acc wk"><b>Weak spots.</b> From Round 2 Window 3 onward few sections fill, so there is little to check the bid range against and those windows are marked low confidence. Their average misses are small; most sections there do not fill and clear at the minimum bid.</p>
+        {bt.map((r) => (
+          <div class="tr" role="row">
+            <span role="cell"><b>{r.w}</b></span>
+            <span role="cell" class="r num" data-label="Real bid inside our range, filled sections">{r.coverage80Filled === null ? '–' : pct(r.coverage80Filled)}</span>
+            <span role="cell" class="r num" data-label="Filled sections tested">{r.filled}</span>
+            <span role="cell" class="r num" data-label="Average miss, all forecasts">{r.maeCents === null ? '–' : eS(r.maeCents)}</span>
+            <span role="cell" class="r" data-label="Reliable">{r.confidence === 'ok' ? 'Yes' : <span class="caution">Use with caution</span>}</span>
+          </div>
+        ))}
+      </div>
+      <p class="acc wk"><b>Weak spots.</b> From Round 2 Window 3 onward few sections fill, so there is little to check the bid range against and those windows are marked low confidence. Their average misses are small; most sections there do not fill and clear at the minimum bid.</p>
+      </div>
+    </details>
+    )}
+  </section>
+
+  <details id="formula" class="formula-box">
+    <summary><span class="btn">See the formula</span></summary>
+    <div class="inner"><Formula /></div>
+  </details>
+
+  <details id="swap-chance" class="more">
+    <summary>Swap chance</summary>
+    <div class="inner how">
+      {swap.map((t) => <p>{t}</p>)}
     </div>
   </details>
-  )}
   </>)}
   <section id="seats" class="seatsnote">
     <h2>Seats left</h2>
@@ -270,26 +277,38 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .card { background: var(--surface); border-radius: var(--r-lg); padding: var(--s4); display: grid; gap: var(--s2); align-content: start; min-width: 0; }
   .card h2 { margin: 0; }
   .card li, .card p { line-height: 1.4; font-size: var(--fs-sm); }
-  .acc-list, .bul { margin: 0; padding: 0; display: grid; gap: var(--s2); }
-  .acc-list li { display: grid; gap: 2px; padding: var(--s2) 0; border-top: 1px solid var(--rule); }
+  .bul, .acc-points { margin: 0; padding: 0; display: grid; gap: var(--s2); }
+  .acc-points { list-style: none; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s4); }
+  .acc-points li { display: grid; gap: 2px; align-content: start; padding-top: var(--s2); border-top: 1px solid var(--rule); line-height: 1.4; }
+  .acc-points span { color: var(--muted); }
+  .acc-sec { margin-bottom: var(--s4); display: grid; gap: var(--s3); }
+  .acc-sec h3 { font-size: 17px; font-weight: 600; margin: var(--s3) 0 0; }
+  .notes { color: var(--muted); max-width: 70ch; }
+  .discs { margin-bottom: var(--s5); }
   .bul { list-style: disc; padding-left: 1.2em; }
   .bul li { display: list-item; }
   .more { background: var(--surface); border-radius: var(--r-lg); margin-bottom: var(--s3); }
   .more > summary { cursor: pointer; padding: var(--s3) var(--s4); font-size: var(--fs-md); font-weight: 600; min-height: 44px; display: flex; align-items: center; }
   .more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
   .more .inner { padding: 0 var(--s4) var(--s4); }
-  .models { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--s5); }
-  .how h3 { font-size: 15px; font-weight: 600; margin: 0; }
   section, .card, details { min-width: 0; scroll-margin-top: calc(var(--topbar-h) + var(--s4)); }
   .how { display: grid; gap: var(--s2); align-content: start; }
   .how p, .acc { line-height: 1.5; max-width: 70ch; }
   .acc { margin: 0 0 var(--s3); }
   .bt h3 { font-size: 15px; font-weight: 600; margin: var(--s5) 0 var(--s2); }
   .bt .inner > h3:first-child { margin-top: 0; }
-  .t5 { margin-bottom: var(--s3); }
+  .t5, .t4 { margin-bottom: var(--s3); }
+  .formula-box { margin-bottom: var(--s3); }
+  .formula-box > summary { cursor: pointer; list-style: none; padding: var(--s2) 0; min-height: 44px; display: flex; align-items: center; }
+  .formula-box > summary::-webkit-details-marker { display: none; }
+  .formula-box .btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--s5); border-radius: var(--r-lg); background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: var(--fs-md); }
+  .formula-box[open] .btn { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--rule-strong); }
+  .formula-box > summary:focus-visible .btn { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .formula-box .inner { padding: var(--s3) 0 var(--s4); min-width: 0; }
   .wk { margin-top: var(--s3); }
 
   .tbl { display: grid; }
+  .t4 .th, .t4 .tr { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 0.9fr); }
   .th, .tr { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.3fr); column-gap: var(--s3); align-items: baseline; padding: 6px var(--s2); border-bottom: 1px solid var(--rule); }
   .th { font-size: 13px; color: var(--muted); align-items: end; line-height: 1.25; }
   .seatsnote { margin-top: var(--s4); max-width: 70ch; }

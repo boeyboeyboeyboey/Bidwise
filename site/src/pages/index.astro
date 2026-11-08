@@ -2,82 +2,72 @@
 import Base from '../layouts/Base.astro';
 import Search from '../components/Search.svelte';
 import WindowCard from '../components/home/WindowCard.svelte';
-import Recent from '../components/home/Recent.svelte';
-import Forecasts from '../components/home/Forecasts.svelte';
-import Freed from '../components/home/Freed.svelte';
-import Accuracy from '../components/home/Accuracy.astro';
-import { getSearchIndex, getWindow, getSchedule, windowLabel, formatWhen, dataMeta } from '../lib/data';
-import { getFreedSeats, getForecastHighlights, getCourse } from '../lib/data/server';
-import { formatSlot } from '../lib/format/slot';
-import { FORECASTS_ENABLED, PLANNER_ENABLED } from '../lib/flags';
+import { getSearchIndex, getWindow, getSchedule, windowLabel, formatWhen } from '../lib/data';
+import { PLANNER_ENABLED } from '../lib/flags';
 
 const index = getSearchIndex();
-const hl = FORECASTS_ENABLED ? getForecastHighlights() : null;
 const win = getWindow();
-const sched = getSchedule();
-const windows = sched.map((s) => ({
+const windows = getSchedule().map((s) => ({
   label: windowLabel(s), opensAt: s.opensAt, closesAt: s.closesAt, opens: formatWhen(s.opensAt), closes: formatWhen(s.closesAt),
 }));
-
-// Day and time of each listed section, joined from the course files (the list data has none).
-const courses = new Map<string, ReturnType<typeof getCourse>>();
-const course = (code: string) => (courses.has(code) ? courses.get(code) : courses.set(code, getCourse(code)).get(code));
-const slotOf = (code: string, section: string, classNumber?: string) => {
-  const s = course(code)?.sectionsNow.find((x) => (classNumber ? x.classNumber === classNumber : x.section === section));
-  return s ? formatSlot(s.meetings) : '';
-};
-const freed = getFreedSeats(6).map((r) => ({ ...r, slot: slotOf(r.code, r.section, r.classNumber) }));
-const slots: Record<string, string> = {};
-if (hl) {
-  for (const w of Object.values(hl.byWindow)) {
-    for (const h of w.mostContested.slice(0, 12)) slots[h.classNumber] = slotOf(h.code, h.section, h.classNumber);
-  }
-}
 ---
 <Base title="Courses · Bidwise" active="search">
   <div class="home">
-    <section class="hero" aria-labelledby="hero-h">
-      <h1 id="hero-h">How much should I bid?</h1>
-      <div class="ask">
-        <div class="find"><Search client:load index={index} /></div>
-        <div class="go">
-          {PLANNER_ENABLED && <a class="btn btn-primary" href="/planner">Plan bids for several courses</a>}
-          <a class="more" href="/explore">See past bids</a>
-        </div>
+    <div class="lead">
+      <h1>How much should I bid?</h1>
+      <div class="find"><Search client:load index={index} /></div>
+      <div class="status">
+        <WindowCard
+          client:load
+          quiet
+          label={windowLabel(win)}
+          closesLabel={formatWhen(win.closesAt)}
+          closesAt={win.closesAt}
+          status={win.status}
+          windows={windows}
+        />
       </div>
-      <Recent client:load />
-    </section>
-    <WindowCard
-      client:load
-      label={windowLabel(win)}
-      closesLabel={formatWhen(win.closesAt)}
-      closesAt={win.closesAt}
-      status={win.status}
-      windows={windows}
-    />
-    <div class="lists">
-      {hl && <Forecasts client:load byWindow={hl.byWindow} openLabel={hl.window} targetP={hl.targetP} slots={slots} />}
-      <Freed client:load rows={freed} openScanAt={dataMeta.seats?.openScanAt ?? null} scanAt={dataMeta.seats?.scanAt ?? null} />
     </div>
-    <Accuracy />
+    <nav class="paths" aria-label="More">
+      {PLANNER_ENABLED && <a class="btn big" href="/planner/">Plan for multiple courses</a>}
+      <span class="btn big" role="link" aria-disabled="true">I don't know what to take<small>Coming soon</small></span>
+      <a class="btn big" href="/method/">How does it work?</a>
+      <a class="btn big" href="/window/">Hot sections &amp; freed seats</a>
+    </nav>
   </div>
 </Base>
 
 <style>
-  .home { display: grid; gap: var(--s4); }
-  .hero { display: grid; gap: var(--s3); }
-  h1 { font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; }
-  .ask { display: grid; gap: var(--s3); align-items: end; }
+  .home { width: 100%; max-width: 680px; margin: 0 auto; display: grid; gap: var(--s4); justify-items: stretch; padding-top: var(--s4); }
+  .lead { display: contents; }
+  .status { order: 2; }
+  .paths { order: 1; }
+  h1 { font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; text-align: center; }
   .find { min-width: 0; }
-  .go { display: grid; gap: var(--s2); justify-items: stretch; }
-  .go .btn-primary { min-height: 56px; font-size: var(--fs-md); }
-  .more { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; color: var(--accent); font-weight: 600; font-size: var(--fs-sm); text-underline-offset: 3px; }
-  .lists { display: grid; gap: var(--s5); align-items: start; }
+  .home :global(label.find) {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  .paths { display: grid; gap: var(--s2); }
+  .big { min-height: 52px; flex-direction: column; gap: 0; text-align: center; }
+  .big small { font-size: var(--fs-xs); font-weight: 400; }
+  @media (max-width: 767px) {
+    /* Fill the visible area between header and tab bar: empty top row, lead centred in the middle row, buttons at the bottom. */
+    .home {
+      min-height: calc(100dvh - var(--topbar-h) - var(--s5) - var(--tabbar-h) - env(safe-area-inset-bottom) - 16px);
+      grid-template-rows: 1fr auto 1fr;
+      gap: 0; padding-top: 0;
+      /* Pushes the footer below the tab bar, so it starts below the fold. */
+      margin-bottom: calc(var(--tabbar-h) + var(--s5));
+    }
+    .lead { display: grid; gap: var(--s4); grid-row: 2; }
+    .paths { grid-row: 3; align-self: end; }
+  }
+  @media (min-width: 768px) {
+    .paths { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   @media (min-width: 1024px) {
+    .home { padding-top: 12vh; gap: var(--s5); }
     h1 { font-size: var(--fs-hero); }
-    .ask { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s5); }
-    .go { grid-auto-flow: column; align-items: center; column-gap: var(--s4); }
-    .go .btn-primary { padding: 0 var(--s5); }
-    .lists { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s6); }
   }
 </style>

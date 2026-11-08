@@ -9,54 +9,50 @@
   import InfoTip from '../ui/InfoTip.svelte';
   import { shortLabel, type Theme } from './chart';
   import type { BrowseManifest, BrowseRow } from './browse';
-  import { availableTerms, loadManifest, loadRows, termsForFilters } from './builder/data';
-  import {
-    AGG_LABEL, AXIS_FIELDS, CHART_LABEL, SORT_LABEL, allTermsOn, controlState, effectiveTerms, isRaw, setAgg, setAllTerms, setBin, setChart,
-    setLatestTerm, setOptional, setRaw, setSwap, setX, setY, termsSizeMb, toggleTerm,
-  } from './builder/controls';
+  import { loadManifest, loadRows, termsFor } from './builder/data';
   import { download } from './export';
   import { fieldById } from './builder/fields';
-  import { FILTER_FIELDS, chipFilters, filterFor, filterSummary, removeFilter, searchChoices, setFilterRange, setFilterValues, toggleFilterValue } from './builder/filters';
-  import { PRESETS, applyPreset } from './builder/presets';
+  import { hasCourse, lineColor, lineLabels, runLines } from './builder/lines';
   import { deleteChart, loadSaved, MAX_SAVED, saveChart, type SavedChart } from './builder/saved';
   import { csvAllowed, resultCsv, resultTable } from './builder/table';
-  import { fmtTick, fmtY, planFor, xLabel, yLabel } from './builder/plan';
-  import { chartHeight, colorOf, drawChart, heatRamp, tipText, xText } from './builder/plot';
-  import { applyFilters, runQuery, SORT_MODES, valueChoices, type QueryResult } from './builder/query';
-  import { CHART_TYPES, decodeSpec, defaultSpec, encodeSpec, normalizeSpec } from './builder/spec';
+  import { xLabel, yLabel } from './builder/plan';
+  import { drawChart } from './builder/plot';
+  import { valueChoices } from './builder/query';
+  import {
+    CHART_LABEL, CHART_TYPES, MAX_LINES, NARROW_KEYS, NUMBER_X_IDS, X_IDS, Y_IDS, decodeSpec, defaultSpec, emptyLine, encodeSpec, normalizeSpec,
+    type ChartType, type NarrowKey,
+  } from './builder/spec';
 
-  /** Rows shown in the table view and the screen-reader table. */
+  /** Rows shown in the screen-reader table. */
   const ROW_CAP = 500;
+  /** Placeholder (and accessible name) of each narrowing select. */
+  const NARROW_LABEL: Record<NarrowKey, string> = { day: 'Day', band: 'Time of day', section: 'Section', instructor: 'Professor' };
 
   let spec = $state<Spec>(defaultSpec());
   let ready = $state(false);
   let man = $state.raw<BrowseManifest | null>(null);
   let rows = $state.raw<BrowseRow[]>([]);
-  let loading = $state(true);
+  let loading = $state(false);
   let failed = $state(false);
   let width = $state(0);
   let vh = $state(0);
   let host: HTMLDivElement | undefined = $state();
-  let open = $state(false);
+  let ctl: HTMLDivElement | undefined = $state();
   let showTable = $state(false);
-  let hidden = $state(0);
   let token = 0;
-  /** The field whose filter editor is open. */
-  let editing = $state<string | null>(null);
-  let search = $state('');
-  let searchEl: HTMLInputElement | undefined = $state();
   let saved = $state<SavedChart[]>([]);
   let saveOpen = $state(false);
   let saveName = $state('');
   let msg = $state('');
 
   /** Every change to the spec goes through here, so the URL and the chart follow. */
-  const set = (next: Spec) => (spec = next);
+  const set = (next: Partial<Spec>) => (spec = normalizeSpec({ ...plain, ...next }));
+  const val = (e: Event) => (e.currentTarget as HTMLInputElement | HTMLSelectElement).value;
 
   onMount(() => {
     const fromUrl = new URLSearchParams(location.search).get('kv') !== null;
     spec = fromUrl ? decodeSpec(location.search) : (lastSpec ?? defaultSpec());
-    loadManifest().then((m) => (man = m), () => { failed = true; loading = false; });
+    loadManifest().then((m) => (man = m), () => (failed = true));
     saved = loadSaved();
     ready = true;
     // Divide out the wide-screen zoom so px heights fit the real viewport.
@@ -89,12 +85,15 @@
     return () => { clearTimeout(timer); ro.disconnect(); };
   });
 
-  // Data: only the terms the spec asks for (the latest one by default), keyed by a string so unrelated changes do not reload.
-  const allTerms = $derived(man ? availableTerms(man) : []);
-  const termKey = $derived(man ? termsForFilters(man, spec.filters).join('|') : '');
+  const plain = $derived($state.snapshot(spec) as Spec);
+  const wanted = $derived(plain.lines.some(hasCourse));
+  const terms = $derived(man ? termsFor(man, plain.more) : []);
+  const termKey = $derived(terms.join('|'));
+
+  // Data: nothing loads until a course is typed; then only the terms in view (the last four, or all with More terms).
   $effect(() => {
     const m = man;
-    if (!m) return;
+    if (!m || !wanted) return;
     const ts = termKey ? termKey.split('|') : [];
     const mine = ++token;
     loading = true;
@@ -104,18 +103,22 @@
     );
   });
 
-  const plain = $derived($state.snapshot(spec) as Spec);
-  const cs = $derived(controlState(plain));
-  const plan = $derived(planFor(plain));
-  const result = $derived<QueryResult | null>(rows.length ? runQuery(rows, plain) : null);
+  const codes = $derived(new Set(man?.codes ?? []));
+  const labels = $derived(lineLabels(plain.lines));
+  const result = $derived(wanted && rows.length ? runLines(rows, plain) : null);
   const hasPoints = $derived(!!result && result.points.length > 0);
-  const isTable = $derived(plain.chart === 'table');
-  const drawable = $derived(hasPoints && !isTable && !plan.needsColor);
-  const picked = $derived(effectiveTerms(plain, allTerms));
-  const sizeMb = $derived(man ? termsSizeMb(man.terms, picked) : 0);
-  const xf = $derived(fieldById(plain.x));
-  const hasColor = $derived(!!result && result.domains.color.length > 0 && !!plain.color);
-  const colorFn = $derived(colorOf(result?.domains.color ?? []));
+  const raw = $derived(plain.chart === 'scatter');
+  const xChoices = $derived(plain.chart === 'scatter' ? NUMBER_X_IDS : X_IDS);
+
+  /** Rows of each typed course, and the narrowing choices of each line from them. */
+  const byCourse = $derived.by(() => {
+    const need = new Set(plain.lines.filter(hasCourse).map((l) => l.course));
+    const m = new Map<string, BrowseRow[]>();
+    for (const c of need) m.set(c, []);
+    if (need.size) for (const r of rows) m.get(r.code)?.push(r);
+    return m;
+  });
+  const choices = $derived(plain.lines.map((l) => (hasCourse(l) && byCourse.get(l.course)?.length ? NARROW_KEYS.map((k) => valueChoices(byCourse.get(l.course) ?? [], k)) : null)));
 
   function theme(): Theme {
     const c = getComputedStyle(document.documentElement);
@@ -132,78 +135,45 @@
   }
 
   $effect(() => {
-    const r = result; const s = plain; const w = width; void vh; void drawable;
-    if (!host || !w || !r || !drawable) { host?.replaceChildren(); hidden = 0; return; }
+    const r = result; const s = plain; const w = width; void vh;
+    if (!host || !w || !r || !r.points.length) { host?.replaceChildren(); return; }
     try {
-      const d = drawChart(s, r, theme(), w, chartHeight(s, r, baseHeight()));
-      d.svg.setAttribute('role', 'img');
-      d.svg.setAttribute('aria-label', `${yLabel(s)} by ${xLabel(s)}, ${CHART_LABEL[s.chart].toLowerCase()} chart`);
-      host.replaceChildren(d.svg);
-      hidden = d.hidden;
+      const svg = drawChart(s, r, theme(), w, baseHeight());
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', `${yLabel(s)} by ${xLabel(s)}, ${CHART_LABEL[s.chart].toLowerCase()} chart, ${r.series.join(', ')}`);
+      host.replaceChildren(svg);
     } catch (err) {
       console.error('builder render', err);
       host.replaceChildren();
     }
   });
 
-  /** The result as a table: the table chart, and the screen-reader alternative to every other chart. */
   const tbl = $derived(result && result.points.length ? resultTable(plain, result, ROW_CAP) : null);
-
+  const termLabel = (t: string) => shortLabel(t);
+  const termsText = $derived(terms.length > 1 ? `${termLabel(terms[0])} to ${termLabel(terms[terms.length - 1])}` : terms.length ? termLabel(terms[0]) : '');
   const notes = $derived.by(() => {
     if (!result) return [];
     const t = result.totals;
     const out: string[] = [];
-    const lc = (id: string | undefined) => (fieldById(id ?? '')?.label ?? '').toLowerCase();
-    if (t.capped.x) out.push(`Other combines ${t.capped.x} more ${lc(plain.x)} groups`);
-    if (t.capped.color) out.push(`Other combines ${t.capped.color} more ${lc(plain.color)} groups`);
-    if (t.capped.facet) out.push(`Other combines ${t.capped.facet} more ${lc(plain.facet)} groups`);
-    if (t.emptyGroups) out.push(t.emptyGroups === 1 ? '1 group has no value' : `${t.emptyGroups} groups have no value`);
-    if (t.droppedNullX) out.push(`${t.droppedNullX.toLocaleString()} rows have no ${lc(plain.x)}`);
+    if (t.droppedNullX) out.push(`${t.droppedNullX.toLocaleString()} rows have no ${(fieldById(plain.x)?.label ?? '').toLowerCase()}`);
     if (t.droppedNullY) out.push(`${t.droppedNullY.toLocaleString()} rows have no value`);
     if (t.sampled) out.push(`A sample of ${t.rowsPlotted.toLocaleString()} points is shown`);
-    if (hidden) out.push(`${hidden} values of 0 or less are hidden on the log axis`);
     return out;
   });
 
-  const range = $derived.by(() => {
-    if (!result || !plan.marks.includes('cell')) return null;
-    const ys = result.points.map((p) => p.y);
-    return ys.length ? { lo: Math.min(...ys), hi: Math.max(...ys) } : null;
-  });
-
-  const termLabel = (t: string) => shortLabel(t);
-  const termsText = $derived(picked.length === 1 ? termLabel(picked[0]) : `${picked.length} terms`);
-
-  // Filters
-  const chips = $derived(chipFilters(plain));
-  const addable = $derived(FILTER_FIELDS.filter((f) => !filterFor(plain, f.id)));
-  const editField = $derived(editing ? fieldById(editing) : undefined);
-  const editFilter = $derived(editing ? filterFor(plain, editing) : undefined);
-  const choices = $derived(editField && editField.kind !== 'number' ? valueChoices(applyFilters(rows, plain.filters.filter((f) => f.field !== editing)), editField.id) : []);
-  const found = $derived(searchChoices(choices, search, editFilter?.in ?? []));
-
-  async function openEditor(id: string, focus = false) {
-    editing = editing === id && !focus ? null : id;
-    search = '';
-    if (editing && focus) { await tick(); searchEl?.focus(); }
+  // Lines
+  const setLine = (i: number, patch: Partial<Spec['lines'][number]>) => set({ lines: plain.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
+  const setCourse = (i: number, text: string) => set({ lines: plain.lines.map((l, j) => (j === i ? { course: text } : l)) });
+  const setNarrow = (i: number, k: NarrowKey, v: string) => setLine(i, { [k]: v || undefined });
+  const removeLine = (i: number) => set({ lines: plain.lines.filter((_, j) => j !== i) });
+  async function addLine() {
+    if (plain.lines.length >= MAX_LINES) return;
+    set({ lines: [...plain.lines, emptyLine()] });
+    await tick();
+    const all = ctl?.querySelectorAll<HTMLInputElement>('input.course');
+    all?.[all.length - 1]?.focus();
   }
-  const dropFilter = (id: string) => { set(removeFilter(plain, id)); if (editing === id) editing = null; };
-  const addField = (e: Event) => { const id = val(e); (e.currentTarget as HTMLSelectElement).value = ''; if (id) openEditor(id, true); };
-  const pickFirst = (e: KeyboardEvent) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const c = found.shown.find((x) => !(editFilter?.in ?? []).includes(x.value));
-    if (c && editing) { set(toggleFilterValue(plain, editing, c.value)); search = ''; }
-  };
-
-  // Presets
-  function usePreset(e: Event) {
-    const p = PRESETS.find((x) => x.id === val(e));
-    (e.currentTarget as HTMLSelectElement).value = '';
-    if (!p) return;
-    set(applyPreset(plain, p));
-    if (p.needsCourse && !filterFor(plain, 'course')) openEditor('course', true);
-  }
+  const setChart = (c: ChartType) => set({ chart: c });
 
   // Saved charts, link, CSV
   const flash = (t: string) => { msg = t; setTimeout(() => { if (msg === t) msg = ''; }, 3000); };
@@ -232,201 +202,90 @@
     }
   }
   const saveCsv = () => { if (result && csvAllowed(plain)) download(new Blob([resultCsv(plain, result)], { type: 'text/csv;charset=utf-8' }), 'bidwise-chart.csv'); };
-  const val = (e: Event) => (e.currentTarget as HTMLInputElement | HTMLSelectElement).value;
-  const chk = (e: Event) => (e.currentTarget as HTMLInputElement).checked;
 </script>
 
 <div class="bld">
-  <aside class="side">
-    <button type="button" class="btn setbtn" aria-expanded={open} aria-controls="bld-ctl" onclick={() => (open = !open)}>Chart settings</button>
-    <div id="bld-ctl" class="ctl" class:open>
-      <fieldset class="wide types desk">
-        <legend>Chart type</legend>
-        {#each CHART_TYPES as c}
-          <button type="button" class="pill" aria-pressed={plain.chart === c} onclick={() => set(setChart(plain, c))}>{CHART_LABEL[c]}</button>
-        {/each}
-      </fieldset>
-      <label class="phone">Chart type
-        <select class="field" value={plain.chart} onchange={(e) => set(setChart(plain, val(e) as never))}>
-          {#each CHART_TYPES as c}<option value={c}>{CHART_LABEL[c]}</option>{/each}
-        </select>
-      </label>
-      <label class="wd">Start from
-        <select class="field" value="" onchange={usePreset}>
-          <option value="">Choose</option>
-          {#each PRESETS as p}<option value={p.id}>{p.label}</option>{/each}
-        </select>
-      </label>
+  <aside class="side" bind:this={ctl}>
+    <fieldset class="types">
+      <legend class="sr-only">Chart type</legend>
+      {#each CHART_TYPES as c}
+        <button type="button" class="pill" aria-pressed={plain.chart === c} onclick={() => setChart(c)}>{CHART_LABEL[c]}</button>
+      {/each}
+    </fieldset>
 
-      <div class="wide flt">
-        <div class="chips" aria-label="Filters">
-          {#each chips as f (f.field)}
-            <span class="fchip" class:on={editing === f.field}>
-              <button type="button" class="fbtn" aria-expanded={editing === f.field} onclick={() => openEditor(f.field)}>{filterSummary(f)}</button>
-              <button type="button" class="fx" aria-label={`Remove ${fieldById(f.field)?.label ?? ''} filter`} onclick={() => dropFilter(f.field)}>×</button>
-            </span>
-          {/each}
-          <select class="field addf" aria-label="Add filter" value="" onchange={addField}>
-            <option value="">+ Filter</option>
-            {#each addable as f}<option value={f.id}>{f.label}</option>{/each}
-          </select>
-        </div>
-        {#if editField}
-          <div class="editor">
-            <div class="ehead">
-              <strong>{editField.label}</strong>
-              <button type="button" class="btn small" onclick={() => (editing = null)}>Done</button>
-            </div>
-            {#if editField.kind === 'number'}
-              <div class="range">
-                <label>Min <input class="field" type="number" step="any" inputmode="decimal" value={editFilter?.min ?? ''} oninput={(e) => set(setFilterRange(plain, editField.id, val(e), String(editFilter?.max ?? '')))} /></label>
-                <label>Max <input class="field" type="number" step="any" inputmode="decimal" value={editFilter?.max ?? ''} oninput={(e) => set(setFilterRange(plain, editField.id, String(editFilter?.min ?? ''), val(e)))} /></label>
-              </div>
-            {:else if editField.kind === 'bool'}
-              <div class="yn">
-                {#each [['true', 'Yes'], ['false', 'No']] as [v, l]}
-                  <button type="button" class="pill" aria-pressed={editFilter?.in?.includes(v) ?? false} onclick={() => set(toggleFilterValue(plain, editField.id, v))}>{l}</button>
-                {/each}
-              </div>
+    <div class="axes">
+      <label>X axis
+        <select class="field" value={plain.x} onchange={(e) => set({ x: val(e) })}>
+          {#each xChoices as id}<option value={id}>{fieldById(id)?.label}</option>{/each}
+        </select>
+      </label>
+      <label>Y axis
+        <select class="field" value={plain.y} onchange={(e) => set({ y: val(e) })}>
+          {#each Y_IDS as id}<option value={id}>{fieldById(id)?.label}</option>{/each}
+        </select>
+      </label>
+    </div>
+
+    <ul class="lines" aria-label="Lines">
+      {#each plain.lines as l, i}
+        <li class="line">
+          <div class="head">
+            <i class="chip" style:background={lineColor(i)} aria-hidden="true"></i>
+            <input
+              class="field course" type="text" list="bld-codes" placeholder="Type a course code" aria-label={`Line ${i + 1} course`}
+              autocomplete="off" autocapitalize="characters" spellcheck="false" value={l.course} oninput={(e) => setCourse(i, val(e).trim().toUpperCase())}
+            />
+            <button type="button" class="x" aria-label={`Remove line ${i + 1}`} onclick={() => removeLine(i)}>×</button>
+          </div>
+          {#if hasCourse(l)}
+            {#if man && !codes.has(l.course)}
+              <p class="mu small">No such course</p>
             {:else}
-              <input class="field" type="search" placeholder={editField.id === 'course' ? 'Type a course code' : 'Search'} aria-label={`Search ${editField.label}`} bind:value={search} bind:this={searchEl} onkeydown={pickFirst} autocomplete="off" />
-              <p class="mu count">{editFilter?.in?.length ?? 0} selected · {found.total} shown{#if found.total > found.shown.length} (type to narrow){/if}</p>
-              <div class="olist">
-                {#each found.shown as c (c.value)}
-                  <label class="opt"><input type="checkbox" checked={editFilter?.in?.includes(c.value) ?? false} onchange={() => set(toggleFilterValue(plain, editField.id, c.value))} /> <span class="ol">{c.label}</span> <span class="mu">{c.n}</span></label>
-                {/each}
-                {#if !found.shown.length}<p class="mu">No match</p>{/if}
-              </div>
-              {#if editFilter?.in?.length}
-                <button type="button" class="btn small" onclick={() => set(setFilterValues(plain, editField.id, []))}>Clear</button>
+              {#if labels[i] !== l.course}<p class="lab" title={labels[i]}>{labels[i]}</p>{/if}
+              {#if choices[i]}
+                <div class="narrow">
+                  {#each NARROW_KEYS as k, ki}
+                    <select class="field" aria-label={`${NARROW_LABEL[k]} of line ${i + 1}`} value={l[k] ?? ''} onchange={(e) => setNarrow(i, k, val(e))}>
+                      <option value="">{NARROW_LABEL[k]}</option>
+                      {#each choices[i]?.[ki] ?? [] as c}<option value={c.value}>{c.label}</option>{/each}
+                    </select>
+                  {/each}
+                </div>
               {/if}
             {/if}
-          </div>
-        {/if}
-      </div>
-
-      <label>X
-        <select class="field" value={plain.x} onchange={(e) => set(setX(plain, val(e)))}>
-          {#each AXIS_FIELDS as f}<option value={f.id}>{f.label}</option>{/each}
-        </select>
-      </label>
-      <label>Bin size
-        <input class="field" type="number" min="0" step="any" inputmode="decimal" placeholder="None" disabled={!cs.binOn} value={plain.bin ?? ''} oninput={(e) => set(setBin(plain, val(e)))} />
-      </label>
-
-      <label>{cs.yShelfLabel}
-        <select class="field" value={plain.y.field} onchange={(e) => set(setY(plain, val(e)))}>
-          {#each cs.yFields as f}<option value={f.id}>{f.label}</option>{/each}
-        </select>
-      </label>
-      <label>Aggregate
-        <select class="field" value={plain.y.agg} disabled={cs.aggLocked} onchange={(e) => set(setAgg(plain, val(e) as never))}>
-          {#each cs.aggs as a}<option value={a}>{AGG_LABEL[a]}</option>{/each}
-        </select>
-      </label>
-
-      <label>{cs.colorLabel}
-        <select class="field" value={plain.color ?? ''} onchange={(e) => set(setOptional(plain, 'color', val(e)))}>
-          <option value="">None</option>
-          {#each AXIS_FIELDS as f}<option value={f.id}>{f.label}</option>{/each}
-        </select>
-      </label>
-      <label>Facet
-        <select class="field" value={plain.facet ?? ''} onchange={(e) => set(setOptional(plain, 'facet', val(e)))}>
-          <option value="">None</option>
-          {#each AXIS_FIELDS as f}<option value={f.id}>{f.label}</option>{/each}
-        </select>
-      </label>
-
-      <label class="wd">Sort
-        <select class="field" value={plain.sort ?? 'x'} disabled={!cs.sortOn} onchange={(e) => set(normalizeSpec({ ...plain, sort: val(e) as never }))}>
-          {#each SORT_MODES as m}<option value={m}>{SORT_LABEL[m]}</option>{/each}
-        </select>
-      </label>
-
-      <div class="phone terms-dd">
-        <span class="lbl">Terms{#if picked.length > 1 && sizeMb > 0} <span class="mb">≈{Math.max(1, Math.round(sizeMb))} MB</span>{/if}</span>
-        <details class="dd">
-          <summary class="field">{allTerms.length ? termsText : 'Loading'}</summary>
-          {#if allTerms.length}
-            <div class="ddlist">
-              {#each [...allTerms].reverse() as t}
-                <label class="opt"><input type="checkbox" checked={picked.includes(t)} onchange={() => set(toggleTerm(plain, t, allTerms))} /> {t}</label>
-              {/each}
-              {#if allTerms.length > 1}
-                <label class="opt"><input type="checkbox" checked={allTermsOn(plain, allTerms)} onchange={() => set(allTermsOn(plain, allTerms) ? setLatestTerm(plain, allTerms) : setAllTerms(plain, allTerms))} /> All terms (≈12 MB)</label>
-              {/if}
-            </div>
           {/if}
-        </details>
-      </div>
+        </li>
+      {/each}
+    </ul>
+    <datalist id="bld-codes">{#each man?.codes ?? [] as c}<option value={c}></option>{/each}</datalist>
+    <button type="button" class="btn add" disabled={plain.lines.length >= MAX_LINES} onclick={addLine}>+ Add line</button>
 
-      <div class="wide checks">
-        <label class="check"><input type="checkbox" checked={cs.logChecked} disabled={!cs.logOn} onchange={(e) => set(normalizeSpec({ ...plain, log: chk(e) }))} /> Log scale</label>
-        <label class="check"><input type="checkbox" checked={cs.zeroChecked} disabled={!cs.zeroOn} onchange={(e) => set(normalizeSpec({ ...plain, zero: chk(e) }))} /> Start at zero</label>
-        <label class="check"><input type="checkbox" checked={plain.swap && cs.swapOn} disabled={!cs.swapOn} onchange={() => set(setSwap(plain))} /> Swap axes</label>
-        <label class="check"><input type="checkbox" checked={cs.rawChecked} disabled={!cs.rawOn} onchange={(e) => set(setRaw(plain, chk(e)))} /> Raw rows</label>
-      </div>
-
-      <fieldset class="wide terms desk">
-        <legend>Terms{#if picked.length > 1 && sizeMb > 0} <span class="mb">≈{Math.max(1, Math.round(sizeMb))} MB</span>{/if}</legend>
-        {#if allTerms.length}
-          {#each [...allTerms].reverse() as t}
-            <button type="button" class="chip" aria-pressed={picked.includes(t)} aria-label={t} onclick={() => set(toggleTerm(plain, t, allTerms))}>{termLabel(t)}</button>
-          {/each}
-          {#if allTerms.length > 1}
-            <button type="button" class="chip" aria-pressed={allTermsOn(plain, allTerms)} onclick={() => set(allTermsOn(plain, allTerms) ? setLatestTerm(plain, allTerms) : setAllTerms(plain, allTerms))}>All terms (≈12 MB)</button>
-          {/if}
-        {:else}
-          <span class="mu">Loading</span>
-        {/if}
-      </fieldset>
-      <button type="button" class="btn wide" onclick={() => set(defaultSpec())}>Reset</button>
+    <div class="more">
+      <label class="check"><input type="checkbox" checked={plain.more} onchange={(e) => set({ more: e.currentTarget.checked })} /> More terms</label>
+      <InfoTip anchor="seats" label="About the terms" lines={['Shows the last four terms. More terms loads every term (about 12 MB).']} />
     </div>
   </aside>
 
   <section class="main" aria-label="Chart">
     {#if failed}
       <p class="empty" role="alert">Could not load data</p>
+    {:else if !wanted}
+      <p class="empty" role="status">Type a course code</p>
     {:else if loading && !hasPoints}
-      <p class="empty" role="status">Loading chart…</p>
+      <p class="empty" role="status">Loading…</p>
     {:else if !hasPoints}
-      <p class="empty" role="status">No data</p>
-    {:else if plan.needsColor}
-      <p class="empty" role="status">Choose a second axis</p>
+      <p class="empty" role="status">No data{plain.more ? '' : ' in the last four terms'}</p>
     {/if}
 
     <div class="plot" bind:this={host}></div>
 
-    {#if drawable && hasColor && !plan.marks.includes('cell')}
-      <ul class="legend" aria-label="Legend">
-        {#each result?.domains.color ?? [] as c}
-          <li><i style:background={colorFn(c)}></i>{c}</li>
+    {#if hasPoints && result}
+      <ul class="legend" aria-label="Lines">
+        {#each result.series as s}
+          <li><i style:background={result.colors.get(s)}></i>{s}</li>
         {/each}
       </ul>
-    {/if}
-    {#if drawable && range}
-      <div class="ramp" aria-label="Colour scale">
-        <span>{fmtY(plain, range.lo)}</span><i style:background={`linear-gradient(90deg, ${heatRamp[0]}, ${heatRamp[1]})`}></i><span>{fmtY(plain, range.hi)}</span>
-      </div>
-    {/if}
 
-    {#if isTable && tbl}
-      <div class="tw" role="region" aria-label="Chart values as a table" tabindex="0">
-        <table>
-          <caption>{yLabel(plain)} by {xLabel(plain).toLowerCase()}</caption>
-          <thead><tr>{#each tbl.heads as h, i}<th scope="col" class:num={i >= tbl.heads.length - tbl.nNum}>{h}</th>{/each}</tr></thead>
-          <tbody>
-            {#each tbl.body as r}
-              <tr>{#each r as c, i}<td class:num={i >= r.length - tbl.nNum}>{c}</td>{/each}</tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      {#if tbl.more > 0}<p class="note">First {ROW_CAP} of {(tbl.more + ROW_CAP).toLocaleString()} rows</p>{/if}
-    {/if}
-
-    {#if hasPoints}
       <div class="bar" role="group" aria-label="Chart actions">
         {#if saveOpen}
           <input class="field nm" type="text" maxlength="60" placeholder="Name" aria-label="Chart name" bind:value={saveName} onkeydown={(e) => e.key === 'Enter' && doSave()} />
@@ -435,9 +294,7 @@
         {:else}
           <button type="button" class="btn" onclick={() => (saveOpen = true)}>Save</button>
           <button type="button" class="btn" onclick={copyLink}>Copy link</button>
-          {#if csvAllowed(plain)}
-          <button type="button" class="btn" onclick={saveCsv}>CSV</button>
-          {/if}
+          {#if csvAllowed(plain)}<button type="button" class="btn" onclick={saveCsv}>CSV</button>{/if}
         {/if}
         <span class="msg" role="status">{msg}</span>
       </div>
@@ -448,7 +305,7 @@
         <ul>
           {#each saved as c (c.name)}
             <li>
-              <button type="button" class="btn open" onclick={() => set(c.spec)}>{c.name}</button>
+              <button type="button" class="btn open" onclick={() => (spec = c.spec)}>{c.name}</button>
               <button type="button" class="btn" aria-label={`Delete ${c.name}`} onclick={() => (saved = deleteChart(c.name))}>×</button>
             </li>
           {/each}
@@ -456,19 +313,12 @@
       </details>
     {/if}
 
-    {#if hasPoints}
-      <p class="totals">
-        <span>{result?.totals.rowsPlotted.toLocaleString()} of {result?.totals.rowsIn.toLocaleString()} rows</span>
-        <InfoTip anchor="seats" label="About the fields" lines={[
-          'A row is one section in one bidding window.',
-          'Section seats: all seats in the section. Seats offered: seats open in that window.',
-          'Other: the smallest groups combined.',
-        ]} />
-      </p>
+    {#if hasPoints && result}
+      <p class="totals">{result.totals.rowsFiltered.toLocaleString()} rows · {termsText}</p>
       {#each notes as n}<p class="note" role="status">{n}</p>{/each}
     {/if}
 
-    {#if !isTable && tbl && !plan.needsColor}
+    {#if tbl}
       <div class="tblbox">
         <button type="button" class="btn" aria-expanded={showTable} aria-controls="bld-table" onclick={() => (showTable = !showTable)}>{showTable ? 'Hide table' : 'Show as table'}</button>
         <div id="bld-table" class="tw" class:sr-only={!showTable} role="region" aria-label="Chart values as a table" tabindex={showTable ? 0 : -1}>
@@ -491,66 +341,35 @@
 <style>
   .bld { display: grid; gap: var(--s4); min-width: 0; align-content: start; }
   .bld > * { min-width: 0; }
-  .side { display: grid; gap: var(--s3); align-content: start; }
-  .setbtn { width: 100%; justify-content: space-between; }
-  .setbtn::after { content: ''; width: 16px; height: 16px; background: var(--chev-down) center / 16px no-repeat; }
-  .setbtn[aria-expanded='true']::after { transform: rotate(180deg); }
-  .ctl { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2) var(--s3); padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--surface); }
-  .ctl.open { display: grid; }
-  .ctl > * { min-width: 0; margin: 0; }
-  .wide { grid-column: 1 / -1; }
-  .ctl label:not(.check) { display: grid; gap: var(--s1); font-size: var(--fs-sm); color: var(--muted); align-content: start; }
-  .ctl .field:disabled { color: var(--muted); background-color: var(--bg); border-style: dashed; }
+  .side { display: grid; gap: var(--s3); align-content: start; padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--surface); }
+  .side > * { min-width: 0; margin: 0; }
   fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-  legend { padding: 0; margin-bottom: var(--s2); font-size: var(--fs-sm); color: var(--muted); }
   .types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
-  .types legend { grid-column: 1 / -1; margin-bottom: 0; }
   .pill {
     min-height: 44px; padding: 0 var(--s2); font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
     border: 1px solid var(--rule-strong); border-radius: var(--r-sm); cursor: pointer;
   }
-  .pill[aria-pressed='true'], .chip[aria-pressed='true'] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 600; }
-  .pill:not([aria-pressed='true']):hover, .chip:not([aria-pressed='true']):hover { background: var(--accent-soft); }
-  .checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s3); }
+  .pill[aria-pressed='true'] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .pill:not([aria-pressed='true']):hover { background: var(--accent-soft); }
+  .axes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2) var(--s3); }
+  .axes label { display: grid; gap: var(--s1); font-size: var(--fs-sm); line-height: 1.2; color: var(--muted); align-content: start; min-width: 0; }
+  .lines { display: grid; gap: var(--s3); margin: 0; padding: 0; list-style: none; }
+  .line { display: grid; gap: var(--s1); padding-left: var(--s3); border-left: 4px solid var(--rule); min-width: 0; }
+  .head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+  .chip { flex: none; width: 14px; height: 14px; border-radius: 50%; }
+  .course { flex: 1; min-width: 0; text-transform: uppercase; }
+  .course::placeholder { text-transform: none; }
+  .x { flex: none; width: 44px; min-height: 44px; font: inherit; font-size: 22px; color: var(--text); background: none; border: 0; cursor: pointer; }
+  .x:hover { background: var(--accent-soft); border-radius: var(--r-sm); }
+  .lab { margin: 0; font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .narrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+  .narrow .field { padding-left: var(--s2); padding-right: 32px; text-overflow: ellipsis; font-size: var(--fs-sm); background-position: right 8px center; }
+  .add { justify-self: start; }
+  .more { display: flex; align-items: center; gap: var(--s2); }
   .check { display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
   .check input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
-  .check:has(input:disabled) { color: var(--muted); cursor: not-allowed; }
-  .terms { display: flex; flex-wrap: wrap; gap: var(--s2); }
-  .terms legend { flex: 1 1 100%; }
-  .mb, .mu { color: var(--muted); }
-  .chip {
-    min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
-    border: 1px solid var(--rule-strong); border-radius: var(--r-md); cursor: pointer;
-  }
-  .ctl .phone { display: grid; }
-  .ctl .desk { display: none; }
-  .wd { grid-column: auto; }
-  .lbl { font-size: var(--fs-sm); line-height: 1.2; color: var(--muted); }
-  .ctl label:not(.check) { line-height: 1.2; }
-  .terms-dd { gap: var(--s1); align-content: start; }
-  .dd { position: relative; }
-  .dd summary { display: flex; align-items: center; cursor: pointer; list-style: none; }
-  .dd summary::-webkit-details-marker { display: none; }
-  .ddlist { display: grid; padding: var(--s2); margin-top: var(--s1); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); background: var(--surface); }
-  .opt { display: flex; align-items: center; gap: var(--s2); min-height: 44px; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
-  .opt input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
-  .ol { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .flt { display: grid; gap: var(--s2); }
-  .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-  .addf { width: auto; min-width: 120px; flex: 1 1 120px; }
-  .fchip { display: inline-flex; max-width: 100%; border: 1px solid var(--rule-strong); border-radius: var(--r-md); background: var(--surface); }
-  .fchip.on { border-color: var(--accent); background: var(--accent-soft); }
-  .fbtn, .fx { min-height: 44px; font: inherit; font-size: var(--fs-sm); color: var(--text); background: none; border: 0; cursor: pointer; }
-  .fbtn { padding: 0 var(--s2) 0 var(--s3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fx { min-width: 44px; font-size: 20px; }
-  .editor { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--bg); }
-  .ehead { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-  .range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-  .range label { display: grid; gap: var(--s1); font-size: var(--fs-sm); color: var(--muted); }
-  .yn { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-  .olist { display: grid; max-height: 220px; overflow-y: auto; }
-  .count { margin: 0; font-size: var(--fs-xs); }
-  .btn.small { min-height: 44px; }
+  .mu { color: var(--muted); }
+  .small { font-size: var(--fs-xs); }
   .bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
   .bar .nm { flex: 1 1 140px; min-width: 0; }
   .msg { font-size: var(--fs-sm); color: var(--muted); }
@@ -564,12 +383,10 @@
   .plot { width: 100%; min-width: 0; }
   .plot :global(svg) { display: block; max-width: 100%; }
   .empty { margin: 0; padding: var(--s6) 0; text-align: center; color: var(--muted); }
-  .legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: var(--fs-xs); }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: 0; list-style: none; font-size: var(--fs-xs); }
   .legend li { display: inline-flex; align-items: center; gap: var(--s2); }
   .legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
-  .ramp { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-xs); max-width: 320px; }
-  .ramp i { flex: 1; height: 12px; border: 1px solid var(--rule); }
-  .totals { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--muted); }
+  .totals { font-size: var(--fs-sm); color: var(--muted); }
   .note { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
   .tblbox { display: grid; gap: var(--s2); justify-items: start; }
   .tw { max-width: 100%; overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--r-sm); }
@@ -582,13 +399,5 @@
   .tw .num { text-align: right; }
   @media (min-width: 1024px) {
     .bld { grid-template-columns: 320px minmax(0, 1fr); gap: var(--s5); align-items: start; }
-    .setbtn { display: none; }
-    .ctl .phone { display: none !important; }
-    .ctl { gap: var(--s3); }
-    .ctl label:not(.check), .lbl { line-height: normal; }
-    .ctl .types.desk { display: grid; }
-    .ctl .terms.desk { display: flex; }
-    .wd { grid-column: 1 / -1; }
-    .ctl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>

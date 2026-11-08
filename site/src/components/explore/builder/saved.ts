@@ -26,7 +26,7 @@ export function loadSaved(store: Store | null = defaultStore()): SavedChart[] {
     if (!Array.isArray(list)) return [];
     const out: SavedChart[] = [];
     for (const e of list) {
-      if (e && typeof e.name === 'string' && e.name.trim() && e.spec && typeof e.spec === 'object') out.push({ name: e.name.trim().slice(0, 60), spec: normalizeSpec(e.spec) });
+      if (e && typeof e.name === 'string' && e.name.trim() && e.spec && typeof e.spec === 'object' && Array.isArray(e.spec.lines)) out.push({ name: e.name.trim().slice(0, 60), spec: normalizeSpec(e.spec) });
     }
     return out.slice(0, MAX_SAVED);
   } catch {

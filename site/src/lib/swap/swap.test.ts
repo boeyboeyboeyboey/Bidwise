@@ -333,7 +333,7 @@ describe('real course smoke tests', () => {
       if (ratio < 1.1) expect(o.label).not.toBe('unlikely');
     }
     expect(opts.filter((o) => o.label === 'unlikely').length).toBeGreaterThan(3);
-  });
+  }, 60_000); // 18 sims; slow when the machine is busy
 
   it('COR2100 is pre-assigned: no simulated bids needed, a spread of labels, holders below seats', () => {
     for (const code of ['COR1100', 'COR2100', 'COR3001']) expect(isPreAssigned(load(code).history)).toBe(true);

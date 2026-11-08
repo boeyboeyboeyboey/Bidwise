@@ -1,0 +1,22 @@
+---
+import { eS, pct } from '../course/fmt';
+import { LATEST_FILLED_TEST as t } from '../../lib/data/accuracy';
+---
+{/* Same figures as the "Sections that filled" table on /method, latest test term. Static, so the styles are Astro's own. */}
+<p class="strip">
+  <span class="f"><b class="num">{pct(t.fCov)}</b> of real bids landed in our {pct(0.8)} range</span>
+  <span class="f">Average miss <b class="num">{eS(t.fMae)}</b> vs <b class="num">{eS(t.fBase)}</b> reusing last term</span>
+  <a class="go" href="/method#accuracy">How it works <span aria-hidden="true">›</span></a>
+</p>
+
+<style>
+  .strip {
+    display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--s2); row-gap: 0; margin: 0;
+    padding: var(--s1) 0; border-top: 1px solid var(--rule); font-size: var(--fs-sm); color: var(--muted);
+  }
+  .f b { font-weight: 600; color: var(--text); }
+  /* Each dot trails its own fact so it can never start a line. */
+  .f::after { content: ' ·'; }
+  .go { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  @media (min-width: 768px) { .f { white-space: nowrap; } }
+</style>

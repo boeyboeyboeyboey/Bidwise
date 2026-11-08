@@ -1,0 +1,36 @@
+---
+import Base from '../layouts/Base.astro';
+import { GITHUB_URL, LINKEDIN_URL, GITHUB_ICON, LINKEDIN_ICON, CONTACT_FORM_URL } from '../lib/links';
+
+const showGithub = GITHUB_URL !== 'https://github.com/';
+---
+<Base title="Contact · Bidwise">
+  <div class="wrap"><div class="panel contact">
+    <h1>Contact</h1>
+    {CONTACT_FORM_URL ? (
+      <div class="actions">
+        <a class="btn btn-primary" href={CONTACT_FORM_URL} target="_blank" rel="noopener">Request data removal</a>
+        <a class="btn" href={CONTACT_FORM_URL} target="_blank" rel="noopener">Send feedback</a>
+      </div>
+    ) : (
+      <p class="soon">Form coming soon · message whoever shared this site</p>
+    )}
+    {(LINKEDIN_URL || showGithub) && (
+      <div class="social">
+        {LINKEDIN_URL && (<a class="btn" href={LINKEDIN_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={LINKEDIN_ICON} /></svg>LinkedIn</a>)}
+        {showGithub && (<a class="btn" href={GITHUB_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={GITHUB_ICON} /></svg>Source code</a>)}
+      </div>
+    )}
+  </div></div>
+</Base>
+
+<style>
+  .wrap { flex: 1; display: grid; place-items: center; padding: var(--s5) 0; }
+  .contact { width: min(70ch, 100%); max-width: 70ch; padding: 32px; text-align: center; }
+  h1 { font-size: 30px; margin-bottom: var(--s5); }
+  .soon { font-size: 16px; line-height: 1.5; color: var(--muted); }
+  .actions { display: grid; gap: var(--s3); }
+  .social { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); margin-top: var(--s3); }
+  .social svg { width: 18px; height: 18px; fill: currentColor; flex: none; }
+  .btn { width: 100%; min-height: 52px; font-size: 16px; overflow-wrap: anywhere; }
+</style>

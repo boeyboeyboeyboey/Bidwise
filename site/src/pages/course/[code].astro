@@ -1,0 +1,32 @@
+---
+import Base from '../../layouts/Base.astro';
+import CourseView from '../../components/course/CourseView.svelte';
+import RecordView from '../../components/RecordView.svelte';
+import ResultsNotice from '../../components/ResultsNotice.svelte';
+import { dataMeta, getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../../lib/data';
+import { getCourse } from '../../lib/data/server';
+
+export function getStaticPaths() {
+  return getCourseIndex().map((c) => ({ params: { code: c.code } }));
+}
+
+const windowName = windowLabel(getWindow());
+const course = getCourse(Astro.params.code!)!;
+// Only this term's sections go into the page, without forecast parameters; history and parameters are fetched by the island.
+const sections = course.sectionsNow.map(({ forecast: _f, ...s }) => s);
+---
+<Base title={`${course.code} · Bidwise`} active="search">
+  <header>
+    <h1>{course.code}</h1>
+    <p>{course.title}</p>
+  </header>
+  <RecordView client:load code={course.code} />
+  <ResultsNotice partial={dataMeta.resultsPartial ?? null} />
+  <CourseView client:load code={course.code} title={course.title} sections={sections} {windowName} currentTerm={dataMeta.currentTerm} latestWindow={dataMeta.latestResultsWindow} resultsPartial={dataMeta.resultsPartial ?? null} openScanAt={dataMeta.seats?.openScanAt ?? null} prevScanAt={dataMeta.seats?.prevScanAt ?? null} forecastMeta={getForecastMeta()} />
+</Base>
+
+<style>
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); padding-bottom: var(--s3); }
+  h1 { font-size: 30px; font-weight: 600; }
+  p { margin: 0; color: var(--muted); font-size: 17px; }
+</style>

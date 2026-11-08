@@ -1,0 +1,23 @@
+---
+import Base from '../layouts/Base.astro';
+import Planner from '../components/planner/Planner.svelte';
+import { getForecastMeta, getWindow, windowLabel } from '../lib/data';
+import { getForecastHighlights } from '../lib/data/server';
+
+const fm = getForecastMeta();
+const hl = getForecastHighlights();
+const seen = new Set<string>();
+const hot = (hl?.mostContested ?? []).filter((h) => !seen.has(h.code) && seen.add(h.code)).slice(0, 8).map((h) => ({ code: h.code, cents: h.p50Cents }));
+const lowConfidence = fm.windows.filter((w) => fm.byWindow[w]?.confidence !== 'ok');
+---
+<Base title="Bid planner · Bidwise" active="planner">
+  <h1>Bid planner</h1>
+  <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot}>
+    <p slot="fallback" class="loading">Loading…</p>
+  </Planner>
+</Base>
+
+<style>
+  .loading { margin: 0; color: var(--muted); font-size: 15px; }
+  h1 { font-size: 30px; font-weight: 600; padding-bottom: var(--s4); }
+</style>

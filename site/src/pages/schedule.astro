@@ -1,0 +1,11 @@
+---
+import Base from '../layouts/Base.astro';
+import Schedule from '../components/home/Schedule.svelte';
+import { getWindow, getSchedule } from '../lib/data';
+
+const configured = getWindow();
+const entries = getSchedule();
+---
+<Base title="Schedule · Bidwise" active="schedule">
+  <Schedule client:load entries={entries} configured={configured} builtAt={Date.now()} />
+</Base>

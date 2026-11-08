@@ -1,0 +1,21 @@
+term,session,window,course_code,description,section,class_number,instructor,school,median_bid,min_bid,no_bids,vacancy,opening_vacancy,before_process_vacancy,after_process_vacancy,dice,enrolled,meeting_count,days,start_times,end_times,venues,start_date,end_date,schedule_instructors,has_tba_time,has_class_details
+2025-26 Term 2,Regular Academic Session,Round 1A Window 1,AAA101,Intro Alpha,G1,1001,"LEE, YUN",SOA,12.50,10.01,0,40,40,40,5,0,38,2,MON; THU,08:15; 15:30,11:30; 18:45,SOA Room 1; SOA Room 2,12-Jan-2026,19-Apr-2026,"LEE, YUN",0,1
+2025-26 Term 2,Regular Academic Session,Round 1A Window 2,AAA101,Intro Alpha,G1,1001,"LEE, YUN",SOA,,0.00,1,40,40,5,0,0,40,2,MON; THU,08:15; 15:30,11:30; 18:45,SOA Room 1; SOA Room 2,12-Jan-2026,19-Apr-2026,"LEE, YUN",0,1
+2025-26 Term 2,Regular Academic Session,Round 1 Window 1,AAA101,Intro Alpha,G1,1001,"LEE, YUN",SOA,3.00,1.00,0,40,40,40,30,0,10,2,MON; THU,08:15; 15:30,11:30; 18:45,SOA Room 1; SOA Room 2,12-Jan-2026,19-Apr-2026,"LEE, YUN",0,1
+2025-26 Term 2,Regular Academic Session,Round 1A Window 1,AAA101,Intro Alpha,G2,1002,"TAN, MEI",SOA,8.00,5.00,0,35,35,35,10,0,25,1,TUE,12:00,15:15,SOA Room 3,12-Jan-2026,19-Apr-2026,"TAN, MEI",0,1
+2026-27 Term 2,Regular Academic Session,Round 1 Window 1,AAA101,Intro Alpha,G1,2001,"LEE, YUN",SOA,,0.00,1,40,40,40,40,0,0,2,MON; THU,08:15; 15:30,11:30; 18:45,SOA Room 1; SOA Room 2,11-Jan-2027,18-Apr-2027,"LEE, YUN",0,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,AAA101,Intro Alpha II,G1,2001,"LEE, YUN",SOA,9.99,7.50,0,40,40,40,12,0,28,2,MON; THU,08:15; 15:30,11:30; 18:45,SOA Room 1; SOA Room 2,11-Jan-2027,18-Apr-2027,"LEE, YUN",0,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,AAA101,Intro Alpha II,G2,2002,"TAN, MEI",SOA,15.00,11.00,0,35,35,35,0,0,35,1,TUE,12:00,15:15,SOA Room 3,11-Jan-2027,18-Apr-2027,"TAN, MEI",0,1
+2025-26 Term 2,Regular Academic Session,Round 2 Window 1,BBB202,Beta Studies,G1,1101,,SOB,0.10,0.01,0,20,20,20,3,0,17,1,WED,09:00,12:15,SOB Hall,12-Jan-2026,19-Apr-2026,,0,1
+2025-26 Term 2,Regular Academic Session,Round 1A Window 3,BBB202,Beta Studies,G1,1101,,SOB,,0.00,1,20,20,20,20,0,0,1,WED,09:00,12:15,SOB Hall,12-Jan-2026,19-Apr-2026,,0,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,COR-XYZ1,Core Xyz,G1,2101,"KIM, SO",SOSS,,0.00,1,60,60,60,60,0,0,1,TBA,TBA,TBA,,11-Jan-2027,18-Apr-2027,"KIM, SO",1,1
+2026-27 Term 2,Regular Academic Session,Round 1 Window 1,COR-XYZ1,Core Xyz,G1,2101,"KIM, SO",SOSS,,0.00,1,60,60,60,60,0,0,1,TBA,TBA,TBA,,11-Jan-2027,18-Apr-2027,"KIM, SO",1,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,CCC303,Gamma Topics,G1,2201,"POH, AN",SCIS,,0.00,1,30,30,30,30,0,0,0,,,,,,,"POH, AN",0,0
+2022-23 Term 3A,Regular Academic Session,Round 1 Window 4,DDD404,Delta Lab,G1,301,"WONG, KAI",LKCSB,123.45,100.00,0,25,25,25,-1,0,25,3,MON; WED; FRI,08:15; 10:00; 14:00,09:45; 11:30; 15:30,LAB 1; LAB 1; LAB 2,16-May-2022,24-Jun-2022,"WONG, KAI",0,1
+2022-23 Term 1,Regular Academic Session,Incoming Freshmen Rnd 1 Win 1,DDD404,Delta Lab (old),G1,300,"WONG, KAI",LKCSB,50.00,40.00,0,25,25,25,2,0,23,1,MON,08:15,11:30,LAB 1,15-Aug-2022,20-Nov-2022,"WONG, KAI",0,1
+2022-23 Term 1,Regular Academic Session,Incoming Exchange Rnd 1C Win 3,DDD404,Delta Lab (old),G1,300,"WONG, KAI",LKCSB,,0.00,1,25,25,25,25,0,0,1,MON,08:15,11:30,LAB 1,15-Aug-2022,20-Nov-2022,"WONG, KAI",0,1
+2022-23 Term 1,Regular Academic Session,Round 2A Window 2,DDD404,Delta Lab (old),G2,302,"WONG, KAI",LKCSB,7.77,7.00,0,25,25,25,5,0,20,1,TUE,08:15,11:30,LAB 3,15-Aug-2022,20-Nov-2022,"WONG, KAI",0,1
+2022-23 Term 1,Regular Academic Session,Round 1B Window 2,EEE505,Epsilon,G1,401,"ONG, ZI",SOE,0.00,0.00,0,20,20,20,0,0,20,1,FRI,09:00,12:00,SOE 1,15-Aug-2022,20-Nov-2022,"ONG, ZI",0,1
+2022-23 Term 1,Regular Academic Session,Round 2 Window 4,EEE505,Epsilon,G1,401,"ONG, ZI",SOE,1.00,1.00,0,20,20,20,0,0,20,1,FRI,09:00,12:00,SOE 1,15-Aug-2022,20-Nov-2022,"ONG, ZI",0,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,EEE505,Epsilon,G1,2301,"ONG, ZI",SOE,2.00,1.50,0,20,20,20,4,0,16,1,FRI,09:00,12:00,SOE 1,11-Jan-2027,18-Apr-2027,"ONG, ZI",0,1
+2026-27 Term 2,Regular Academic Session,Round 1A Window 1,EEE505,Epsilon,G2,2302,"ONG, ZI",SOE,,0.00,1,20,20,20,20,0,0,1,FRI,13:00,16:00,SOE 2,11-Jan-2027,18-Apr-2027,"ONG, ZI",0,1

@@ -1,0 +1,29 @@
+---
+import Base from '../layouts/Base.astro';
+import Explore from '../components/explore/Explore.svelte';
+import ResultsNotice from '../components/ResultsNotice.svelte';
+import { dataMeta, getCourseIndex, getForecastMeta, windowLabel, getWindow } from '../lib/data';
+
+// Suggestion chips: offered-now courses with the most past terms.
+const popular = getCourseIndex()
+  .filter((c) => c.offeredNow)
+  .sort((a, b) => b.termsWithData - a.termsWithData || a.code.localeCompare(b.code))
+  .slice(0, 5)
+  .map((c) => ({ code: c.code, title: c.title }));
+---
+<Base title="Past bids · Bidwise" active="explore">
+  <ResultsNotice partial={dataMeta.resultsPartial ?? null} />
+  <Explore
+    client:only="svelte"
+    popular={popular}
+    windowTerm={dataMeta.currentTerm}
+    windowName={windowLabel(getWindow())}
+    forecastWindows={getForecastMeta().windows}
+  >
+    <p slot="fallback" class="empty" role="status">Loading chart…</p>
+  </Explore>
+</Base>
+
+<style>
+  .empty { margin: 0; text-align: center; color: var(--muted); padding: var(--s6) 0; }
+</style>

@@ -2,7 +2,7 @@
   import { fullText, seatsLeftNow } from '../../lib/data/seats';
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
-  import { pInAt, recommendBid, type SimResult } from '../../lib/sim';
+  import { recommendBid, type SimResult } from '../../lib/sim';
   import { MAX_FRIENDS_GROUP, TARGETS, clampGroup, effectiveWindow, isLowConfidence } from '../../lib/sim/forecast';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
   import type { ForecastCtx } from './forecast-ctx';
@@ -10,7 +10,7 @@
   import InfoTip from '../ui/InfoTip.svelte';
   import HistoryPanel from './HistoryPanel.svelte';
   import { simSection } from './sectionSim';
-  import { aboutPct, aboutPctParts, bidOrNone, eS, pct } from './fmt';
+  import { bidOrNone, eS, pct } from './fmt';
 
   let { section, history, failed = false, preferred = [], children }: {
     section: Section;
@@ -75,7 +75,6 @@
   // After a window or group change the previous result stays (dimmed, under its own window label) until the new one arrives.
   const stale = $derived(!!res && (res.win !== win || res.group !== group));
   const rec = $derived(sim ? recommendBid(sim, target) : 0);
-  const pIn = $derived(sim ? pInAt(sim, rec) : 0);
   const lowRel = $derived(!soldOut && isLowConfidence(ctx.meta.byWindow[win]));
 
   // null until the saved plan has been read in the browser, so the server-rendered button does not flip.
@@ -154,7 +153,7 @@
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
       <p class="headline num" aria-live="polite">
-        {#if res.group > 1}Bid <b>{eS(rec)}</b> each ({eS(rec * res.group)} total) <span class="arrow" aria-hidden="true">→</span> {aboutPct(pIn)} chance all {res.group} get seats{:else}Bid <b>{eS(rec)}</b> <span class="arrow" aria-hidden="true">→</span> {aboutPctParts(pIn)[0]}<b>{aboutPctParts(pIn)[1]}</b> chance of a seat{/if}
+        Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
       </p>
       <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
       {#if lowRel}<span class="tag">Low reliability</span>{/if}
@@ -268,8 +267,7 @@
   .upc { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .last { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .win { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
-  .arrow { color: var(--muted); margin: 0 2px; }
-  .stale .headline b, .stale .arrow, .stale .aimrow, .stale .sub { opacity: 0.5; }
+  .stale .headline b, .stale .aimrow, .stale .sub { opacity: 0.5; }
   .upd { font-weight: 600; color: var(--text); }
   .tabs { display: flex; gap: var(--s1); border-bottom: 1px solid var(--rule-strong); overflow-x: auto; max-width: 100%; min-width: 0; }
   .tabs button {

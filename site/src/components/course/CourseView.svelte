@@ -410,11 +410,11 @@
     .head { display: grid; grid-template-columns: var(--cols); column-gap: var(--s3); padding-right: 28px; line-height: 1.2; }
   }
   @media (min-width: 1024px) {
-    /* One screen: the section list and the detail panel scroll inside this height (page header, footer and padding taken off). */
+    /* One screen: the section list scrolls inside this height (fade cue); the detail panel flows with the page (page header, footer and padding taken off). */
     .cols { --avail: calc(100vh / var(--z) - var(--topbar-h) - 178px); grid-template-columns: minmax(480px, 1.2fr) minmax(360px, 1fr); align-items: start; gap: var(--s6); }
     .list { display: flex; flex-direction: column; max-height: var(--avail); }
     .list ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     .list ul.more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
-    .side { display: block; max-height: var(--avail); overflow-y: auto; }
+    .side { display: block; }
   }
 </style>

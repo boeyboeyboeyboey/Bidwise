@@ -1,6 +1,6 @@
 // Browse: courses with this term's sections, filters, term list per course and URL state. Pure and DOM-free, so it is unit tested (courses.test.ts).
 // Course status ("Biddable", "Completed/Enrolled") describes the scanning student and is never part of any of this.
-import { DAY_IDS, R, TIMES, bitsToIds, idsToBits, subjectOf, type ClassRow } from '../classes/logic';
+import { DAYS, DAY_IDS, R, TIMES, bitsToIds, idsToBits, subjectOf, type ClassRow } from '../classes/logic';
 
 export interface CourseEntry {
   code: string;
@@ -100,6 +100,19 @@ export function filterCourses(courses: readonly CourseEntry[], f: BrowseState): 
     return hits.map((h, i) => [h, i] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
   }
   return hits;
+}
+
+/** Instructors under a course title: the first `max`, then "+N more". */
+export function instructorLine(professors: readonly string[], max = 4): string {
+  const rest = professors.length - max;
+  return rest > 0 ? `${professors.slice(0, max).join(' · ')} · +${rest} more` : professors.join(' · ');
+}
+
+/** Day choices for the Day filter: the weekdays (Mon first) that some section meets on, so Saturday shows only when the data has it. Days already chosen in `selected` stay listed so a link's filter can always be cleared. */
+export function dayOptions(courses: readonly CourseEntry[], selected = 0): { bit: number; label: string }[] {
+  let seen = selected;
+  for (const c of courses) for (const r of c.sections) seen |= r[R.days];
+  return DAYS.map((label, i) => ({ bit: 1 << i, label })).filter((o) => seen & o.bit);
 }
 
 /** Subjects among the courses, sorted. */

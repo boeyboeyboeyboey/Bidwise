@@ -38,7 +38,8 @@
   --r-lg: 8px;
 
   --gutter: 16px;
-  --maxw: none;
+  /* Content column is 1120px wide; the gutter sits outside it so nav and pages share one edge. */
+  --maxw: calc(1120px + 2 * var(--gutter));
   --tabbar-h: 60px;
   --topbar-h: 56px;
 

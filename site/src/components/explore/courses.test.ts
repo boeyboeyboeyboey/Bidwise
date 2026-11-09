@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRows, R } from '../classes/logic';
 import {
-  activeFilterCount, browseDefaults, classesQueryToBrowse, decodeBrowse, encodeBrowse, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
+  activeFilterCount, browseDefaults, classesQueryToBrowse, dayOptions, decodeBrowse, instructorLine, encodeBrowse, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
   type BrowseState, type CourseEntry,
 } from './courses';
 
@@ -86,6 +86,26 @@ describe('filterCourses', () => {
   it('combines text, subject and section filters with AND', () => {
     expect(codes(f({ q: 'ann', sub: 'ECON', nofinal: true }))).toEqual(['ECON111']);
     expect(codes(f({ q: 'bob', nofinal: true }))).toEqual([]);
+  });
+});
+
+describe('instructorLine', () => {
+  it('lists up to four instructors, then counts the rest', () => {
+    expect(instructorLine([])).toBe('');
+    expect(instructorLine(['A', 'B', 'C', 'D'])).toBe('A · B · C · D');
+    expect(instructorLine(['A', 'B', 'C', 'D', 'E', 'F'])).toBe('A · B · C · D · +2 more');
+  });
+});
+
+describe('dayOptions', () => {
+  it('lists only the days with sections, Mon first, ignoring TBA', () => {
+    expect(dayOptions(courses).map((o) => o.label)).toEqual(['Mon', 'Tue', 'Thu', 'Fri']);
+    expect(dayOptions(courses).map((o) => o.bit)).toEqual([1, 2, 8, 16]);
+  });
+  it('adds Saturday only when a section has it, and keeps already chosen days', () => {
+    const sat = groupCourses(buildRows([{ code: 'X1', title: 'X', sectionsNow: [sec('G1', { meetings: [{ day: 'SAT', start: '09:00', end: '12:00' }] })] }]), []);
+    expect(dayOptions(sat).map((o) => o.label)).toEqual(['Sat']);
+    expect(dayOptions(courses, 1 << 2).map((o) => o.label)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
   });
 });
 

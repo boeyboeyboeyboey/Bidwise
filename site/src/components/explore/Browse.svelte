@@ -2,11 +2,12 @@
   import { onMount, tick } from 'svelte';
   import { APPROX_NOTE, scanTimeText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
-  import { DAYS, R, TIMES, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
+  import MultiSelect from '../ui/MultiSelect.svelte';
+  import { R, TIMES, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
   import { fmtBid, fmtSeats, fullWindow, pastSections, seatsTaken, type BrowseRow, type CourseTerms } from './browse';
   import { fetchCourseTerms, fetchManifest, fetchTerm } from './browseClient';
   import {
-    activeFilterCount, browseDefaults, decodeBrowse, encodeBrowse, groupCourses, filterCourses, sectionFilterOn, sectionMatches, shortTerm,
+    activeFilterCount, browseDefaults, dayOptions, decodeBrowse, encodeBrowse, groupCourses, filterCourses, instructorLine, sectionFilterOn, sectionMatches, shortTerm,
     subjectsOf, termChoices, type BrowseState, type CourseEntry,
   } from './courses';
 
@@ -22,6 +23,8 @@
   let ready = false;
 
   const subjects = $derived(subjectsOf(courses));
+  const dayChoices = $derived(dayOptions(courses, bs.days));
+  const timeChoices = TIMES.map((t) => ({ bit: t.bit, label: t.label }));
   const hits = $derived(filterCourses(courses, bs));
   const count = $derived(activeFilterCount(bs));
   const filtered = $derived(sectionFilterOn(bs));
@@ -234,40 +237,37 @@
   </div>
 {:else}
   <div class="cs">
-    <label class="sr" for="b-q">Search by course code, title or professor</label>
-    <input id="b-q" class="field" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"
-      placeholder="Code, title or professor" bind:value={bs.q} />
-
-    <button type="button" class="btn fbtn" aria-expanded={filtersOpen} aria-controls="b-filters" onclick={() => (filtersOpen = !filtersOpen)}>
-      Filters{count ? ` (${count})` : ''}
-    </button>
-    <div id="b-filters" class="filters" class:open={filtersOpen}>
-      <label class="g"><span>Subject</span>
-        <select value={bs.sub} onchange={(e) => (bs = { ...bs, sub: e.currentTarget.value })}>
-          <option value="">All subjects</option>
-          {#each subjects as s (s)}<option value={s}>{s}</option>{/each}
-        </select>
-      </label>
-      <div class="g dayg" role="group" aria-label="Day">
-        <span>Day</span>
-        <div class="days">
-          {#each DAYS as d, i (d)}
-            <button type="button" class="tog" aria-pressed={!!(bs.days & (1 << i))} onclick={() => (bs = { ...bs, days: toggleBit(bs.days, 1 << i) })}>{d}</button>
-          {/each}
+    <div class="card">
+      <div class="qrow">
+        <label class="sr" for="b-q">Search by course code, title or professor</label>
+        <div class="search">
+          <svg class="mag" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.7 12.7 17 17" /></svg>
+          <input id="b-q" class="field" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+            placeholder="Code, title or professor" bind:value={bs.q} />
+          {#if bs.q}
+            <button type="button" class="x" aria-label="Clear search" onclick={() => { bs = { ...bs, q: '' }; document.getElementById('b-q')?.focus(); }}>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" /></svg>
+            </button>
+          {/if}
         </div>
+        <button type="button" class="btn fbtn" aria-expanded={filtersOpen} aria-controls="b-filters" onclick={() => (filtersOpen = !filtersOpen)}>
+          Filters{count ? ` (${count})` : ''}
+        </button>
       </div>
-      <div class="g" role="group" aria-label="Time of day">
-        <span>Time</span>
-        <div class="times">
-          {#each TIMES as t (t.id)}
-            <button type="button" class="tog" aria-pressed={!!(bs.times & t.bit)} onclick={() => (bs = { ...bs, times: toggleBit(bs.times, t.bit) })}>{t.label}</button>
-          {/each}
+      <div id="b-filters" class="filters" class:open={filtersOpen}>
+        <label class="g sub"><span>Subject</span>
+          <select value={bs.sub} onchange={(e) => (bs = { ...bs, sub: e.currentTarget.value })}>
+            <option value="">All subjects</option>
+            {#each subjects as s (s)}<option value={s}>{s}</option>{/each}
+          </select>
+        </label>
+        <div class="g"><MultiSelect label="Day" options={dayChoices} value={bs.days} onchange={(m) => (bs = { ...bs, days: m })} anyLabel="Any day" noun="days" /></div>
+        <div class="g"><MultiSelect label="Time" options={timeChoices} value={bs.times} onchange={(m) => (bs = { ...bs, times: m })} anyLabel="Any time" noun="times" listMax={3} /></div>
+        <div class="checks">
+          <label class="chk"><input type="checkbox" checked={bs.seats} onchange={() => (bs = { ...bs, seats: !bs.seats })} /><span>Has seats left</span></label>
+          <label class="chk"><input type="checkbox" checked={bs.nofinal} onchange={() => (bs = { ...bs, nofinal: !bs.nofinal })} /><span>No final exam listed</span></label>
         </div>
-      </div>
-      <div class="g last">
-        <button type="button" class="tog wide" aria-pressed={bs.seats} onclick={() => (bs = { ...bs, seats: !bs.seats })}>Has seats left</button>
-        <button type="button" class="tog wide" aria-pressed={bs.nofinal} onclick={() => (bs = { ...bs, nofinal: !bs.nofinal })}>No final exam listed</button>
-        {#if count}<button type="button" class="btn" onclick={clear}>Clear filters</button>{/if}
+        {#if count}<button type="button" class="btn clearf" onclick={clear}>Clear filters</button>{/if}
       </div>
     </div>
 
@@ -282,9 +282,11 @@
           <li>
             <button type="button" class="row-link row" onclick={() => openCourse(h.course)}>
               <span class="code">{h.course.code}</span>
-              <span class="title">{h.course.title}</span>
+              <span class="main">
+                <span class="title">{h.course.title}</span>
+                {#if h.course.professors.length}<span class="prof">{instructorLine(h.course.professors)}</span>{/if}
+              </span>
               <span class="n" class:none={!h.course.sections.length}>{h.course.sections.length ? secLabel(h.sections.length, h.course.sections.length) : 'No sections this term'}</span>
-              <span class="prof">{h.course.professors.join(' · ')}</span>
             </button>
           </li>
         {/each}
@@ -304,20 +306,35 @@
   .meta, .empty, .note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .note { font-size: var(--fs-xs); }
   .link { font: inherit; color: var(--accent); background: none; border: 0; padding: 0 var(--s2); min-height: 44px; text-decoration: underline; cursor: pointer; }
-  .fbtn { justify-self: start; }
-  .filters { display: none; gap: var(--s3); padding: var(--s3); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); }
-  .filters.open { display: grid; }
-  .g { display: grid; gap: var(--s1); min-width: 0; }
+  .card { display: grid; gap: var(--s3); padding: var(--s3); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); }
+  .qrow { display: flex; gap: var(--s2); align-items: center; }
+  .search { position: relative; flex: 1 1 auto; min-width: 0; }
+  .search .field { padding-left: 40px; padding-right: 44px; background-color: var(--bg); }
+  .search .field::-webkit-search-cancel-button { display: none; }
+  .mag { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .x { position: absolute; right: 0; top: 0; width: 44px; height: 100%; display: grid; place-items: center; color: var(--muted); background: none; border: 0; cursor: pointer; border-radius: var(--r-md); }
+  .x:hover { color: var(--text); }
+  .fbtn { flex: none; padding: 0 var(--s3); }
+  .filters { display: none; flex-wrap: wrap; gap: var(--s3); align-items: flex-end; padding-top: var(--s3); border-top: 1px solid var(--rule); }
+  .filters.open { display: flex; }
+  .g { display: grid; gap: var(--s1); min-width: 0; flex: 1 1 calc(50% - var(--s3)); }
+  .g.sub { flex-basis: 100%; }
   .g > span { font-size: var(--fs-xs); color: var(--muted); }
   .g select { width: 100%; }
-  .days, .times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s1); }
-  .last { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .checks { display: flex; flex-wrap: wrap; gap: var(--s3); flex: 1 1 100%; }
+  .chk {
+    display: flex; align-items: center; gap: var(--s2); flex: 1 1 calc(50% - var(--s3)); min-height: 44px; padding: 0 var(--s3); font-size: var(--fs-sm); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md);
+  }
+  .chk:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .chk:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .chk input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+  .clearf { flex: none; }
   .tog {
     min-height: 44px; padding: 0 var(--s2); font: inherit; font-size: var(--fs-sm); color: var(--text); cursor: pointer;
     background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); white-space: nowrap;
   }
-  .tog.wide { padding: 0 var(--s4); white-space: normal; }
-  .tog[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .tog[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
   .list { border-top: 1px solid var(--rule); }
   .row { width: 100%; text-align: left; font: inherit; background: none; border: 0; border-bottom: 1px solid var(--rule); cursor: pointer;
@@ -325,10 +342,9 @@
   .row > * { min-width: 0; overflow-wrap: anywhere; }
   .code { font-weight: 600; }
   .row .code { grid-column: 1; }
-  .row .title { grid-column: 1 / -1; grid-row: 2; }
+  .row .main { grid-column: 1 / -1; grid-row: 2; display: grid; gap: 2px; }
   .row .n { grid-column: 2; grid-row: 1; font-size: var(--fs-sm); white-space: nowrap; }
-  .row .prof { grid-column: 1 / -1; grid-row: 3; font-size: var(--fs-sm); color: var(--muted); }
-  .row .prof:empty { display: none; }
+  .row .prof { font-size: var(--fs-sm); color: var(--muted); }
   .none { color: var(--muted); font-weight: 400; }
   .more { justify-self: stretch; }
 
@@ -378,19 +394,19 @@
   }
   @media (min-width: 768px) {
     .fbtn { display: none; }
-    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
-    .days { grid-template-columns: repeat(6, 56px); }
-    .dayg { grid-column: span 2; }
+    .filters { display: flex; }
+    .g { flex: 1 1 150px; }
+    .g.sub { flex: 1.3 1 200px; }
+    .checks { flex: 0 0 auto; flex-wrap: nowrap; }
+    .chk { flex: 0 0 auto; }
     .wt { font-size: var(--fs-sm); }
     .wt .n { width: 100px; }
   }
   @media (min-width: 1024px) {
-    .row { grid-template-columns: 130px minmax(0, 1.2fr) 170px minmax(0, 1fr); column-gap: var(--s4); align-items: center; }
+    .row { grid-template-columns: 130px minmax(0, 1fr) 170px; column-gap: var(--s4); align-items: center; }
     .row .code { grid-column: 1; }
-    .row .title { grid-column: 2; grid-row: 1; }
-    .row .n { grid-column: 3; grid-row: 1; }
-    .row .prof { grid-column: 4; grid-row: 1; }
-    .row .prof:empty { display: block; }
+    .row .main { grid-column: 2; grid-row: 1; }
+    .row .n { grid-column: 3; grid-row: 1; text-align: right; }
     .sec { grid-template-columns: 90px 260px minmax(0, 1fr) 100px; column-gap: var(--s4); align-items: center; }
     .s1 { display: contents; }
     .s1 b { grid-column: 1; }

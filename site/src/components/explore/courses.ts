@@ -1,5 +1,5 @@
 // Browse: courses with this term's sections, filters, term list per course and URL state. Pure and DOM-free, so it is unit tested (courses.test.ts).
-// Course status ("Biddable", "Completed/Enrolled") describes the scanning student and is never part of any of this.
+// Section-level data only, never anything about an individual student.
 import { DAYS, DAY_IDS, R, bitsToIds, idsToBits, subjectOf, type ClassRow } from '../classes/logic';
 
 export interface CourseEntry {

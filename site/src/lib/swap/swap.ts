@@ -1,7 +1,7 @@
 // Swap chance model (direct pairs only). Pure and deterministic: no randomness, no DOM.
 // A student holding section A of a course asks how likely a swap to section B of the same course is.
-// SMU publishes no swap outcomes, so nothing here is fitted to swaps. The two settings below (R, K) are the
-// owner's judgment of how hard swaps are, chosen so the median chance lands on the owner's anchors:
+// SMU publishes no swap outcomes, so nothing here is fitted to swaps. The two settings below (R, K) are a
+// judgment of how hard swaps are, chosen so the median chance lands on these target ranges:
 //   about as wanted 60-70%, less wanted 80-90%, more wanted 20-40%, much more wanted under 15%.
 // A band around them (R_BAND, K_BAND) gives the range shown in the tooltip; the label comes from the central chance.
 import type { CourseData, ForecastWindow, HistoryRow, PooledLevel, Section } from '../data/types';
@@ -24,7 +24,7 @@ export const PREASSIGNED_MIN_ROWS = 3;
 /**
  * r: share of holders who apply to swap at all (most keep the class they were assigned), centre and band.
  * k: how strongly a request follows desirability; d is a log bid, so a gap of 0.69 means the pricier section
- * is predicted to clear at double. Centre (R, K) is set so the median chance hits the owner's anchors for the
+ * is predicted to clear at double. Centre (R, K) is set so the median chance hits the target ranges for the
  * Δd bands below; the band (R_BAND, K_BAND) gives the low and high chance as the extremes of
  * r / R_BAND .. r * R_BAND and k / K_BAND .. k * K_BAND.
  */

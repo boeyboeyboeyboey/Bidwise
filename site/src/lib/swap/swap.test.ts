@@ -68,10 +68,10 @@ describe('swapChance', () => {
   });
 });
 
-describe('calibration to the owner anchors (45 v 45 seats)', () => {
+describe('calibration to the target ranges (45 v 45 seats)', () => {
   const at = (d: number) => swapResult(45, 45, 0, d);
   // Δd bands, from the pairwise within-course gaps in |d| over the 163 multi-section courses (median 0.10, 75th percentile 0.28):
-  // about the same |Δd| <= 0.03; cheaper -0.25..-0.12; pricier 0.15..0.25; much pricier >= 0.40. Tolerance 3 points outside the owner's ranges.
+  // about the same |Δd| <= 0.03; cheaper -0.25..-0.12; pricier 0.15..0.25; much pricier >= 0.40. Tolerance 3 points outside the target ranges.
   it('about the same: 60-70%', () => {
     for (const d of [-0.03, 0, 0.03]) expect(at(d).chance).toBeGreaterThanOrEqual(0.57);
     for (const d of [-0.03, 0, 0.03]) expect(at(d).chance).toBeLessThanOrEqual(0.73);
@@ -109,7 +109,7 @@ describe('calibration to the owner anchors (45 v 45 seats)', () => {
     expect(at(0).high - at(0).low).toBeGreaterThan(0.08);
     expect(at(0).high - at(0).low).toBeLessThan(0.25);
   });
-  it('uses the owner-set centre', () => {
+  it('uses the chosen centre', () => {
     expect([R, K]).toEqual([0.1, 5.5]);
   });
   it('request probability is symmetric around equal desirability and capped by r', () => {

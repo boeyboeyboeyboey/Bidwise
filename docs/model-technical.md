@@ -192,7 +192,7 @@ using $E[\min(m,Y)]=\sum_{j=1}^m\Pr(Y\ge j)$, exact in $O(n_A+n_B)$. Cycles thro
 
 **Band and label** (`swapResult`, `swap.ts:165-170`). Evaluate at the centre $(r,k)=(0.1,5.5)$ and the four corners $r\in\{r/1.5,\,1.5r\}$, $k\in\{k/1.25,\,1.25k\}$ (`R_BAND=1.5`, `K_BAND=1.25`); low and high are the min and max. The label comes from the central chance only: likely if $\ge0.75$, unlikely if $<0.4$, else possible (`swap.ts:35-38, 160-162`); unknown if either side has no seats.
 
-**The anchors are judgment, not fitted** (`swap.ts:1-6`). SMU publishes no swap outcomes. $r$ and $k$ were set so the central chance lands on the owner's targets: about 60 to 70% when equally wanted, 80 to 90% when the other section is less wanted, 20 to 40% when more wanted, under 15% when much more wanted. I re-implemented `swapChance` in Python to check this for $n_A=n_B=45$, with $\Delta d=d_B-d_A$:
+**The anchors are judgment, not fitted** (`swap.ts:1-6`). SMU publishes no swap outcomes. $r$ and $k$ were set so the central chance lands on chosen target ranges: about 60 to 70% when equally wanted, 80 to 90% when the other section is less wanted, 20 to 40% when more wanted, under 15% when much more wanted. I re-implemented `swapChance` in Python to check this for $n_A=n_B=45$, with $\Delta d=d_B-d_A$:
 
 | $\Delta d$ | $-0.25$ | $-0.10$ | $0$ | $+0.20$ | $+0.40$ |
 |---|---|---|---|---|---|

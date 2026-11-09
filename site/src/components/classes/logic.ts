@@ -1,5 +1,5 @@
 // This term's section rows for Browse (built at build time) with their day, time and seat helpers. Pure, so it is unit tested (logic.test.ts).
-// Course status ("Biddable", "Completed/Enrolled") describes the scanning student and is never part of a row.
+// Rows hold section-level data only, never anything about an individual student.
 import { formatSlot } from '../../lib/format/slot';
 import { formatExam, type ExamSlot } from '../../lib/format/exam';
 import { seatsOf, type SeatInput } from '../../lib/data/seats';

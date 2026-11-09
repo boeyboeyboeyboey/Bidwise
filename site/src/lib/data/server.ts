@@ -32,7 +32,7 @@ export function getForecastHighlights(): (ForecastHighlights & WindowHighlights)
   return { ...h, ...(h.byWindow[h.window] ?? { mostContested: [], easy: [] }) };
 }
 
-/** Sections whose available seats grew most since the window opened (live scans only), for the home page. */
+/** Sections whose available seats grew most since the window opened (sections with live seat data only), for the home page. */
 export function getFreedSeats(limit = 8): FreedRow[] {
   const items = getCourseIndex()
     .filter((c) => c.offeredNow)

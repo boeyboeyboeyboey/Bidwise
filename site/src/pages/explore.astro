@@ -4,10 +4,10 @@ import Explore from '../components/explore/Explore.svelte';
 import ResultsNotice from '../components/ResultsNotice.svelte';
 import { dataMeta } from '../lib/data';
 ---
-<Base title="Past bids · Bidwise" active="explore">
+<Base title="Browse · Bidwise" active="explore">
   <ResultsNotice partial={dataMeta.resultsPartial ?? null} />
   <Explore client:only="svelte">
-    <p slot="fallback" class="empty" role="status">Loading chart…</p>
+    <p slot="fallback" class="empty" role="status">Loading…</p>
   </Explore>
 </Base>
 

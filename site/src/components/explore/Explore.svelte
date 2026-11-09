@@ -1,18 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CourseIndexEntry } from '../../lib/data/types';
-  import { fetchIndex } from '../../lib/data/client';
   import Browse from './Browse.svelte';
-  import { browseDefaults, decodeBrowse, encodeBrowse, type BrowseState } from './browse';
+  import { exploreMode } from './courses';
 
-  /** Build a chart is the default (and what old Compare links open); Browse all sections is `v=browse`. */
-  type Mode = 'build' | 'browse';
-  const MODES: Mode[] = ['build', 'browse'];
-  const MODE_LABEL: Record<Mode, string> = { build: 'Build a chart', browse: 'Browse all sections' };
+  /** Browse is the default (and what old Browse and Classes links open); Build a chart is `v=build`. */
+  type Mode = 'browse' | 'build';
+  const MODES: Mode[] = ['browse', 'build'];
+  const MODE_LABEL: Record<Mode, string> = { browse: 'Browse', build: 'Build a chart' };
 
-  let mode = $state<Mode>('build');
-  let bs = $state<BrowseState>(browseDefaults());
-  let index = $state<CourseIndexEntry[]>([]);
+  let mode = $state<Mode>('browse');
   let ready = $state(false);
   // The builder (query engine, Plot setup, controls) is fetched only when its tab is first opened.
   let BuilderView = $state.raw<typeof import('./Builder.svelte').default | null>(null);
@@ -21,20 +17,12 @@
   });
 
   onMount(() => {
-    fetchIndex().then((i) => (index = i), () => {});
-    mode = new URLSearchParams(location.search).get('v') === 'browse' ? 'browse' : 'build';
-    bs = decodeBrowse(location.search);
+    mode = exploreMode(location.search);
     ready = true;
-  });
-
-  // URL sync for Browse; the Build tab keeps its own address.
-  $effect(() => {
-    if (!ready || mode !== 'browse') return;
-    history.replaceState(null, '', `?${encodeBrowse(bs)}`);
   });
 </script>
 
-<h1>Past bids</h1>
+<h1>{mode === 'browse' ? 'Browse courses' : 'Past bids'}</h1>
 {#if ready}
   <div class="modes seg" role="group" aria-label="View">
     {#each MODES as m}
@@ -42,10 +30,12 @@
     {/each}
   </div>
 
-  {#if mode === 'build'}
-    {#if BuilderView}<BuilderView />{:else}<p class="empty" role="status">Loading…</p>{/if}
+  {#if mode === 'browse'}
+    <Browse />
+  {:else if BuilderView}
+    <BuilderView />
   {:else}
-    <Browse bind:bs {index} />
+    <p class="empty" role="status">Loading…</p>
   {/if}
 {/if}
 

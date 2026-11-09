@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  browseDefaults, decodeBrowse, decodeShard, encodeBrowse, filterRows, fmtBid, fmtSeats, fmtSeatsLeft, fullWindow, PAGE_SIZE, groupRows, nameMatches, pageOf, sortGroups, sortRows, termsToLoad,
-  type BrowseManifest, type BrowseRow, type BrowseShard, type CourseInfo,
+  courseTerms, decodeShard, fmtBid, fmtSeats, fullWindow, groupRows, pastSections, seatsTaken,
+  type BrowseManifest, type BrowseRow, type BrowseShard,
 } from './browse';
 
 const man: BrowseManifest = {
@@ -15,11 +15,6 @@ const man: BrowseManifest = {
     { term: '2026-27 Term 2', file: 'browse/2026-27-term-2.json', rows: 4 },
   ],
 };
-const courses = new Map<string, CourseInfo>([
-  ['ACCT101', { title: 'Financial Accounting', school: 'SOA' }],
-  ['COR1100', { title: 'Writing and Reasoning', school: 'CORE' }],
-  ['LAW201', { title: 'Contract Law', school: 'YPHSL' }],
-]);
 const shard: BrowseShard = {
   term: '2026-27 Term 2',
   rows: [
@@ -30,7 +25,6 @@ const shard: BrowseShard = {
   ],
 };
 const rows = decodeShard(man, shard);
-const codes = (rs: BrowseRow[]) => rs.map((r) => `${r.code}/${r.window}/${r.section}`);
 
 describe('decodeShard', () => {
   it('resolves lookups, null values and the term', () => {
@@ -65,89 +59,6 @@ describe('decodeShard', () => {
   });
 });
 
-describe('filterRows', () => {
-  const f = { school: '', window: '', instructor: '', q: '', filled: false };
-  it('is a no-op with blank filters', () => expect(filterRows(rows, f, courses)).toHaveLength(4));
-  it('filters by school, window, filled', () => {
-    expect(filterRows(rows, { ...f, school: 'SOA' }, courses)).toHaveLength(2);
-    expect(filterRows(rows, { ...f, window: 'Round 1 Window 1' }, courses)).toHaveLength(2);
-    expect(filterRows(rows, { ...f, filled: true }, courses).every((r) => r.filled)).toBe(true);
-  });
-  it('matches instructor as a case-insensitive substring, including shared sections', () => {
-    expect(filterRows(rows, { ...f, instructor: 'ann lee' }, courses)).toHaveLength(3);
-    expect(filterRows(rows, { ...f, instructor: 'bob' }, courses)).toHaveLength(1);
-  });
-  it('matches instructor words in any order, ignoring commas', () => {
-    expect(nameMatches('LEE, YUN', 'lee yun')).toBe(true);
-    expect(nameMatches('LEE, YUN', 'yun, lee')).toBe(true);
-    expect(nameMatches('BOB TAN, ANN LEE', 'ann bob')).toBe(true);
-    expect(nameMatches('LEE, YUN', 'lee kim')).toBe(false);
-    expect(filterRows(rows, { ...f, instructor: 'lee ann' }, courses)).toHaveLength(3);
-  });
-  it('matches instructor tokens at word starts only', () => {
-    expect(nameMatches('STAN LOW', 'tan')).toBe(false);
-    expect(nameMatches('BOB TAN', 'tan')).toBe(true);
-    expect(nameMatches('BOB TAN', 'ta')).toBe(true);
-    expect(nameMatches('MC-DONALD, P.', 'donald p')).toBe(true);
-    expect(filterRows(rows, { ...f, instructor: 'nn' }, courses)).toEqual([]);
-  });
-  it('searches course code (punctuation-insensitive) and title', () => {
-    expect(filterRows(rows, { ...f, q: 'cor 1100' }, courses).map((r) => r.code)).toEqual(['COR1100']);
-    expect(filterRows(rows, { ...f, q: 'contract' }, courses).map((r) => r.code)).toEqual(['LAW201']);
-  });
-  it('combines filters with AND', () => {
-    const out = filterRows(rows, { school: 'SOA', window: 'Round 1 Window 1', instructor: 'ann', q: 'acct', filled: true }, courses);
-    expect(codes(out)).toEqual(['ACCT101/Round 1 Window 1/G1']);
-    expect(filterRows(rows, { ...f, school: 'SOA', filled: true, window: 'Round 1B Window 1' }, courses)).toEqual([]);
-  });
-});
-
-describe('sortRows', () => {
-  it('sorts sections naturally (G2 before G10)', () => {
-    const acct = rows.filter((r) => r.code === 'ACCT101');
-    expect(sortRows(acct, 'section', 'asc').map((r) => r.section)).toEqual(['G1', 'G10']);
-    expect(sortRows(acct, 'section', 'desc').map((r) => r.section)).toEqual(['G10', 'G1']);
-  });
-  it('puts null bids last in both directions', () => {
-    for (const dir of ['asc', 'desc'] as const) {
-      const out = sortRows(rows, 'median', dir);
-      expect(out.at(-1)?.medianCents).toBeNull();
-      expect(out.filter((r) => r.medianCents !== null).map((r) => r.medianCents)).toEqual(dir === 'asc' ? [0, 300, 1250] : [1250, 300, 0]);
-    }
-  });
-  it('puts missing instructors last', () => {
-    expect(sortRows(rows, 'instructor', 'asc').at(-1)?.instructor).toBeNull();
-    expect(sortRows(rows, 'instructor', 'desc').at(-1)?.instructor).toBeNull();
-  });
-  it('is stable: equal keys keep input order, in both directions', () => {
-    expect(codes(sortRows(rows, 'filled', 'asc'))).toEqual(codes([rows[2], rows[3], rows[0], rows[1]]));
-    expect(codes(sortRows(rows, 'filled', 'desc'))).toEqual(codes([rows[0], rows[1], rows[2], rows[3]]));
-    expect(sortRows(rows, 'course', 'desc').slice(-2).map((r) => r.code)).toEqual(['ACCT101', 'ACCT101']);
-    expect(codes(sortRows(rows, 'course', 'asc')).slice(0, 2)).toEqual(codes([rows[0], rows[1]]));
-  });
-  it('orders windows chronologically, not alphabetically', () => {
-    expect(sortRows(rows, 'window', 'asc').map((r) => r.window)).toEqual([
-      'Round 1 Window 1', 'Round 1 Window 1', 'Round 1A Window 2', 'Round 1B Window 1',
-    ]);
-  });
-  it('sorts by seats left, and does not change its input', () => {
-    const before = codes(rows);
-    expect(sortRows(rows, 'seats', 'desc')[0].after).toBe(12);
-    expect(codes(rows)).toEqual(before);
-  });
-});
-
-describe('pageOf', () => {
-  const xs = Array.from({ length: PAGE_SIZE * 2 + 4 }, (_, i) => i);
-  it('slices and clamps', () => {
-    expect(pageOf(xs, 0).rows).toHaveLength(PAGE_SIZE);
-    expect(pageOf(xs, 2)).toMatchObject({ page: 2, pages: 3 });
-    expect(pageOf(xs, 2).rows).toHaveLength(4);
-    expect(pageOf(xs, 9).page).toBe(2);
-    expect(pageOf([], 3)).toEqual({ rows: [], page: 0, pages: 1 });
-  });
-});
-
 describe('fmtBid', () => {
   it('shows cents as e$ with 2 decimals and a dash for null', () => {
     expect([fmtBid(1250), fmtBid(5), fmtBid(0), fmtBid(null)]).toEqual(['12.50', '0.05', '0.00', '–']);
@@ -178,32 +89,6 @@ describe('groupRows', () => {
     expect(g.head.window).toBe('Round 2 Window 1');
     expect(g.others).toHaveLength(1);
   });
-  it('sorts groups by their shown row', () => {
-    const g = groupRows([row('Round 1 Window 1', 900, 'G1'), row('Round 1 Window 1', 100, 'G2')]);
-    expect(sortGroups(g, 'median', 'asc').map((x) => x.head.section)).toEqual(['G2', 'G1']);
-  });
-});
-
-describe('termsToLoad', () => {
-  it('defaults to the latest term, loads all newest first, or the one asked for', () => {
-    expect(termsToLoad(man, '')).toEqual(['2026-27 Term 2']);
-    expect(termsToLoad(man, 'all')).toEqual(['2026-27 Term 2', '2025-26 Term 2']);
-    expect(termsToLoad(man, '2025-26 Term 2')).toEqual(['2025-26 Term 2']);
-    expect(termsToLoad(man, '1999-00 Term 1')).toEqual([]);
-  });
-});
-
-describe('url state', () => {
-  it('round-trips browse state', () => {
-    const st = { ...browseDefaults(), school: 'SOA', term: 'all', instructor: 'ann lee', filled: true, sort: 'median' as const, dir: 'desc' as const, page: 3 };
-    expect(decodeBrowse(encodeBrowse(st))).toEqual(st);
-    expect(decodeBrowse('')).toEqual(browseDefaults());
-    expect(decodeBrowse('bo=nonsense&bp=-4').sort).toBe('course');
-    expect(decodeBrowse('bo=nonsense&bp=-4').page).toBe(0);
-  });
-  it('names its mode in the address: v=browse', () => {
-    expect(encodeBrowse(browseDefaults())).toBe('v=browse');
-  });
 });
 
 describe('fullWindow', () => {
@@ -213,9 +98,41 @@ describe('fullWindow', () => {
   });
 });
 
-describe('fmtSeatsLeft', () => {
-  it('uses seat or seats and names the start count', () => {
-    expect([fmtSeatsLeft(2, 30), fmtSeatsLeft(1, 30), fmtSeatsLeft(0, 30), fmtSeatsLeft(5, null), fmtSeatsLeft(null, 30)])
-      .toEqual(['2 seats left of 30 at start', '1 seat left of 30 at start', '0 seats left of 30 at start', '5 seats left', '–']);
+describe('pastSections', () => {
+  const row = (code: string, section: string, window: string, over: Partial<BrowseRow> = {}): BrowseRow => ({
+    code, term: '2025-26 Term 2', window, section, instructor: 'ANN LEE', slot: 'Mon 09:00–12:15', medianCents: 500, minCents: 400, vacancy: 40, before: 30, after: 10, filled: false, ...over,
+  });
+  it('lists one entry per section, naturally ordered, with windows in the order BOSS runs them', () => {
+    const list = pastSections([
+      row('IS214', 'G10', 'Round 1 Window 1'),
+      row('IS214', 'G2', 'Round 1B Window 1'),
+      row('IS214', 'G2', 'Round 1 Window 1'),
+      row('IS214', 'G2', 'Round 1A Window 2', { medianCents: null, minCents: null }),
+      row('ACCT101', 'G1', 'Round 1 Window 1'),
+    ], 'IS214');
+    expect(list.map((s) => s.section)).toEqual(['G2', 'G10']);
+    expect(list[0].windows.map((w) => w.window)).toEqual(['Round 1 Window 1', 'Round 1A Window 2', 'Round 1B Window 1']);
+    expect(list[0].instructor).toBe('ANN LEE');
+  });
+  it('is empty for a course with no rows', () => {
+    expect(pastSections([row('ACCT101', 'G1', 'Round 1 Window 1')], 'IS214')).toEqual([]);
+  });
+});
+
+describe('seatsTaken', () => {
+  it('is seats offered minus seats left, never below 0, and null when unknown', () => {
+    expect([seatsTaken({ before: 30, after: 10 }), seatsTaken({ before: 5, after: 9 }), seatsTaken({ before: null, after: 1 }), seatsTaken({ before: 4, after: null })]).toEqual([20, 0, null, null]);
+  });
+});
+
+describe('courseTerms', () => {
+  it('lists the terms that have rows for each course, as positions in the manifest order', () => {
+    const shards: BrowseShard[] = [
+      { term: '2026-27 Term 2', rows: [[0, 0, 0, 0, null, null, 1, 1, 0, 1], [1, 0, 0, 0, null, null, 1, 1, 0, 1]] },
+      { term: '2025-26 Term 2', rows: [[1, 0, 0, 0, null, null, 1, 1, 0, 1], [1, 1, 0, 0, null, null, 1, 1, 0, 1]] },
+    ];
+    const r = courseTerms(man, shards);
+    expect(r.terms).toEqual(['2025-26 Term 2', '2026-27 Term 2']);
+    expect(r.by).toEqual({ ACCT101: [1], COR1100: [0, 1] });
   });
 });

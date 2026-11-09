@@ -1,4 +1,4 @@
-// Class search: row building (build time) and filter / sort / URL state (browser). Pure, so it is unit tested (logic.test.ts).
+// This term's section rows for Browse (built at build time) with their day, time and seat helpers. Pure, so it is unit tested (logic.test.ts).
 // Course status ("Biddable", "Completed/Enrolled") describes the scanning student and is never part of a row.
 import { formatSlot } from '../../lib/format/slot';
 import { formatExam, type ExamSlot } from '../../lib/format/exam';
@@ -16,6 +16,8 @@ export interface ClassesPayload {
   /** ISO time of the newest live seat scan, or null. */
   scannedAt: string | null;
   rows: ClassRow[];
+  /** The current term, e.g. "2026-27 Term 2". */
+  term: string;
 }
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -65,54 +67,6 @@ export function buildRows(courses: readonly CourseLike[]): ClassRow[] {
   return rows.sort((a, b) => a[R.code].localeCompare(b[R.code]) || sectionCmp(a[R.section], b[R.section]));
 }
 
-export type SortKey = 'code' | 'seats';
-export type ExamFilter = 'any' | 'has' | 'none';
-
-export interface Filters {
-  q: string;
-  /** Code prefix such as "ECON" or "COR-LAW"; '' for all. */
-  subject: string;
-  /** Day mask (bit 0 = Mon); 0 for any day. */
-  days: number;
-  /** Time-of-day mask (TIMES bits); 0 for any time. */
-  times: number;
-  hasSeats: boolean;
-  /** Final exam: any section, only those with an exam listed, or only those without. */
-  exam: ExamFilter;
-  sort: SortKey;
-}
-
-export const NO_FILTERS: Filters = { q: '', subject: '', days: 0, times: 0, hasSeats: false, exam: 'any', sort: 'code' };
-
-const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-
-/** Every word must appear in the code, title or professor. "econ 111" and "econ111" both find ECON111. */
-export function matchesQuery(r: ClassRow, q: string): boolean {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
-  const hay = `${r[R.code]} ${r[R.title]} ${r[R.instructor]}`.toLowerCase();
-  const hayFlat = flat(hay);
-  return words.every((w) => hay.includes(w) || (flat(w) !== '' && hayFlat.includes(flat(w))));
-}
-
-export function filterRows(rows: readonly ClassRow[], f: Filters): ClassRow[] {
-  const out = rows.filter((r) =>
-    (!f.subject || subjectOf(r[R.code]) === f.subject) &&
-    (!f.days || (r[R.days] & f.days) !== 0) &&
-    (!f.times || (r[R.times] & f.times) !== 0) &&
-    (!f.hasSeats || r[R.left] > 0) &&
-    (f.exam === 'any' || (f.exam === 'has') === (r[R.exam] !== '')) &&
-    matchesQuery(r, f.q));
-  // Array.prototype.sort is stable, so the seat sort keeps code order inside equal seat counts.
-  if (f.sort === 'seats') out.sort((a, b) => b[R.left] - a[R.left]);
-  return out;
-}
-
-/** Subjects present in the rows, sorted. */
-export function subjectsOf(rows: readonly ClassRow[]): string[] {
-  return [...new Set(rows.map((r) => subjectOf(r[R.code])))].sort();
-}
-
 /** Short seat text: "12 left", "Full", "~3 left" (estimate), "Likely full". */
 export function seatText(r: ClassRow): string {
   const approx = r[R.approx] === 1;
@@ -120,39 +74,8 @@ export function seatText(r: ClassRow): string {
   return `${approx ? '~' : ''}${r[R.left]} left`;
 }
 
-const bitsToIds = (mask: number, ids: readonly { id: string; bit: number }[]) => ids.filter((x) => mask & x.bit).map((x) => x.id).join(',');
-const idsToBits = (s: string | null, ids: readonly { id: string; bit: number }[]) =>
+export const bitsToIds = (mask: number, ids: readonly { id: string; bit: number }[]) => ids.filter((x) => mask & x.bit).map((x) => x.id).join(',');
+export const idsToBits = (s: string | null, ids: readonly { id: string; bit: number }[]) =>
   (s ?? '').split(',').reduce((m, p) => m | (ids.find((x) => x.id === p.trim().toLowerCase())?.bit ?? 0), 0);
 
-const DAY_IDS = DAYS.map((d, i) => ({ id: d.toLowerCase(), bit: 1 << i }));
-
-/** Filters as a query string without the leading "?"; defaults are left out. */
-export function filtersToQuery(f: Filters): string {
-  const p = new URLSearchParams();
-  if (f.q.trim()) p.set('q', f.q.trim());
-  if (f.subject) p.set('sub', f.subject);
-  if (f.days) p.set('day', bitsToIds(f.days, DAY_IDS));
-  if (f.times) p.set('time', bitsToIds(f.times, TIMES));
-  if (f.hasSeats) p.set('seats', '1');
-  if (f.exam !== 'any') p.set('exam', f.exam);
-  if (f.sort !== 'code') p.set('sort', f.sort);
-  return p.toString().replace(/%2C/g, ',');
-}
-
-export function filtersFromQuery(search: string): Filters {
-  const p = new URLSearchParams(search);
-  return {
-    q: p.get('q') ?? '',
-    subject: p.get('sub') ?? '',
-    days: idsToBits(p.get('day'), DAY_IDS),
-    times: idsToBits(p.get('time'), TIMES),
-    hasSeats: p.get('seats') === '1',
-    exam: p.get('exam') === 'has' || p.get('exam') === 'none' ? (p.get('exam') as ExamFilter) : 'any',
-    sort: p.get('sort') === 'seats' ? 'seats' : 'code',
-  };
-}
-
-/** Number of non-default filters, for the Filters button (search text and sort not counted). */
-export function activeFilterCount(f: Filters): number {
-  return (f.subject ? 1 : 0) + (f.days ? 1 : 0) + (f.times ? 1 : 0) + (f.hasSeats ? 1 : 0) + (f.exam !== 'any' ? 1 : 0);
-}
+export const DAY_IDS = DAYS.map((d, i) => ({ id: d.toLowerCase(), bit: 1 << i }));

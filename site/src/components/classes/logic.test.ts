@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeFilterCount, buildRows, filterRows, filtersFromQuery, filtersToQuery, NO_FILTERS, R, seatText, subjectOf, subjectsOf, type ClassRow } from './logic';
+import { buildRows, R, seatText, subjectOf, type ClassRow } from './logic';
 
 const sec = (section: string, over: Record<string, unknown> = {}) => ({
   section, instructor: 'ANN LEE', seatsLeft: 3, seatsTotal: 40,
@@ -31,53 +31,10 @@ describe('buildRows', () => {
   });
 });
 
-describe('filterRows', () => {
-  const f = (o: Partial<typeof NO_FILTERS>) => codes(filterRows(rows, { ...NO_FILTERS, ...o }));
-  it('searches code, title and professor, with or without separators', () => {
-    expect(f({ q: 'econ 111' })).toEqual(['ECON111 G2', 'ECON111 G10']);
-    expect(f({ q: 'econ111' })).toHaveLength(2);
-    expect(f({ q: 'bob' })).toEqual(['COR-LAW2243 G1']);
-    expect(f({ q: 'business law' })).toEqual(['COR-LAW2243 G1']);
-    expect(f({ q: 'zzz' })).toEqual([]);
-  });
-  it('filters by subject prefix', () => {
+describe('subjectOf', () => {
+  it('takes the letters and any hyphenated prefix before the number', () => {
     expect(subjectOf('COR-LAW2243')).toBe('COR-LAW');
-    expect(f({ subject: 'COR-LAW' })).toEqual(['COR-LAW2243 G1']);
-    expect(subjectsOf(rows)).toEqual(['ACCT', 'COR-LAW', 'ECON']);
-  });
-  it('filters by day (any selected) and time of day', () => {
-    expect(f({ days: 0b00010 })).toEqual(['COR-LAW2243 G1']);
-    expect(f({ days: 0b10000 | 0b01000 })).toEqual(['COR-LAW2243 G1', 'ECON111 G2']);
-    expect(f({ times: 4 })).toEqual(['COR-LAW2243 G1']);
-    expect(f({ times: 1 })).toEqual(['COR-LAW2243 G1', 'ECON111 G10']);
-  });
-  it('has seats left drops full sections', () => {
-    expect(f({ hasSeats: true })).not.toContain('ECON111 G2');
-  });
-  it('final exam filter: any, has exam, no exam listed', () => {
-    expect(f({ exam: 'any' })).toHaveLength(4);
-    expect(f({ exam: 'has' })).toEqual(['COR-LAW2243 G1', 'ECON111 G2']);
-    expect(f({ exam: 'none' })).toEqual(['ACCT101 G1', 'ECON111 G10']);
-    expect(f({ exam: 'has', hasSeats: true })).toEqual(['COR-LAW2243 G1']);
-  });
-  it('sorts by seats left, ties in code order', () => {
-    expect(f({ sort: 'seats' })).toEqual(['COR-LAW2243 G1', 'ACCT101 G1', 'ECON111 G10', 'ECON111 G2']);
-  });
-});
-
-describe('URL state', () => {
-  it('round-trips and omits defaults', () => {
-    const s = { q: 'law', subject: 'COR-LAW', days: 0b00101, times: 0b101, hasSeats: true, exam: 'none' as const, sort: 'seats' as const };
-    expect(filtersFromQuery(filtersToQuery(s))).toEqual(s);
-    expect(filtersToQuery(NO_FILTERS)).toBe('');
-  });
-  it('writes the exam filter as exam=has or exam=none', () => {
-    expect(filtersToQuery({ ...NO_FILTERS, exam: 'has' })).toBe('exam=has');
-    expect(filtersFromQuery('?exam=none').exam).toBe('none');
-    expect(activeFilterCount({ ...NO_FILTERS, exam: 'has' })).toBe(1);
-  });
-  it('ignores junk', () => {
-    expect(filtersFromQuery('?day=xyz&time=q&sort=bad&seats=0&exam=maybe')).toEqual(NO_FILTERS);
+    expect(subjectOf('ECON111')).toBe('ECON');
   });
 });
 

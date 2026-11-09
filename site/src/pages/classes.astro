@@ -1,12 +1,17 @@
 ---
 import Base from '../layouts/Base.astro';
-import ClassSearch from '../components/classes/ClassSearch.svelte';
 ---
-<Base title="Find a class · Bidwise" active="classes" windowPicker={false}>
-  <h1>Find a class</h1>
-  <ClassSearch client:load />
+<Base title="Browse · Bidwise" active="explore" windowPicker={false}>
+  <p class="go"><a class="btn" href="/explore/">Open Browse</a></p>
 </Base>
 
+<script>
+  // Classes is now part of Browse: carry the old filters over.
+  import { classesQueryToBrowse } from '../components/explore/courses';
+  const qs = classesQueryToBrowse(location.search);
+  location.replace(`/explore/${qs ? `?${qs}` : ''}`);
+</script>
+
 <style>
-  h1 { font-size: var(--fs-lg); font-weight: 600; margin: 0 0 var(--s3); }
+  .go { margin: 0; }
 </style>

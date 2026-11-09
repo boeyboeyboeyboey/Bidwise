@@ -54,7 +54,7 @@
     });
     return [...g.values()];
   });
-  const pastBids = (s: ScheduleEntry) => `/explore/?v=browse&bw=${encodeURIComponent(label(s))}`;
+  const pastBids = (s: ScheduleEntry) => `/explore/?v=build`;
 </script>
 
 <section class="sched" aria-labelledby="sched-h">

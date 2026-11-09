@@ -1,352 +1,401 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { CourseIndexEntry } from '../../lib/data/types';
+  import { onMount, tick } from 'svelte';
+  import { APPROX_NOTE, scanTimeText } from '../../lib/data/seats';
+  import { fetchIndex } from '../../lib/data/client';
+  import { DAYS, R, TIMES, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
+  import { fmtBid, fmtSeats, fullWindow, pastSections, seatsTaken, type BrowseRow, type CourseTerms } from './browse';
+  import { fetchCourseTerms, fetchManifest, fetchTerm } from './browseClient';
   import {
-    filterRows, groupRows, sortGroups, pageOf, fmtBid, fmtSeats, fmtSeatsLeft, fullWindow, nameMatches, termsToLoad, windowRank, PAGE_SIZE, PAGE_SIZE_CARDS,
-    type BrowseGroup, type BrowseManifest, type BrowseRow, type BrowseState, type CourseInfo, type SortKey,
-  } from './browse';
-  import { fetchManifest, fetchTerm } from './browseClient';
+    activeFilterCount, browseDefaults, decodeBrowse, encodeBrowse, groupCourses, filterCourses, sectionFilterOn, sectionMatches, shortTerm,
+    subjectsOf, termChoices, type BrowseState, type CourseEntry,
+  } from './courses';
 
-  let { bs = $bindable(), index }: { bs: BrowseState; index: CourseIndexEntry[] } = $props();
+  const PAGE = 50;
 
-  let man = $state.raw<BrowseManifest | null>(null);
-  let data = $state.raw<BrowseRow[]>([]);
-  let loading = $state(true);
-  let failed = $state(false);
-  let token = 0;
+  let bs = $state<BrowseState>(browseDefaults());
+  let courses = $state.raw<CourseEntry[]>([]);
+  let currentTerm = $state('');
+  let scannedAt = $state<string | null>(null);
+  let status = $state<'loading' | 'ready' | 'error'>('loading');
+  let filtersOpen = $state(false);
+  let shown = $state(PAGE);
+  let ready = false;
 
-  // Rows become short cards under 1100px wide (see the media query below); a page then holds 10 of them.
-  let cards = $state(false);
+  const subjects = $derived(subjectsOf(courses));
+  const hits = $derived(filterCourses(courses, bs));
+  const count = $derived(activeFilterCount(bs));
+  const filtered = $derived(sectionFilterOn(bs));
+  const scanText = $derived(scanTimeText(scannedAt));
+  const open = $derived(bs.course ? courses.find((c) => c.code === bs.course) : undefined);
+
+  function load() {
+    status = 'loading';
+    Promise.all([
+      fetchIndex(),
+      fetch('/data/classes.json').then((r) => (r.ok ? (r.json() as Promise<ClassesPayload>) : Promise.reject(new Error(String(r.status))))),
+    ]).then(([index, d]) => {
+      courses = groupCourses(d.rows, index);
+      currentTerm = d.term;
+      scannedAt = d.scannedAt;
+      if (bs.course && !courses.some((c) => c.code === bs.course)) bs = { ...bs, course: '', term: '', sec: '' };
+      status = 'ready';
+    }, () => (status = 'error'));
+  }
+
+  let lastCourse = '';
+  let listY = 0;
   onMount(() => {
-    const mq = window.matchMedia('(max-width: 1099px)');
-    const sync = () => (cards = mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    fetchManifest().then((m) => {
-      man = m;
-      // A link naming the latest term means the default; keep the select on its first option.
-      const latest = m.terms.at(-1)?.term;
-      if (latest && bs.term === latest) bs = { ...bs, term: '' };
-      // A link that names an instructor with all terms is read as auto-widened.
-      if (bs.instructor.trim() && bs.term === 'all' && prevTerm === null) prevTerm = '';
-    }, () => { failed = true; loading = false; });
+    bs = decodeBrowse(location.search);
+    lastCourse = bs.course;
+    filtersOpen = activeFilterCount(bs) > 0;
+    ready = true;
+    load();
+    const pop = () => {
+      bs = decodeBrowse(location.search);
+      lastCourse = bs.course;
+      if (!bs.course) tick().then(() => window.scrollTo(0, listY));
+    };
+    window.addEventListener('popstate', pop);
+    return () => window.removeEventListener('popstate', pop);
   });
 
-  // Fetch only the terms the current selection needs (one file each, cached after the first request).
-  // Keyed by a string: a new array each time would re-run the effect (and flash "Loading") on every sort or filter.
-  const wantedKey = $derived(man ? termsToLoad(man, bs.term).join('|') : '');
+  // The address follows the state. Opening a course adds a history entry (Back returns to the list); everything else replaces it.
   $effect(() => {
-    const m = man;
-    const ts = wantedKey ? wantedKey.split('|') : [];
-    if (!m) return;
-    const mine = ++token;
-    loading = true;
-    Promise.all(ts.map((t) => fetchTerm(m, t))).then(
-      (parts) => { if (mine === token) { data = parts.flat(); failed = false; loading = false; } },
-      () => { if (mine === token) { failed = true; loading = false; } },
-    );
-  });
-
-  const courses = $derived(new Map<string, CourseInfo>(index.map((c) => [c.code, { title: c.title, school: c.school }])));
-  const schools = $derived([...new Set(index.map((c) => c.school))].sort());
-  const termChoices = $derived(man ? man.terms.map((t) => t.term).reverse() : []);
-  const windowChoices = $derived(man ? [...man.windows].sort((a, b) => windowRank(a) - windowRank(b)) : []);
-
-  const filtered = $derived(filterRows(data, bs, courses));
-  // One row per section and term; its other bidding windows open underneath.
-  const sorted = $derived(sortGroups(groupRows(filtered), bs.sort, bs.dir));
-  const pg = $derived(pageOf(sorted, bs.page, cards ? PAGE_SIZE_CARDS : PAGE_SIZE));
-  let openKeys = $state<Set<string>>(new Set());
-  function toggleOpen(k: string) {
-    const n = new Set(openKeys);
-    if (n.has(k)) n.delete(k);
-    else n.add(k);
-    openKeys = n;
-  }
-  // A page past the end (an old link, or fewer rows now) goes to the last page, and the address follows.
-  $effect(() => {
-    if (!loading && !failed && index.length && man && pg.page !== bs.page) bs = { ...bs, page: pg.page };
-  });
-  const nf = new Intl.NumberFormat('en-SG');
-
-  // Changing a filter returns to the first page.
-  function set<K extends keyof BrowseState>(k: K, v: BrowseState[K]) {
-    if (k === 'term') prevTerm = null; // the person chose a term themselves
-    bs = { ...bs, [k]: v, page: 0 };
-  }
-  function sortBy(k: SortKey) {
-    bs = { ...bs, sort: k, dir: bs.sort === k && bs.dir === 'asc' ? 'desc' : 'asc', page: 0 };
-  }
-  const goto = (p: number) => (bs = { ...bs, page: p });
-
-  // Professor type-ahead over the lookup. Naming an instructor widens the search to every term.
-  let insText = $state(bs.instructor);
-  let insOpen = $state(false);
-  const insHits = $derived.by(() => {
-    if (insText.trim().length < 2 || !man) return [];
-    return man.instructors.filter((n) => nameMatches(n, insText)).slice(0, 8);
-  });
-  // The term chosen before naming an instructor, so clearing the name puts it back. null = not auto-widened.
-  let prevTerm = $state<string | null>(null);
-  function setInstructor(v: string) {
-    insText = v;
-    let term = bs.term;
-    if (v.trim() && !bs.instructor.trim() && term !== 'all') {
-      prevTerm = term;
-      term = 'all';
-    } else if (!v.trim() && prevTerm !== null) {
-      term = prevTerm;
-      prevTerm = null;
+    const qs = encodeBrowse(bs);
+    const course = bs.course;
+    shown = PAGE;
+    if (!ready) return;
+    const url = location.pathname + (qs ? `?${qs}` : '');
+    if (url !== location.pathname + location.search) {
+      try {
+        if (course && !lastCourse) history.pushState({ browse: 1 }, '', url);
+        else history.replaceState(history.state, '', url);
+      } catch { /* ignore */ }
     }
-    bs = { ...bs, instructor: v, term, page: 0 };
-  }
-  function pickInstructor(n: string) {
-    setInstructor(n);
-    insOpen = false;
-  }
-  const widened = $derived(prevTerm !== null && bs.instructor.trim() !== '' && bs.term === 'all');
+    lastCourse = course;
+  });
 
-  const dirOf = (k: SortKey) => (bs.sort === k ? (bs.dir === 'asc' ? 'ascending' : 'descending') : 'none');
-  const cols: { key: SortKey; label: string; num?: boolean }[] = [
-    { key: 'course', label: 'Course' },
-    { key: 'section', label: 'Section' },
-    { key: 'instructor', label: 'Professor' },
-    { key: 'term', label: 'Term' },
-    { key: 'window', label: 'Window' },
-    { key: 'median', label: 'Median bid (e$)', num: true },
-    { key: 'min', label: 'Lowest winning bid (e$)', num: true },
-    { key: 'start', label: 'Seats at start', num: true },
-    { key: 'seats', label: 'Seats left after', num: true },
-    { key: 'filled', label: 'Full after window' },
-  ];
+  function openCourse(c: CourseEntry) {
+    listY = window.scrollY;
+    bs = { ...bs, course: c.code, term: '', sec: '' };
+    window.scrollTo(0, 0);
+  }
+  function back() {
+    if (history.state?.browse) history.back();
+    else {
+      bs = { ...bs, course: '', term: '', sec: '' };
+      tick().then(() => window.scrollTo(0, listY));
+    }
+  }
+
+  // ---- Terms of the open course
+  let terms = $state.raw<CourseTerms | null>(null);
+  let termsFailed = $state(false);
+  $effect(() => {
+    if (!open || terms) return;
+    termsFailed = false;
+    fetchCourseTerms().then((t) => (terms = t), () => (termsFailed = true));
+  });
+  const choices = $derived.by(() => {
+    if (!open) return [];
+    const withData = terms ? (terms.by[open.code] ?? []).map((i) => terms!.terms[i]) : [];
+    return termChoices(currentTerm, open.sections.length > 0, withData);
+  });
+  const termsKnown = $derived(!!terms || termsFailed || !open || open.sections.length > 0);
+  const active = $derived(choices.find((c) => c.term === bs.term) ?? choices[0]);
+
+  // Past rows of the active term, loaded when it is opened (one file per term, cached).
+  let past = $state.raw<BrowseRow[] | null>(null);
+  let pastFailed = $state(false);
+  let pastToken = 0;
+  const pastTerm = $derived(active && !active.now ? active.term : '');
+  function loadPast(term: string) {
+    const mine = ++pastToken;
+    past = null;
+    pastFailed = false;
+    fetchManifest().then((m) => fetchTerm(m, term)).then(
+      (rows) => { if (mine === pastToken) past = rows; },
+      () => { if (mine === pastToken) pastFailed = true; },
+    );
+  }
+  $effect(() => {
+    if (pastTerm) loadPast(pastTerm);
+  });
+
+  const nowAll = $derived(open?.sections ?? []);
+  const nowMatching = $derived(filtered ? nowAll.filter((r) => sectionMatches(r, bs)) : nowAll);
+  const nowShown = $derived(nowMatching.length ? nowMatching : nowAll);
+  const pastList = $derived(open && past ? pastSections(past, open.code) : []);
+
+  const toggleBit = (mask: number, bit: number) => (mask & bit ? mask & ~bit : mask | bit);
+  const clear = () => (bs = { ...bs, sub: '', days: 0, times: 0, seats: false, nofinal: false });
+  const clearSectionFilters = () => (bs = { ...bs, days: 0, times: 0, seats: false, nofinal: false });
+  const pickTerm = (t: string) => (bs = { ...bs, term: t, sec: '' });
+  const toggleSec = (s: string) => (bs = { ...bs, sec: bs.sec === s ? '' : s });
+  const secLabel = (n: number, total: number) => (n === total ? `${n} ${n === 1 ? 'section' : 'sections'}` : `${n} of ${total} sections`);
+  const seatsLine = (r: ClassRow) => `${r[R.approx] === 1 ? '≈' : ''}${r[R.left]} of ${r[R.total]}`;
 </script>
 
-{#snippet line(r: BrowseRow, sub: boolean, g: BrowseGroup)}
-  <tr class:sub class:hm={!sub && g.others.length > 0}>
-    <th scope="row" class="course"><a href={`/course/${r.code}/`}><b>{r.code}</b><span class="ttl">{courses.get(r.code)?.title ?? ''}</span></a></th>
-    <td data-label="Section">{r.section}</td>
-    <td class="ins-cell" data-label="Professor">{r.instructor ?? '–'}</td>
-    <td class="slot nw" data-label="Day and time">{r.slot || '–'}</td>
-    <td class="nw" data-label="Term">{r.term}</td>
-    <td class="win" data-label="Window">
-      <div class="wcell">
-      <span class="wname">{fullWindow(r.window)}</span>
-      {#if !sub && g.others.length}
-        <button type="button" class="more" aria-expanded={openKeys.has(g.key)} onclick={() => toggleOpen(g.key)}>
-          {openKeys.has(g.key) ? 'Hide other windows' : `Show ${g.others.length} other ${g.others.length === 1 ? 'window' : 'windows'}`}
-        </button>
-      {/if}
-      </div>
-    </td>
-    <td class="num" data-label="Median bid (e$)">{fmtBid(r.medianCents)}</td>
-    <td class="num" data-label="Lowest winning (e$)">{fmtBid(r.minCents)}</td>
-    <td class="num start" data-label="Seats at start">{fmtSeats(r.before)}</td>
-    <td class="num after" data-label="">
-      <span class="bare">{fmtSeats(r.after)}</span><span class="words">{fmtSeatsLeft(r.after, r.before)}</span>
-    </td>
-    <td data-label="Full after">{r.filled ? 'Yes' : 'No'}</td>
-  </tr>
-{/snippet}
+{#if status === 'loading'}
+  <p class="meta" role="status">Loading…</p>
+{:else if status === 'error'}
+  <p class="meta">Could not load courses. <button type="button" class="link" onclick={load}>Try again</button></p>
+{:else if open}
+  <div class="course">
+    <button type="button" class="btn back" onclick={back}>← Results</button>
+    <h2><span class="code">{open.code}</span>{#if open.title}<span class="ttl">{open.title}</span>{/if}</h2>
 
-<div class="browse">
-  <div class="filters">
-    <label>School
-      <select value={bs.school} onchange={(e) => set('school', e.currentTarget.value)}>
-        <option value="">All schools</option>
-        {#each schools as s}<option value={s}>{s}</option>{/each}
-      </select>
-    </label>
-    <label>Term
-      <select value={bs.term} onchange={(e) => set('term', e.currentTarget.value)}>
-        {#each termChoices as t, i}<option value={i === 0 ? '' : t}>{t}{i === 0 ? ' (latest)' : ''}</option>{/each}
-        <option value="all">All terms</option>
-      </select>
-    </label>
-    <label>Window
-      <select value={bs.window} onchange={(e) => set('window', e.currentTarget.value)}>
-        <option value="">All windows</option>
-        {#each windowChoices as w}<option value={w}>{fullWindow(w)}</option>{/each}
-      </select>
-    </label>
-    <label>Course
-      <input class="field" type="search" placeholder="Code or title" autocomplete="off" value={bs.q} oninput={(e) => set('q', e.currentTarget.value)} />
-    </label>
-    <label class="ins">Professor
-      <input
-        class="field"
-        type="search"
-        placeholder="Type a name"
-        autocomplete="off"
-        value={insText}
-        oninput={(e) => { setInstructor(e.currentTarget.value); insOpen = true; }}
-        onfocus={() => (insOpen = true)}
-        onblur={() => setTimeout(() => (insOpen = false), 120)}
-        onkeydown={(e) => { if (e.key === 'Enter' && insHits[0]) pickInstructor(insHits[0]); else if (e.key === 'Escape') insOpen = false; }}
-      />
-      {#if insOpen && insHits.length && insHits[0] !== insText}
-        <ul class="hits" role="listbox" aria-label="Professors">
-          {#each insHits as n}
-            <li role="option" aria-selected="false"><button type="button" onmousedown={(e) => e.preventDefault()} onclick={() => pickInstructor(n)}>{n}</button></li>
+    {#if choices.length}
+      <div class="terms" role="group" aria-label="Term">
+        {#each choices as c (c.term)}
+          <button type="button" class="tog" aria-pressed={c.term === active?.term} aria-label={c.term} onclick={() => pickTerm(c.term)}>{c.now ? 'This term' : shortTerm(c.term)}</button>
+        {/each}
+      </div>
+    {:else if !termsKnown}
+      <p class="meta" role="status">Loading…</p>
+    {:else}
+      <p class="meta">{termsFailed ? 'Could not load past terms.' : 'No data for this course.'}</p>
+    {/if}
+
+    {#if active?.now}
+      <p class="meta">{active.term}{scanText ? ` · seats as of ${scanText}` : ''}</p>
+      {#if nowShown.length < nowAll.length || (filtered && !nowMatching.length)}
+        <p class="meta">{secLabel(nowShown.length, nowAll.length)} match your filters. <button type="button" class="link" onclick={clearSectionFilters}>Show all</button></p>
+      {/if}
+      <ul class="secs">
+        {#each nowShown as r (r[R.section])}
+          {@const on = bs.sec === r[R.section]}
+          <li>
+            <button type="button" class="sec" aria-expanded={on} aria-controls={`d-${r[R.section]}`} onclick={() => toggleSec(r[R.section])}>
+              <span class="s1"><b>{r[R.section]}</b><span class="slot">{r[R.slot] || 'Time not set'}</span></span>
+              <span class="s2">{r[R.instructor] || 'Instructor not listed'}</span>
+              <span class="right" class:none={r[R.left] <= 0}>{seatText(r)}</span>
+            </button>
+            {#if on}
+              <div class="detail" id={`d-${r[R.section]}`}>
+                <dl>
+                  <div><dt>Professor</dt><dd>{r[R.instructor] || '–'}</dd></div>
+                  <div><dt>Time</dt><dd>{r[R.slot] || 'Not set'}</dd></div>
+                  <div><dt>Seats left</dt><dd>{seatsLine(r)}</dd></div>
+                  <div><dt>Final exam</dt><dd>{r[R.exam] || 'No exam listed'}</dd></div>
+                </dl>
+                {#if r[R.approx] === 1}<p class="note">≈ {APPROX_NOTE}.</p>{/if}
+                <a class="btn btn-primary see" href={`/course/${open.code}/?s=${encodeURIComponent(r[R.section])}`}>See bid</a>
+              </div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else if active}
+      <p class="meta">{active.term}</p>
+      {#if pastFailed}
+        <p class="meta">Could not load this term. <button type="button" class="link" onclick={() => loadPast(active.term)}>Try again</button></p>
+      {:else if !past}
+        <p class="meta" role="status">Loading…</p>
+      {:else if pastList.length}
+        <p class="note">Bids in e$. A dash (–) means no bid won a seat.</p>
+        <ul class="secs">
+          {#each pastList as s (s.section)}
+            {@const on = bs.sec === s.section}
+            <li>
+              <button type="button" class="sec" aria-expanded={on} aria-controls={`d-${s.section}`} onclick={() => toggleSec(s.section)}>
+                <span class="s1"><b>{s.section}</b><span class="slot">{s.slot || 'Time not set'}</span></span>
+                <span class="s2">{s.instructor || 'Instructor not listed'}</span>
+              </button>
+              {#if on}
+                <div class="detail" id={`d-${s.section}`}>
+                  <dl>
+                    <div><dt>Professor</dt><dd>{s.instructor || '–'}</dd></div>
+                    <div><dt>Time</dt><dd>{s.slot || 'Not set'}</dd></div>
+                  </dl>
+                  <table class="wt">
+                    <thead><tr><th scope="col">Window</th><th scope="col" class="n">Offered</th><th scope="col" class="n">Taken</th><th scope="col" class="n">Lowest</th><th scope="col" class="n">Median</th></tr></thead>
+                    <tbody>
+                      {#each s.windows as w (w.window)}
+                        <tr>
+                          <th scope="row">{fullWindow(w.window)}</th>
+                          <td class="n" data-label="Offered">{fmtSeats(w.before)}</td>
+                          <td class="n" data-label="Taken">{fmtSeats(seatsTaken(w))}</td>
+                          <td class="n" data-label="Lowest">{fmtBid(w.minCents)}</td>
+                          <td class="n" data-label="Median">{fmtBid(w.medianCents)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
+            </li>
           {/each}
         </ul>
+      {:else}
+        <p class="meta">No sections in this term.</p>
       {/if}
-    </label>
-    <label class="check"><input type="checkbox" checked={bs.filled} onchange={(e) => set('filled', e.currentTarget.checked)} /> Only sections that filled</label>
-    <label class="sortsel">Sort by
-      <span class="sortrow">
-        <select value={bs.sort} onchange={(e) => bs = { ...bs, sort: e.currentTarget.value as SortKey, page: 0 }}>
-          {#each cols as c}<option value={c.key}>{c.label}</option>{/each}
-        </select>
-        <button type="button" class="btn" onclick={() => (bs = { ...bs, dir: bs.dir === 'asc' ? 'desc' : 'asc', page: 0 })}>{bs.dir === 'asc' ? 'Ascending' : 'Descending'}</button>
-      </span>
-    </label>
-  </div>
-  {#if widened}<p class="note">Showing all terms for this professor.</p>{/if}
-
-  <div class="meta">
-    <p class="count" role="status" aria-live="polite">
-      {#if failed}Could not load the data. Reload to try again.
-      {:else if loading || !index.length}Loading…
-      {:else}{nf.format(sorted.length)} {sorted.length === 1 ? 'section' : 'sections'}{/if}
-    </p>
-    {#if !failed && !loading && index.length && sorted.length}
-      <p class="note">One row per section: the latest window with a winning bid; open its other windows under it. A dash (–) means no bid won a seat.</p>
     {/if}
   </div>
+{:else}
+  <div class="cs">
+    <label class="sr" for="b-q">Search by course code, title or professor</label>
+    <input id="b-q" class="field" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+      placeholder="Code, title or professor" bind:value={bs.q} />
 
-  {#if !failed && !loading && index.length}
-    {#if sorted.length}
-      <div class="tw" tabindex="0" role="region" aria-label="Sections">
-        <table>
-          <thead>
-            <tr>
-              {#each cols as c}
-                <th scope="col" class:num={c.num} class:course={c.key === 'course'} aria-sort={dirOf(c.key)}>
-                  <button type="button" onclick={() => sortBy(c.key)}>{c.label}<i aria-hidden="true">{bs.sort === c.key ? (bs.dir === 'asc' ? '↑' : '↓') : ''}</i></button>
-                </th>
-                {#if c.key === 'instructor'}<th scope="col" class="slot-h"><span>Day and time</span></th>{/if}
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each pg.rows as g (g.key)}
-              {@render line(g.head, false, g)}
-              {#if openKeys.has(g.key)}
-                {#each g.others as o}{@render line(o, true, g)}{/each}
-              {/if}
-            {/each}
-          </tbody>
-        </table>
+    <button type="button" class="btn fbtn" aria-expanded={filtersOpen} aria-controls="b-filters" onclick={() => (filtersOpen = !filtersOpen)}>
+      Filters{count ? ` (${count})` : ''}
+    </button>
+    <div id="b-filters" class="filters" class:open={filtersOpen}>
+      <label class="g"><span>Subject</span>
+        <select value={bs.sub} onchange={(e) => (bs = { ...bs, sub: e.currentTarget.value })}>
+          <option value="">All subjects</option>
+          {#each subjects as s (s)}<option value={s}>{s}</option>{/each}
+        </select>
+      </label>
+      <div class="g dayg" role="group" aria-label="Day">
+        <span>Day</span>
+        <div class="days">
+          {#each DAYS as d, i (d)}
+            <button type="button" class="tog" aria-pressed={!!(bs.days & (1 << i))} onclick={() => (bs = { ...bs, days: toggleBit(bs.days, 1 << i) })}>{d}</button>
+          {/each}
+        </div>
       </div>
-      {#if pg.pages > 1}
-        <nav class="pager" aria-label="Pages">
-          <button type="button" class="btn" disabled={pg.page === 0} onclick={() => goto(pg.page - 1)}>Previous</button>
-          <span class="pn num">Page {pg.page + 1} of {pg.pages}</span>
-          <button type="button" class="btn" disabled={pg.page >= pg.pages - 1} onclick={() => goto(pg.page + 1)}>Next</button>
-        </nav>
+      <div class="g" role="group" aria-label="Time of day">
+        <span>Time</span>
+        <div class="times">
+          {#each TIMES as t (t.id)}
+            <button type="button" class="tog" aria-pressed={!!(bs.times & t.bit)} onclick={() => (bs = { ...bs, times: toggleBit(bs.times, t.bit) })}>{t.label}</button>
+          {/each}
+        </div>
+      </div>
+      <div class="g last">
+        <button type="button" class="tog wide" aria-pressed={bs.seats} onclick={() => (bs = { ...bs, seats: !bs.seats })}>Has seats left</button>
+        <button type="button" class="tog wide" aria-pressed={bs.nofinal} onclick={() => (bs = { ...bs, nofinal: !bs.nofinal })}>No final exam listed</button>
+        {#if count}<button type="button" class="btn" onclick={clear}>Clear filters</button>{/if}
+      </div>
+    </div>
+
+    <p class="meta" aria-live="polite">
+      {hits.length} {hits.length === 1 ? 'course' : 'courses'}{scanText ? ` · seats as of ${scanText}` : ''}
+    </p>
+    {#if filtered}<p class="note">Day, time, seats and exam filters apply to this term's sections.</p>{/if}
+
+    {#if hits.length}
+      <ul class="list">
+        {#each hits.slice(0, shown) as h (h.course.code)}
+          <li>
+            <button type="button" class="row-link row" onclick={() => openCourse(h.course)}>
+              <span class="code">{h.course.code}</span>
+              <span class="title">{h.course.title}</span>
+              <span class="n" class:none={!h.course.sections.length}>{h.course.sections.length ? secLabel(h.sections.length, h.course.sections.length) : 'No sections this term'}</span>
+              <span class="prof">{h.course.professors.join(' · ')}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+      {#if hits.length > shown}
+        <button type="button" class="btn more" onclick={() => (shown += PAGE)}>Show more ({hits.length - shown} left)</button>
       {/if}
     {:else}
-      <p class="none">No sections match these filters.</p>
+      <p class="empty">No courses match.{count || bs.q ? ' Try fewer filters.' : ''}</p>
     {/if}
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
-  .browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; }
-  .filters { display: grid; gap: var(--s3) var(--s4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); align-items: end; }
-  .filters label:not(.check) { display: grid; gap: var(--s1); font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; }
-  .filters select, .filters .field { width: 100%; min-width: 0; font-weight: 400; }
-  .ins { position: relative; }
-  .hits {
-    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5;
-    background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-sm);
+  .cs, .course { width: 100%; display: grid; gap: var(--s3); min-width: 0; align-content: start; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .meta, .empty, .note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+  .note { font-size: var(--fs-xs); }
+  .link { font: inherit; color: var(--accent); background: none; border: 0; padding: 0 var(--s2); min-height: 44px; text-decoration: underline; cursor: pointer; }
+  .fbtn { justify-self: start; }
+  .filters { display: none; gap: var(--s3); padding: var(--s3); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); }
+  .filters.open { display: grid; }
+  .g { display: grid; gap: var(--s1); min-width: 0; }
+  .g > span { font-size: var(--fs-xs); color: var(--muted); }
+  .g select { width: 100%; }
+  .days, .times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s1); }
+  .last { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .tog {
+    min-height: 44px; padding: 0 var(--s2); font: inherit; font-size: var(--fs-sm); color: var(--text); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); white-space: nowrap;
   }
-  .hits li + li { border-top: 1px solid var(--rule); }
-  .hits button {
-    display: block; width: 100%; min-height: 44px; padding: 0 var(--s3); text-align: left;
-    font: inherit; font-size: 14px; font-weight: 400; color: var(--text); background: none; border: 0; cursor: pointer;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .hits button:hover, .hits button:focus-visible { background: var(--accent-soft); }
-  .check { display: inline-flex; align-items: center; gap: var(--s1); min-height: 44px; padding-right: var(--s3); font-weight: 600; cursor: pointer; }
-  .check input { flex: none; width: 24px; height: 24px; margin: 10px; accent-color: var(--accent); cursor: pointer; }
-  .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s4); }
-  .note, .count, .none { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
-  .count { font-weight: 600; color: var(--text); }
-  .none { padding: var(--s6) 0; text-align: center; }
+  .tog.wide { padding: 0 var(--s4); white-space: normal; }
+  .tog[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 
-  .filters label.sortsel:not(.check) { display: none; }
-  .tw { max-width: 100%; border: 1px solid var(--rule); border-radius: var(--r-sm); overflow-x: auto; }
-  .tw:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
-  th, td { padding: 2px var(--s3); text-align: left; vertical-align: middle; border-bottom: 1px solid var(--rule); background: var(--bg); }
-  tbody tr:last-child > * { border-bottom: 0; }
-  thead th { padding: 0; font-weight: 600; font-size: var(--fs-xs); color: var(--muted); background: var(--surface); vertical-align: bottom; }
-  thead th button {
-    display: inline-flex; align-items: center; gap: var(--s1); width: 100%; min-height: 44px; padding: 4px var(--s3);
-    font: inherit; font-weight: 600; color: inherit; background: none; border: 0; cursor: pointer; text-align: inherit;
+  .list { border-top: 1px solid var(--rule); }
+  .row { width: 100%; text-align: left; font: inherit; background: none; border: 0; border-bottom: 1px solid var(--rule); cursor: pointer;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: 2px; align-items: baseline; }
+  .row > * { min-width: 0; overflow-wrap: anywhere; }
+  .code { font-weight: 600; }
+  .row .code { grid-column: 1; }
+  .row .title { grid-column: 1 / -1; grid-row: 2; }
+  .row .n { grid-column: 2; grid-row: 1; font-size: var(--fs-sm); white-space: nowrap; }
+  .row .prof { grid-column: 1 / -1; grid-row: 3; font-size: var(--fs-sm); color: var(--muted); }
+  .row .prof:empty { display: none; }
+  .none { color: var(--muted); font-weight: 400; }
+  .more { justify-self: stretch; }
+
+  .back { justify-self: start; }
+  h2 { font-size: var(--fs-lg); font-weight: 600; display: flex; flex-wrap: wrap; gap: 0 var(--s3); overflow-wrap: anywhere; }
+  h2 .ttl { font-weight: 400; }
+  .terms { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .secs { border-top: 1px solid var(--rule); }
+  .secs li { border-bottom: 1px solid var(--rule); }
+  .sec {
+    width: 100%; min-height: 52px; padding: var(--s3) 36px var(--s3) var(--s2); text-align: left; font: inherit; color: inherit; cursor: pointer;
+    background: none; border: 0; position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: 2px; align-items: baseline;
   }
-  thead th.num button { justify-content: flex-end; text-align: right; }
-  thead th button:hover { color: var(--text); }
-  thead th[aria-sort='ascending'], thead th[aria-sort='descending'] { color: var(--accent); }
-  thead th i { font-style: normal; display: inline-block; width: 1em; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .nw { white-space: nowrap; }
-  .ins-cell { min-width: 140px; }
-  thead th.slot-h span { display: flex; align-items: flex-end; min-height: 44px; box-sizing: border-box; padding: 4px var(--s3); }
-  td.slot { min-width: 120px; }
-  tbody th.course { width: 260px; max-width: 260px; padding: 0; font-weight: 400; }
-  tbody .course a { display: block; min-height: 44px; padding: 3px var(--s3); text-decoration: none; }
-  tbody .course a b { display: block; font-weight: 600; color: var(--accent); text-decoration: underline; }
-  tbody .course a:hover b { color: var(--accent-hover); }
-  .ttl { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
-  .win { min-width: 150px; }
-  .wcell { display: flex; align-items: center; gap: var(--s3); }
-  .wname { flex: 1 1 auto; }
-  .more {
-    flex: none; min-height: 44px; padding: 0; font: inherit; font-size: var(--fs-xs); font-weight: 600;
-    color: var(--accent); text-decoration: underline; background: none; border: 0; cursor: pointer; text-align: left;
+  .sec::after {
+    content: ''; position: absolute; right: var(--s2); top: 50%; width: 16px; height: 16px; transform: translateY(-50%);
+    background: var(--chev-down) center / 16px no-repeat;
   }
-  tr.sub > * { background: var(--surface); color: var(--muted); }
-  tr.sub .course a b { font-weight: 400; }
-  .words { display: none; }
-  .pager { display: flex; align-items: center; justify-content: center; gap: var(--s4); }
-  .pn { font-size: var(--fs-sm); color: var(--muted); }
-  @media (max-width: 1099px) {
-    .filters label.sortsel:not(.check) { display: grid; gap: var(--s1); grid-column: 1 / -1; }
-    .sortrow { display: flex; gap: var(--s2); }
-    .sortrow select { flex: 1 1 auto; min-width: 0; }
-    .tw { border: 0; overflow: visible; }
-    table, tbody { display: block; }
-    thead { display: none; }
-    /* A row is a short card: the course on its own line, then labelled facts that wrap. */
-    tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s3); padding: 0 var(--s3) var(--s2); margin-bottom: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: var(--fs-xs); line-height: 1.45; }
-    tbody th.course { flex: 1 1 100%; min-width: 0; width: auto; max-width: none; padding: 0; border: 0; background: none; }
-    tbody .course a { min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 0; font-size: var(--fs-sm); }
-    tbody .course a b { display: inline; flex: none; }
-    .ttl { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); }
-    td { display: inline; padding: 0; border: 0; background: none; text-align: left; }
-    td::before { content: attr(data-label) ': '; color: var(--muted); }
-    td[data-label='']::before { content: none; }
-    td.start { display: none; }
-    /* The day and time sit on their own line under the course. */
-    tbody th.course { order: -2; }
-    td.slot { order: -1; display: block; flex: 1 1 100%; min-width: 0; color: var(--muted); }
-    td.slot::before { content: none; }
-    .bare { display: none; }
-    .words { display: inline; }
-    tr.sub { background: var(--surface); }
-    tr.sub > * { background: none; }
-    .ins-cell, .win { min-width: 0; }
-    .win .wcell { display: inline; }
-    .win .wname { display: inline; }
-    /* The "show other windows" button sits at the right of the course line, so it adds no line of its own. */
-    tr { position: relative; }
-    tr.hm th.course { padding-right: 150px; }
-    .more { position: absolute; top: 0; right: var(--s3); display: flex; align-items: center; justify-content: flex-end; min-width: 44px; text-align: right; }
-  }
+  .sec[aria-expanded='true']::after { transform: translateY(-50%) rotate(180deg); }
+  .sec > * { min-width: 0; overflow-wrap: anywhere; }
+  .s1 { grid-column: 1; }
+  .s1 .slot { margin-left: var(--s3); }
+  .s2 { grid-column: 1; font-size: var(--fs-sm); color: var(--muted); }
+  .right { grid-column: 2; grid-row: 1 / 3; align-self: center; font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .detail { display: grid; gap: var(--s3); padding: var(--s3); margin-bottom: var(--s3); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); }
+  dl { margin: 0; display: grid; gap: var(--s2); }
+  dl > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: var(--s3); }
+  dt { color: var(--muted); font-size: var(--fs-sm); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .see { justify-self: start; }
+  .wt { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); table-layout: fixed; }
+  .wt th, .wt td { padding: var(--s2) var(--s1); text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+  .wt thead th { color: var(--muted); font-weight: 600; }
+  .wt tbody th { font-weight: 400; }
+  .wt .n { text-align: right; font-variant-numeric: tabular-nums; width: 15%; }
+  .wt tbody tr:last-child > * { border-bottom: 0; }
+
+  /* Under 640px each window is a short card: its name, then labelled numbers that wrap. */
   @media (max-width: 639px) {
-    .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .filters .ins, .filters .check { grid-column: 1 / -1; }
+    .wt, .wt tbody { display: block; }
+    .wt thead { display: none; }
+    .wt tr { display: flex; flex-wrap: wrap; gap: 0 var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+    .wt tbody tr:last-child { border-bottom: 0; }
+    .wt th, .wt td { padding: 0; border: 0; }
+    .wt tbody th { flex: 1 1 100%; font-weight: 600; }
+    .wt td.n { width: auto; text-align: left; }
+    .wt td.n::before { content: attr(data-label) ' '; color: var(--muted); }
+  }
+  @media (min-width: 768px) {
+    .fbtn { display: none; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
+    .days { grid-template-columns: repeat(6, 56px); }
+    .dayg { grid-column: span 2; }
+    .wt { font-size: var(--fs-sm); }
+    .wt .n { width: 100px; }
+  }
+  @media (min-width: 1024px) {
+    .row { grid-template-columns: 130px minmax(0, 1.2fr) 170px minmax(0, 1fr); column-gap: var(--s4); align-items: center; }
+    .row .code { grid-column: 1; }
+    .row .title { grid-column: 2; grid-row: 1; }
+    .row .n { grid-column: 3; grid-row: 1; }
+    .row .prof { grid-column: 4; grid-row: 1; }
+    .row .prof:empty { display: block; }
+    .sec { grid-template-columns: 90px 260px minmax(0, 1fr) 100px; column-gap: var(--s4); align-items: center; }
+    .s1 { display: contents; }
+    .s1 b { grid-column: 1; }
+    .s1 .slot { grid-column: 2; margin: 0; }
+    .s2 { grid-column: 3; }
+    .right { grid-column: 4; grid-row: 1; text-align: right; }
   }
 </style>

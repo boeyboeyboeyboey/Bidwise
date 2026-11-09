@@ -6,6 +6,7 @@
   import HistoryPanel from './HistoryPanel.svelte';
   import ForecastPanel from './ForecastPanel.svelte';
   import SeatTrend from './SeatTrend.svelte';
+  import Snipe from './Snipe.svelte';
 
   let { section, history, failed = false, preferred = [], openScanAt = null, forecastCard = true }: {
     openScanAt?: string | null;
@@ -24,6 +25,7 @@
     <ForecastPanel {section} {history} {failed} {preferred}>
       <SeatTrend {section} {openScanAt} />
     </ForecastPanel>
+    <Snipe {section} />
   {:else if failed}
     <p class="err" role="alert">Could not load past results</p>
   {:else if !history}

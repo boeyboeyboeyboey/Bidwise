@@ -6,7 +6,7 @@ import { GITHUB_URL, LINKEDIN_URL, GITHUB_ICON, LINKEDIN_ICON } from '../lib/lin
 
 interface Props {
   title?: string;
-  active?: 'search' | 'explore' | 'planner' | 'schedule' | 'method';
+  active?: 'search' | 'classes' | 'explore' | 'planner' | 'schedule' | 'method';
   /** The header's bidding-window select; off on pages that don't use it. */
   windowPicker?: boolean;
 }
@@ -20,6 +20,7 @@ const windows = getForecastMeta().windows;
 const choices = windows.includes(openLabel) ? windows : [openLabel, ...windows];
 const allTabs = [
   { id: 'search', href: '/', label: 'Courses', icon: 'M11 4a7 7 0 1 0 4.2 12.6l4.1 4.1 1.4-1.4-4.1-4.1A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z' },
+  { id: 'classes', href: '/classes/', label: 'Classes', icon: 'M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z' },
   { id: 'explore', href: '/explore', label: 'Past bids', icon: 'M4 4h2v14h14v2H4V4Zm5 8h2v4H9v-4Zm4-4h2v8h-2V8Zm4 2h2v6h-2v-6Z' },
   { id: 'planner', href: '/planner', label: 'Bid planner', icon: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z' },
   { id: 'schedule', href: '/schedule/', label: 'Schedule', icon: 'M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2Zm-2 6v11h14V8H5Zm2 2h4v4H7v-4Z' },

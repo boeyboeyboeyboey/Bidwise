@@ -1,0 +1,12 @@
+---
+import Base from '../layouts/Base.astro';
+import ClassSearch from '../components/classes/ClassSearch.svelte';
+---
+<Base title="Find a class · Bidwise" active="classes" windowPicker={false}>
+  <h1>Find a class</h1>
+  <ClassSearch client:load />
+</Base>
+
+<style>
+  h1 { font-size: var(--fs-lg); font-weight: 600; margin: 0 0 var(--s3); }
+</style>

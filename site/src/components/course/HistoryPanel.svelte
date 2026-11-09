@@ -66,7 +66,7 @@
     <p class="none">No past results for this selection</p>
   {:else}
     {#if noPrice}<p class="note">No bid won a seat in {win ? 'this window' : 'these windows'}, so there's no past price.</p>{/if}
-    <HistoryChart {rows} instructor={scope === 'course' ? instructor : null} />
+    {#if !noPrice}<HistoryChart {rows} instructor={scope === 'course' ? instructor : null} />{/if}
     <div class="tbl" role="table" aria-label="Past results">
       <div class="th" role="row">
         <span role="columnheader">Term{win ? '' : ' and window'}</span>

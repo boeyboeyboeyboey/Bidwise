@@ -9,7 +9,7 @@
 
   let W = $state(340);
   const H = $derived(W < 500 ? 190 : 240);
-  const L = 48, R = 30, T = 12, B = 44;
+  const L = 64, R = 30, T = 12, B = 44;
   const pts = $derived(byTerm(rows));
   const top = $derived.by(() => {
     const v = rows.flatMap((r) => [r.medianCents, r.minCents]).filter((c): c is number => c !== null);

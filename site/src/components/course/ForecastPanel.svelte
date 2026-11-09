@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fullText, seatsLeftNow } from '../../lib/data/seats';
+  import DropChance from './DropChance.svelte';
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import { recommendBid, type SimResult } from '../../lib/sim';
@@ -129,6 +130,7 @@
   {#if soldOut}
     <div class="answer soldout">
       <p class="sold"><b>{fullText(section)} after {section.latestWindow}</b></p>
+      <DropChance />
       {#if latest && hasLast}
         <dl class="figs num">
           <div><dt>Last median bid</dt><dd>{bidOrNone(latest.medianCents)}</dd></div>

@@ -29,6 +29,17 @@ const swap = [
     'The tooltip shows a rough percentage, rounded to the nearest 5, and a range from varying the two settings by a moderate amount (the 10% by half as much again either way, the sharpness by a quarter). Likely means a central chance of 75% or more, Unlikely means under 40%, and Possible is in between. The range does not change the label.',
     'Limits: none of this has been tested against real swaps, and no student-submitted data is used. The percentages are rough guides for ranking your options, not probabilities. The sample size shown is the number of past results behind the bid prediction.',
 ];
+const snipe = [
+    'Drop and re-bid is for a class you won earlier with a high bid. You drop it in a later window, get a refund, and bid the minimum again, hoping nobody else takes the freed seat. SMU\'s own blog lists it as a strategy.',
+    'The refund is what you paid, up to a cap by round: e$50 in Rounds 1 and 1A, e$40 in 1B, e$30 in 2, e$10 in 2A. We read "up to what you paid" ourselves; the sources give only the cap. Saving is the refund minus the re-bid, and the cost if it works is what you paid, minus the refund, plus the re-bid.',
+    'A seat dropped in a window opens in that window, so anyone bidding can take it. The chance it works is the chance a bid of your re-bid wins one seat for one bidder in that window, from the same simulation and forecast as the bids on the course page. Bidding is blind, so nobody knows who else will go for the seat.',
+    'Limits: the simulation does not know that a freed seat may draw fewer bidders than a seat offered at the window\'s start, or more because dropped seats are watched. It is a rough guide. If it fails you lose the class and keep only the refund.',
+];
+const drop = [
+    'Drop chance is the chance that a section that is full now is offered seats again in a later window of the same term, shown on the course page as "Seat may open". It counts past cases of the same course (the same class number, same term) that were full in the same window, and checks whether any later window up to the one shown offered seats again. A case that was full when the window opened and one that sold out during it behave differently, so only the matching kind is counted: while a window is open, sections that started it full; between windows, sections that ended the last window full.',
+    'A course with few cases borrows from its subject, and a subject with few from all courses: its own rate is blended with the parent\'s as if the parent had contributed 5 extra cases. The sample size in the tooltip is the number of past cases at the narrowest level with at least 5, and the chance by each later window never goes down.',
+    'Limits: the data records that seats were offered again, not why (a drop, a bigger quota, or seats released at the start of a round), and most of the chance comes from the start of Round 2. It does not say whether you can win the seat, and it ignores things we cannot see, such as exams or a lecturer change. Sections of a course in one term are not independent, so the sample size overstates how much evidence there is. Only collected BOSS results are used. It is a rough guide, not a promise.',
+];
 // Figures come from lib/data/accuracy.ts (generated from the backtest, shared with the home strip). All-forecast figures for
 // 2025-26 Term 2 come from forecast-meta.json; 2026-27 Term 1 (held out) comes from accuracy.json.
 const fm = getForecastMeta();
@@ -221,6 +232,20 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   <details id="formula" class="formula-box">
     <summary><span class="btn">See the formula</span></summary>
     <div class="inner"><Formula /></div>
+  </details>
+
+  <details id="drop-chance" class="more">
+    <summary>Drop chance</summary>
+    <div class="inner how">
+      {drop.map((t) => <p>{t}</p>)}
+    </div>
+  </details>
+
+  <details id="snipe" class="more">
+    <summary>Drop and re-bid</summary>
+    <div class="inner how">
+      {snipe.map((t) => <p>{t}</p>)}
+    </div>
   </details>
 
   <details id="swap-chance" class="more">

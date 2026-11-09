@@ -69,6 +69,8 @@ export interface Section {
   /** Latest BOSS window with results for this section. */
   latestWindow: string;
   enrolled: number;
+  /** Final exam from the BOSS class details. null = none listed (can also mean TBA or a missed capture); absent = no exam data in this build. */
+  exam?: { date: string; start: string; end: string | null } | null;
   /** Minimum bid in cents. Only on sections that have fitted forecast parameters. */
   minBidCents?: number;
   /** Fitted parameters per bidding window label. Only in the fetched course file, not in the page. */
@@ -107,7 +109,16 @@ export interface HistoryRow {
 }
 
 /** Contents of data/real/courses/<code>.json. */
+/** Chance a full section gets a seat back, cumulative by each later window (model/forecast/drops.py). Course-level, full sections only. */
+export interface DropChance {
+  /** Window the estimate starts from. */
+  from: string;
+  /** p: cumulative chance 0..1; n: past cases behind it; l: level of that n (c course, s subject, g all courses). */
+  steps: { w: string; p: number; n: number; l: 'c' | 's' | 'g' }[];
+}
+
 export interface CourseData {
+  drops?: DropChance;
   code: string;
   title: string;
   school: string;

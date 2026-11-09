@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, setContext, tick } from 'svelte';
-  import type { ForecastMeta, HistoryRow, ResultsPartial, Section } from '../../lib/data/types';
+  import type { DropChance, ForecastMeta, HistoryRow, ResultsPartial, Section } from '../../lib/data/types';
   import { resultsPending } from '../../lib/data/partial';
   import type { ForecastCtx } from './forecast-ctx';
   import { fetchCourse } from '../../lib/data/client';
@@ -36,6 +36,7 @@
   let history = $state<HistoryRow[] | null>(null);
   let withForecast = $state<Map<string, Section> | null>(null);
   let failed = $state(false);
+  let drops = $state<DropChance | null>(null);
   // The bidding window chosen on this site; null = the open window.
   let chosen = $state<string | null>(null);
   // The chance the suggested bids aim for. Shared by every row and the detail.
@@ -56,6 +57,7 @@
     setWindow(label: string) { chosen = label; setChosenWindow(label); },
     get bySection() { return withForecast; },
     get failed() { return failed; },
+    get drops() { return drops; },
     latestFor(classNumber: string) { return latestBy.get(classNumber) ?? null; },
     pendingFor(classNumber: string) { return !!history && resultsPending(resultsPartial, latestWindow, latestBy.has(classNumber)); },
     get desktop() { return desktop; },
@@ -227,6 +229,7 @@
   onMount(() => {
     fetchCourse(code).then((d) => {
       history = d.history;
+      drops = d.drops ?? null;
       withForecast = new Map(d.sectionsNow.map((s) => [s.classNumber, s]));
     }, () => (failed = true));
     const mq = matchMedia('(min-width: 1024px)');

@@ -2,6 +2,7 @@
   import type { HistoryRow, Section } from '../../lib/data/types';
   import { seatsOf } from '../../lib/data/seats';
   import { formatSlot } from '../../lib/format/slot';
+  import { formatExam } from '../../lib/format/exam';
   import { aboutPct, eS, pct } from './fmt';
   import type { RowBid } from './sections';
   import { seatChange, seatLabel } from './seatLabel';
@@ -40,6 +41,7 @@
   } = $props();
   const panelId = `p-${section.id}`;
   const when = $derived(formatSlot(section.meetings) || 'Time not set');
+  const examText = $derived(formatExam(section.exam));
   const who = $derived(section.instructor || 'Instructor not listed');
   const seatText = $derived(seatLabel(section));
   const change = $derived(seatChange(section));
@@ -47,7 +49,7 @@
   const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
   const chip = $derived(swap?.kind === 'opt' ? chipFor(swap.opt.label) : null);
   const swapText = $derived(swap?.kind === 'mine' ? 'your section' : chip ? `${chip.text} to swap into` : swap?.kind === 'wait' ? 'swap chance being worked out' : 'no swap chance yet');
-  const label = $derived([section.section, who, when, seatText, swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
+  const label = $derived([section.section, who, when, examText ? `exam ${examText}` : '', seatText, swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
 </script>
 
 <li id={section.id}>
@@ -65,7 +67,7 @@
   >
     <b class="sec">{section.section}</b>
     <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge">Lowest bid</span>{/if}</span>
-    <span class="time num">{when}</span>
+    <span class="time num">{when}{#if examText}<span class="exam">Exam {examText}</span>{/if}</span>
     <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}</span>
     <span class="bid num" class:swapcol={!!swap}>
       {#if swap}
@@ -122,6 +124,7 @@
   /* Phone: the swap tip button sits at right 38px and its tap area is 44px wide (10px past each side), so keep the name clear of it. */
   @media (max-width: 767px) { .who.tipwho { padding-right: 72px; } }
   .time { grid-area: time; align-self: center; color: var(--muted); font-size: var(--fs-xs); overflow-wrap: break-word; }
+  .exam { display: block; margin-top: 1px; color: var(--muted); font-size: var(--fs-xs); }
   .seats { grid-area: seats; color: var(--muted); font-size: var(--fs-xs); }
   .bid { grid-area: bid; justify-self: end; text-align: right; white-space: nowrap; }
   .bid b { font-size: var(--fs-md); font-weight: 700; }

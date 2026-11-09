@@ -8,7 +8,12 @@
   const W = 120;
   const H = 28;
   const hist = $derived(section.live?.source === 'live' ? section.live.history : undefined);
-  const spark = $derived(sparkline(hist, W, H));
+  const vals = $derived((hist ?? []).filter((p) => p && Number.isFinite(p.available)).map((p) => p.available));
+  const distinct = $derived(new Set(vals).size);
+  // A chart needs two different counts; a flat history is shown as one line instead.
+  const spark = $derived(distinct >= 2 ? sparkline(hist, W, H) : null);
+  const still = $derived(vals.length >= 2 && distinct === 1);
+  const now = $derived(vals.length ? vals[vals.length - 1] : null);
   const m = $derived(deltaMarker(section, openScanAt));
   const changeText = $derived(seatChange(section));
   const last = $derived(lastScanText(section));
@@ -22,6 +27,8 @@
     </svg>
     <p class="mu num">{spark.first} → {spark.last} {spark.last === 1 ? 'seat' : 'seats'}</p>
   </div>
+{:else if now !== null}
+  <p class="t num">{now} {now === 1 ? 'seat' : 'seats'} left{still ? ' · no change since opening' : ''}</p>
 {/if}
 
 <style>

@@ -1,4 +1,4 @@
-import type { ForecastMeta, HistoryRow, Section } from '../../lib/data/types';
+import type { DropChance, ForecastMeta, HistoryRow, Section } from '../../lib/data/types';
 
 /** Shared by CourseView with the section panels below it (set via Svelte context, read through getters). */
 export interface ForecastCtx {
@@ -15,6 +15,8 @@ export interface ForecastCtx {
   /** Sections from the fetched course file (with forecast parameters), keyed by class number. Null while loading. */
   readonly bySection: Map<string, Section> | null;
   readonly failed: boolean;
+  /** Chance a full section of this course gets a seat back; null while loading or when there is none. */
+  readonly drops: DropChance | null;
   /** This class's row in the latest window with results this term; null if none or still loading. */
   latestFor(classNumber: string): HistoryRow | null;
   /** True when the latest window's results are still being released and this class has none yet. */

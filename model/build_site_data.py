@@ -647,6 +647,77 @@ def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, doc
         return params, backtest, "fit"
 
 
+def attach_exams(docs: dict, schedule_dir: Path, term: str) -> int:
+    """Set `exam` ({date, start, end} or None) on each current section from the ClassDetails captures; returns how many have one.
+
+    Optional and non-fatal: without the capture folder (or on any error) the sections get no `exam` field and a warning is printed.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import exams  # noqa: PLC0415
+        finally:
+            sys.path.pop(0)
+        found, read = exams.load_exams(schedule_dir, term)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: exam dates skipped: {type(e).__name__}: {e}", file=sys.stderr)
+        return 0
+    if not read:
+        return 0
+    n = 0
+    for doc in docs.values():
+        for s in doc["sectionsNow"]:
+            exam = found.get(s["classNumber"])
+            s["exam"] = exam
+            n += exam is not None
+    return n
+
+
+def drop_windows(window: dict, schedule: list[dict]) -> tuple[str, str, list[str]] | None:
+    """(base window label, how "full" is read, later window labels) for the drop chance, from the site's current window.
+
+    Open window w: a full section started w full ("before"), chances for the windows after w.
+    Between windows: the section was full when the last window ended ("after"), chances for the next window onward.
+    None when there is nothing to forecast (last window, or no schedule).
+    """
+    timed = sorted(((_parse_when(s["opensAt"]), s) for s in schedule), key=lambda t: t[0])
+    labels = [f"Round {s['round']} Window {s['window']}" for _, s in timed]
+    cur = f"Round {window['round']} Window {window['window']}"
+    if cur not in labels:
+        return None
+    i = labels.index(cur)
+    if window.get("status") == "upcoming":
+        return (labels[i - 1], "after", labels[i:]) if i > 0 else None
+    if window.get("status") == "open" and i + 1 < len(labels):
+        return cur, "before", labels[i + 1:]
+    return None
+
+
+def attach_drops(docs: dict, rows: list[dict], window: dict, schedule: list[dict], term: str) -> int:
+    """Add a course-level `drops` block to each current-term course with a full section: the cumulative chance
+    that a seat is offered again by each later window (model/forecast/drops.py). Returns the course count."""
+    try:
+        plan = drop_windows(window, schedule)
+    except (KeyError, TypeError, ValueError):  # unreadable schedule: no drop chance, the build goes on
+        plan = None
+    if not plan:
+        return 0
+    base, full_at, targets = plan
+    def left(s):
+        return s["live"]["available"] if s.get("live") else s.get("seatsLeft")
+
+    full_courses = [c for c, d in docs.items() if any(left(s) is not None and left(s) <= 0 for s in d["sectionsNow"])]
+    try:
+        from forecast import drops  # noqa: PLC0415
+        found = drops.drop_chances(rows, full_courses, WINDOW_ORDER, base, targets, skip_term=term, full_at=full_at)
+    except Exception as e:  # the drop chance is an extra: never fail a build for it
+        print(f"WARNING: drop chance skipped: {type(e).__name__}: {e}", file=sys.stderr)
+        return 0
+    for c, steps in found.items():
+        docs[c]["drops"] = {"from": base, "steps": steps}
+    return len(found)
+
+
 def attach_forecasts(docs: dict, params: dict) -> int:
     """Add `forecast` and `minBidCents` to each current section that has fitted parameters. Returns count."""
     classes = params["classes"]
@@ -994,6 +1065,10 @@ def main(argv=None) -> int:
         # history only alongside deltas that passed the same-window check
         history = load_seat_history(args.availability, term, seats_summary["window"]) if delta_times else {}
         attached_deltas = attach_seat_deltas(docs, deltas, history, (delta_times or {}).get("openScanAt"))
+        attached_exams = attach_exams(docs, args.csv.parent / "schedule-html", term)
+        t_drops = datetime.now().timestamp()
+        attached_drops = attach_drops(docs, rows, cfg["window"], cfg["schedule"], term)
+        t_drops = datetime.now().timestamp() - t_drops
         generated = args.generated_at or datetime.now(SGT).isoformat(timespec="seconds")
         meta = {
             "generatedAt": generated,
@@ -1038,6 +1113,8 @@ def main(argv=None) -> int:
     print(f"rows {len(rows)}, courses {len(docs)}, latestResultsWindow {meta['latestResultsWindow']!r}")
     print(f"live seats: {attached_live} sections" + (f" ({meta['seats']['live']} live, {meta['seats']['approx']} approx)" if "seats" in meta else " (none)"))
     print(f"seat deltas: {attached_deltas} sections" + f", history on {sum('history' in s['live'] for d in docs.values() for s in d['sectionsNow'] if s.get('live'))}")
+    print(f"exam dates: {attached_exams} of {sum(len(d['sectionsNow']) for d in docs.values())} current sections")
+    print(f"drop chance: {attached_drops} courses with a full section ({t_drops:.1f} s)")
     print(f"forecasts: {attached} sections, {len(fmeta['windows'])} windows, highlights for "
           f"{len(highlights['byWindow'])} windows (open: {highlights['window']})")
     shard_sizes = [(args.out / n).stat().st_size for n in browse[1]]

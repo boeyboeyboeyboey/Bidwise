@@ -256,7 +256,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .acc { margin: 0 0 var(--s3); }
   /* Inside the expandable cards the prose fills the card; the measure limit only applies to prose outside them. */
   /* Expandable cards sit in a reading-width column (~75 characters a line); their text fills the card. */
-  .more { max-width: 760px; margin-inline: auto; }
+  .more { width: 100%; max-width: 760px; margin-inline: auto; }
   .more .how p, .more .acc, .more .notes { max-width: none; }
   .notes { color: var(--muted); max-width: 70ch; }
   .bt h3 { font-size: 16px; font-weight: 600; margin: var(--s5) 0 var(--s2); }

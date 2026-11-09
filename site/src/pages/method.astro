@@ -154,6 +154,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     </div>
     <ul class="bul notes">
       <li>Average miss: how far our predicted clearing bid (the lowest bid that got in) was from the real one, on sections that filled.</li>
+      <li>Accuracy is for forecasts made just before each window opens; forecasts for windows further ahead are less certain.</li>
       <li>Last term’s bid: the last term of the same type, for the same section, else the instructor, else the course.</li>
       <li>Our 80% range: the forecast’s 10th to 90th percentile. About 80% is the target.</li>
       <li>Weak spot: for sections with a middling chance of filling, it said “fills” more often than it happened.</li>

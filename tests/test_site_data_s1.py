@@ -77,6 +77,17 @@ class Accuracy(unittest.TestCase):
             {"term": "T-b", "filled": 6, "fMae": 13.5, "fBase": 21.0, "fCov": 0.8}])
         self.assertEqual(a["heldOut"], {"term": "T-b", "n": 7, "baseN": 6, "mae": 5.5, "base": 7.5, "cov": 0.82})
 
+    def test_accuracy_basis_only_for_the_corrected_model(self):
+        bt = {"overall": {"term": "T", "filled": 1, "coverage80Filled": 0.8,
+                          "baseline": {"modelMaeFilledCondOnSameSamples": 1.0, "maeFilledCents": 2.0}}}
+        self.assertNotIn("accuracyBasis", bsd.build_accuracy(bt))
+        self.assertNotIn("accuracyBasis", bsd.build_accuracy(bt, "fit"))
+        self.assertEqual(bsd.build_accuracy(bt, "fit+gbm-b2")["accuracyBasis"], "next-window")
+        params = {"windows": [], "term": "T"}
+        full = {"coverage80": 0.8, "maeCents": 1.0, "samples": 1, "byWindow": {}, "baseline": {}}
+        self.assertNotIn("accuracyBasis", bsd.build_forecast_meta(params, full, "t"))
+        self.assertEqual(bsd.build_forecast_meta(params, full, "t", "fit+gbm-b2")["accuracyBasis"], "next-window")
+
     def test_missing_pieces_are_left_out_not_invented(self):
         self.assertEqual(bsd.build_accuracy(None), {"filledTests": [], "heldOut": None})
         a = bsd.build_accuracy({"overall": {"term": "T", "filled": 1}})

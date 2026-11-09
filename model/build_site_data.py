@@ -48,6 +48,10 @@ DEFAULT_OUT = ROOT / "site/src/data/real"
 DEFAULT_CONFIG = ROOT / "model/site_window.json"
 DEFAULT_PARAMS = ROOT / "model/forecast/out/params-2026-27-term-2.json"
 DEFAULT_BACKTEST = ROOT / "model/forecast/out/backtest.json"
+DEFAULT_BACKTEST_CORRECTED = ROOT / "model/forecast/out/backtest-corrected.json"
+# Forecast correction (GBM level rescale of priceLevelCents, model/forecast/correction.py). Off switches, any one:
+# this constant, the env var BIDWISE_CORRECTION=0, or --no-correction. Any failure falls back to the uncorrected fit.
+CORRECTION_ENABLED = True
 SIM_PARAM_KEYS = ("demandMean", "demandDispersion", "priceLevelCents", "priceSigma",
                   "anchorSigma", "anchorShare", "anchorCents")
 # Same runs, seed and target as the course page (site/src/lib/sim/forecast.ts: FORECAST_RUNS, FORECAST_SEED, 90% target)
@@ -578,6 +582,71 @@ def load_forecast_params(path: Path | None, current_term: str) -> dict | None:
     return params
 
 
+def _correction_sim(job):
+    """One simulator call for the correction step (module level so a process pool can run it)."""
+    sys.path.insert(0, str(ROOT / "model"))
+    try:
+        from forecast import fit  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    return fit._sim_one(job)
+
+
+def correction_sections(docs: dict) -> dict:
+    """{class_number: {seats, total}}: the seats the site shows for each current section (live scan, else last window's vacancy)."""
+    out = {}
+    for doc in docs.values():
+        for s in doc["sectionsNow"]:
+            live = s.get("live")
+            out[s["classNumber"]] = {"seats": live["available"] if live else s.get("seatsLeft"),
+                                     "total": live["total"] if live else s["seatsTotal"]}
+    return out
+
+
+CORRECTION_POOL_TIMEOUT = 600  # s for all correction simulations (about 30 s measured)
+
+
+def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, docs: dict, window: dict,
+                  corrected_path: Path | None, processes: int | None = None) -> tuple[dict, dict, str]:
+    """Apply the GBM level correction when it is switched on, its corrected backtest matches this fit, and it passes its gate.
+
+    Returns (params, backtest, modelVersion). On any problem (missing scikit-learn, no/stale corrected backtest, a training
+    error, a failed sanity gate) it warns and returns the inputs unchanged with version "fit": the build never fails here.
+    When applied, the returned backtest is the corrected one, so forecast-meta.json and accuracy.json describe the model shown.
+    """
+    try:
+        sys.path.insert(0, str(ROOT / "model"))
+        try:
+            from forecast import correction  # noqa: PLC0415
+        finally:
+            sys.path.pop(0)
+        corr = json.loads(Path(corrected_path).read_text(encoding="utf-8")) if corrected_path and Path(corrected_path).exists() else None
+        why = correction.corrected_backtest_usable(corr, backtest)
+        if why:
+            print(f"WARNING: forecast correction skipped, using uncorrected params: {why}", file=sys.stderr)
+            return params, backtest, "fit"
+        first = f"Round {window['round']} Window {window['window']}"
+        pool = None
+        pool_map = None
+        if len(docs) > 20:
+            from multiprocessing import Pool  # noqa: PLC0415
+            pool = Pool(processes or os.cpu_count() or 1)
+            # a hang must fall back to the plain fit (via the except below), not run into the site stage's 30 min kill
+            pool_map = lambda fn, jobs: pool.map_async(_correction_sim, list(jobs), chunksize=40).get(timeout=CORRECTION_POOL_TIMEOUT)  # noqa: E731
+        try:
+            new, info = correction.try_apply_correction(params, rows, term, correction_sections(docs), first, pool_map=pool_map)
+        finally:
+            if pool:
+                pool.terminate()  # after a clean map the workers are idle, so this is the same as close(); after a timeout it frees them
+                pool.join()
+        if info is None:
+            return params, backtest, "fit"
+        return new, corr, info["modelVersion"]
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: forecast correction skipped, using uncorrected params: {type(e).__name__}: {e}", file=sys.stderr)
+        return params, backtest, "fit"
+
+
 def attach_forecasts(docs: dict, params: dict) -> int:
     """Add `forecast` and `minBidCents` to each current section that has fitted parameters. Returns count."""
     classes = params["classes"]
@@ -605,10 +674,17 @@ def window_confidence(bt: dict) -> str:
     return "low"
 
 
-def build_forecast_meta(params: dict | None, backtest: dict | None, generated: str) -> dict:
+def accuracy_basis(model_version: str) -> str | None:
+    """"next-window" when the corrected backtest is shown: it scores each window using the actual results of all earlier
+    windows of its term, i.e. a forecast made just before that window opens. Windows further ahead are forecast with less
+    information, so their accuracy is lower. None for the plain fit (its backtest does not make that claim)."""
+    return "next-window" if model_version != "fit" else None
+
+
+def build_forecast_meta(params: dict | None, backtest: dict | None, generated: str, model_version: str = "fit") -> dict:
     if not params or not backtest:
         return {"term": None, "windows": [], "byWindow": {}, "coverage80": None, "maeCents": None,
-                "samples": 0, "baseline": None, "generatedAt": generated}
+                "samples": 0, "baseline": None, "generatedAt": generated, "modelVersion": model_version}
     by = {}
     for w in params["windows"]:
         bt = backtest.get("byWindow", {}).get(w)
@@ -641,10 +717,12 @@ def build_forecast_meta(params: dict | None, backtest: dict | None, generated: s
             "modelMaeCents": base.get("modelMaeOnSameSamples"),
         },
         "generatedAt": generated,
+        "modelVersion": model_version,
+        **({"accuracyBasis": basis} if (basis := accuracy_basis(model_version)) else {}),
     }
 
 
-def build_accuracy(backtest: dict | None) -> dict:
+def build_accuracy(backtest: dict | None, model_version: str = "fit") -> dict:
     """accuracy.json: the model's own backtest figures, so the site never hand-types them (site/src/lib/data/accuracy.ts).
 
     `filledTests`: per backtest term, the sections that filled (clearing bid above the minimum): filled count, the model's
@@ -672,7 +750,7 @@ def build_accuracy(backtest: dict | None) -> dict:
     if h.get("term") and None not in (h.get("samples"), hb.get("samples"), h.get("maeCents"), hb.get("maeCents"), h.get("coverage80")):
         held = {"term": h["term"], "n": h["samples"], "baseN": hb["samples"], "mae": h["maeCents"],
                 "base": hb["maeCents"], "cov": h["coverage80"]}
-    return {"filledTests": tests, "heldOut": held}
+    return {"filledTests": tests, "heldOut": held, **({"accuracyBasis": basis} if (basis := accuracy_basis(model_version)) else {})}
 
 
 def _load_sim():
@@ -893,6 +971,9 @@ def main(argv=None) -> int:
     ap.add_argument("--params", type=Path, default=DEFAULT_PARAMS,
                     help="forecast params JSON (skipped if missing or forecasts_ok is false)")
     ap.add_argument("--backtest", type=Path, default=DEFAULT_BACKTEST)
+    ap.add_argument("--backtest-corrected", type=Path, default=DEFAULT_BACKTEST_CORRECTED,
+                    help="backtest of the corrected model (model/forecast/correction.py backtest); the correction needs it")
+    ap.add_argument("--no-correction", action="store_true", help="build with the fitted params as they are (model version 'fit')")
     ap.add_argument("--highlight-runs", type=int, default=HIGHLIGHT_RUNS)
     ap.add_argument("--availability", type=Path, default=DEFAULT_AVAILABILITY,
                     help="merged live-seat CSV (default: `availability` in data/current.json); missing -> built without live seats")
@@ -935,11 +1016,17 @@ def main(argv=None) -> int:
         if params and not backtest:
             print(f"forecasts skipped: no backtest at {args.backtest}", file=sys.stderr)
             params = None
+        accuracy_bt = backtest if backtest else (json.loads(args.backtest.read_text(encoding="utf-8")) if args.backtest.exists() else None)
+        model_version = "fit"
+        if params and backtest and CORRECTION_ENABLED and not args.no_correction and os.environ.get("BIDWISE_CORRECTION", "1") != "0":
+            params, backtest, model_version = maybe_correct(params, backtest, rows, term, docs, cfg["window"], args.backtest_corrected)
+            if model_version != "fit":
+                accuracy_bt = backtest
         attached = attach_forecasts(docs, params) if params else 0
-        fmeta = build_forecast_meta(params, backtest, generated)
+        fmeta = build_forecast_meta(params, backtest, generated, model_version)
         highlights = build_highlights(docs, params, cfg["window"], runs=args.highlight_runs)
         browse = build_browse(rows, index, args.browse_from_term)
-        write_outputs(args.out, meta, index, docs, fmeta, highlights, browse, build_accuracy(json.loads(args.backtest.read_text(encoding="utf-8")) if args.backtest.exists() else None))
+        write_outputs(args.out, meta, index, docs, fmeta, highlights, browse, build_accuracy(accuracy_bt, model_version))
         problems = validate(args.out, rows, term)
     except BuildError as e:
         print(f"FAIL: {e}", file=sys.stderr)

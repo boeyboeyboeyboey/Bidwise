@@ -13,7 +13,7 @@ const rows = decodeShard(man, shard);
 describe('real shard sample', () => {
   it('decodes, and every field reads every row', () => {
     expect(rows).toHaveLength(36);
-    for (const f of ['term', 'window', 'termWindow', 'course', 'section', 'day', 'band', 'vacancy', 'before', 'after', 'taken', 'fillPct', 'median', 'min']) {
+    for (const f of ['term', 'window', 'termWindow', 'course', 'section', 'day', 'start', 'vacancy', 'before', 'after', 'taken', 'fillPct', 'median', 'min']) {
       const g = fieldById(f)!;
       expect(rows.map((r) => g.get(r)).some((v) => v !== null && v !== undefined)).toBe(true);
     }

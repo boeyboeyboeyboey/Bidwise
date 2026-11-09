@@ -6,7 +6,7 @@
   import { aboutPctParts, eS } from '../course/fmt';
   import { orderSections } from '../course/sections';
   import { seatLabel } from '../course/seatLabel';
-  import { ISSUE_TEXT, chanceTint, groupLimitNote, hiddenSections, isCapped, sectionOption, slotsOf, type RowIssue } from './plan';
+  import { ISSUE_TEXT, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
   import InfoTip from '../ui/InfoTip.svelte';
 
@@ -36,7 +36,6 @@
   const maxGroup = $derived(Math.max(1, Math.min(MAX_FRIENDS_GROUP, sec ? seatsLeftNow(sec) : MAX_FRIENDS_GROUP)));
   const limitNote = $derived(sec ? groupLimitNote(seatsLeftNow(sec), row.group, seatsPhrase(sec)) : '');
   const skip = $derived(bid === 0);
-  const capped = $derived(isCapped(bid, fullBid, capMode));
   const hidden = $derived(hiddenSections(course?.sectionsNow ?? [], row.sectionId, avoid));
   const sections = $derived(
     orderSections((course?.sectionsNow ?? []).filter((s) => s.id === row.sectionId || !slotsOf(s).some((x) => avoid.includes(x)))),
@@ -75,7 +74,7 @@
     </button>
     <div class="l2">
     <div class="step" role="group" aria-label="{row.course} group size">
-      <span class="lab stl">Group size</span>
+      <span class="lab stl">Group<span class="gsize"> size</span></span>
       <button type="button" class="btn btn-icon" aria-label="Fewer people for {row.course}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
       <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
       <button type="button" class="btn btn-icon" aria-label="More people for {row.course}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
@@ -94,7 +93,6 @@
         <span class="lab">{aboutPctParts(p ?? 0)[0]}</span><b class="tint" class:busy style="background: {chanceTint(p ?? 0)}">{aboutPctParts(p ?? 0)[1]}</b>
         <span class="lab">{row.group > 1 ? `chance all ${row.group}` : 'chance'}</span>
         <InfoTip />
-        {#if capped && fullBid !== null}<span class="cap">Cut from <b>{eS(fullBid)}</b></span>{/if}
       {/if}
     </div>
     </div>
@@ -108,11 +106,11 @@
 </li>
 
 <style>
-  .row { padding: var(--s1) 0; border-bottom: 1px solid var(--rule); min-width: 0; container-type: inline-size; }
-  .row.grouped { border-bottom: 0; padding: var(--s1) 0; }
+  .row { padding: 2px 0; border-bottom: 1px solid var(--rule); min-width: 0; container-type: inline-size; }
+  .row.grouped { border-bottom: 0; padding: 2px 0; }
   .row.bonus { border: 1px dashed var(--rule-strong); border-radius: var(--r-md); padding: var(--s1) var(--s2); margin: var(--s1) 0; }
   .line {
-    display: grid; align-items: center; gap: var(--s2); min-width: 0;
+    display: grid; align-items: center; gap: var(--s1) var(--s2); min-width: 0;
     grid-template-columns: minmax(0, 1fr) 44px;
     grid-template-areas: 'id rm' 'sec sec' 'role role' 'step step' 'res res';
   }
@@ -127,7 +125,7 @@
   .rm { grid-area: rm; }
   .l2 { display: contents; }
   .role { grid-area: role; display: inline-flex; width: max-content; max-width: 100%; justify-self: start; }
-  .role > button { flex: 0 1 104px; width: 104px; min-width: 0; padding: 0 var(--s1); min-height: 44px; }
+  .role > button { flex: 0 1 auto; min-width: 0; padding: 0 8px; min-height: 44px; white-space: nowrap; }
   .step { grid-area: step; min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s1); justify-self: start; }
   .stl { margin-right: var(--s1); white-space: nowrap; }
   .left { margin-left: var(--s1); }
@@ -143,16 +141,24 @@
   .need s { text-decoration-thickness: 1.5px; }
   .hid { font-size: 13px; white-space: nowrap; }
   .tint { display: inline-block; padding: 1px 6px; border-radius: var(--r-sm); color: #1b1d21; }
-  .notes { display: grid; gap: var(--s1); padding-top: var(--s2); min-width: 0; }
+  .notes { display: grid; gap: var(--s1); padding-top: var(--s1); min-width: 0; }
   .notes p { margin: 0; font-size: 14px; }
   .why { color: var(--muted); }
   .clash { padding-left: var(--s3); border-left: 3px solid var(--danger); color: var(--text); font-weight: 600; }
-  .cap { flex: 0 0 100%; font-size: 15px; color: var(--text); white-space: normal; }
   .calc { color: var(--muted); }
   /* Disabled stepper: muted text on the page colour (at least 4.5:1), not faded by opacity. */
   .step .btn-icon:disabled { color: var(--muted); opacity: 1; }
 
+  /* Mid width (the planner column beside the summary): Must get / Pick one / Nice to have and the group size share one row. */
+  @container (min-width: 430px) and (max-width: 619.98px) {
+    .gsize { display: none; }
+    .line {
+      grid-template-columns: max-content minmax(0, 1fr) 44px;
+      grid-template-areas: 'id id rm' 'sec sec sec' 'role step step' 'res res res';
+    }
+  }
   @container (min-width: 620px) {
+    .role > button { flex: 0 1 104px; width: 104px; padding: 0 var(--s1); }
     .line {
       grid-template-columns: 150px minmax(110px, 1fr) 314px 44px;
       grid-template-areas: 'id sec role rm' 'l2 l2 l2 l2';

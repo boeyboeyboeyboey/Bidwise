@@ -7,6 +7,6 @@ describe('multiLabel', () => {
     expect(multiLabel(['Mon'], 'Any day', 'days')).toBe('Mon');
     expect(multiLabel(['Mon', 'Wed'], 'Any day', 'days')).toBe('Mon, Wed');
     expect(multiLabel(['Mon', 'Wed', 'Fri'], 'Any day', 'days')).toBe('3 days');
-    expect(multiLabel(['Morning', 'Afternoon', 'Evening'], 'Any time', 'times', 3)).toBe('Morning, Afternoon, Evening');
+    expect(multiLabel(['08:15', '12:00', '19:00'], 'Any time', 'times', 3)).toBe('08:15, 12:00, 19:00');
   });
 });

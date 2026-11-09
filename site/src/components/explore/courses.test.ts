@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRows, R } from '../classes/logic';
 import {
-  activeFilterCount, browseDefaults, classesQueryToBrowse, dayOptions, decodeBrowse, instructorLine, encodeBrowse, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
+  activeFilterCount, browseDefaults, classesQueryToBrowse, dayOptions, decodeBrowse, instructorLine, encodeBrowse, maskToTimes, timeOptions, timesToMask, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
   type BrowseState, type CourseEntry,
 } from './courses';
 
@@ -65,8 +65,10 @@ describe('filterCourses', () => {
   it('day and time filters keep courses with a matching section this term and drop past-only courses', () => {
     expect(codes(f({ days: 0b00010 }))).toEqual(['COR-LAW2243']);
     expect(codes(f({ days: 0b01000 }))).toEqual(['ECON111']);
-    expect(codes(f({ times: 4 }))).toEqual(['COR-LAW2243']);
-    expect(codes(f({ times: 1 }))).toEqual(['COR-LAW2243', 'ECON111']);
+    expect(codes(f({ times: ['18:30'] }))).toEqual(['COR-LAW2243']);
+    expect(codes(f({ times: ['09:00'] }))).toEqual(['COR-LAW2243', 'ECON111']);
+    expect(codes(f({ times: ['12:00', '18:30'] }))).toEqual(['COR-LAW2243', 'ECON111']);
+    expect(codes(f({ times: ['07:00'] }))).toEqual([]);
   });
   it('lists only the sections that pass the filters', () => {
     const [h] = f({ days: 0b01000 });
@@ -94,6 +96,20 @@ describe('instructorLine', () => {
     expect(instructorLine([])).toBe('');
     expect(instructorLine(['A', 'B', 'C', 'D'])).toBe('A · B · C · D');
     expect(instructorLine(['A', 'B', 'C', 'D', 'E', 'F'])).toBe('A · B · C · D · +2 more');
+  });
+});
+
+describe('timeOptions', () => {
+  it('lists the distinct start times of this term\'s sections, sorted, with none for TBA', () => {
+    expect(timeOptions(courses)).toEqual(['09:00', '12:00', '18:30']);
+  });
+  it('keeps a chosen time that no section has, so a link\'s filter can be cleared', () => {
+    expect(timeOptions(courses, ['07:00', '12:00'])).toEqual(['07:00', '09:00', '12:00', '18:30']);
+  });
+  it('converts between times and the menu\'s bit mask', () => {
+    const opts = timeOptions(courses);
+    expect(timesToMask(opts, ['09:00', '18:30', '07:00'])).toBe(0b101);
+    expect(maskToTimes(opts, 0b110)).toEqual(['12:00', '18:30']);
   });
 });
 
@@ -129,7 +145,7 @@ describe('termChoices', () => {
 });
 
 describe('URL state', () => {
-  const full: BrowseState = { q: 'law', sub: 'COR-LAW', days: 0b00101, times: 0b101, seats: true, nofinal: true, course: 'COR-LAW2243', term: '2025-26 Term 2', sec: 'G1' };
+  const full: BrowseState = { q: 'law', sub: 'COR-LAW', days: 0b00101, times: ['08:15', '19:00'], seats: true, nofinal: true, course: 'COR-LAW2243', term: '2025-26 Term 2', sec: 'G1' };
   it('round-trips every field and omits defaults', () => {
     expect(decodeBrowse(encodeBrowse(full))).toEqual(full);
     expect(encodeBrowse(browseDefaults())).toBe('');
@@ -141,7 +157,13 @@ describe('URL state', () => {
   });
   it('reads a course code in any case and ignores junk', () => {
     expect(decodeBrowse('?course=is214').course).toBe('IS214');
-    expect(decodeBrowse('?day=xyz&time=q&seats=0&nofinal=maybe')).toEqual(browseDefaults());
+    expect(decodeBrowse('?day=xyz&time=q,2460,8:15&seats=0&nofinal=maybe')).toEqual(browseDefaults());
+  });
+  it('writes start times as time=0815,1200 and ignores the old m/a/e values', () => {
+    expect(encodeBrowse({ ...browseDefaults(), times: ['12:00', '08:15'] })).toBe('time=0815,1200');
+    expect(decodeBrowse('?time=1200,0815,0815').times).toEqual(['08:15', '12:00']);
+    expect(decodeBrowse('?time=m,a')).toEqual(browseDefaults());
+    expect(decodeBrowse('?time=m,1200,e').times).toEqual(['12:00']);
   });
   it('reads old Browse all sections links: the course text or professor becomes the search', () => {
     expect(decodeBrowse('?v=browse&bq=IS214&bt=2025-26+Term+2').q).toBe('IS214');
@@ -164,8 +186,8 @@ describe('exploreMode', () => {
 
 describe('classes redirect', () => {
   it('carries search, subject, day, time and seats over', () => {
-    const r = classesQueryToBrowse('?q=law&sub=COR-LAW&day=mon,wed&time=m,e&seats=1');
-    expect(decodeBrowse(r)).toEqual({ ...browseDefaults(), q: 'law', sub: 'COR-LAW', days: 0b101, times: 0b101, seats: true });
+    const r = classesQueryToBrowse('?q=law&sub=COR-LAW&day=mon,wed&time=m,e,0815&seats=1');
+    expect(decodeBrowse(r)).toEqual({ ...browseDefaults(), q: 'law', sub: 'COR-LAW', days: 0b101, times: ['08:15'], seats: true });
   });
   it('turns exam=none into the no-final filter and drops exam=has and sort', () => {
     expect(decodeBrowse(classesQueryToBrowse('?exam=none')).nofinal).toBe(true);

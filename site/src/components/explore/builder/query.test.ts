@@ -25,8 +25,8 @@ describe('fields', () => {
     expect(parseSlot('Mon, Thu 12:00–15:15')).toEqual({ days: 'Mon, Thu', start: 720 });
     expect(parseSlot('Thu 08:15–09:45 · Mon 08:15–09:00')).toEqual({ days: 'Mon, Thu', start: 495 });
     expect(parseSlot('')).toEqual({ days: null, start: null });
-    expect(fieldById('band')!.get(row({ slot: 'Tue 16:00–19:15' }))).toBe('Evening');
-    expect(fieldById('band')!.get(row({ slot: '' }))).toBeNull();
+    expect(fieldById('start')!.get(row({ slot: 'Tue 16:00–19:15' }))).toBe('16:00');
+    expect(fieldById('start')!.get(row({ slot: '' }))).toBeNull();
   });
 
   it('shortens windows and joins term with window', () => {
@@ -45,7 +45,7 @@ describe('fields', () => {
     expect(sorted('termWindow', ['B · Round 1 Window 1', 'A · Round 2 Window 1', 'A · Round 1 Window 2'])).toEqual(['A · Round 1 Window 2', 'A · Round 2 Window 1', 'B · Round 1 Window 1']);
     expect(sorted('section', ['G10', 'G2', 'G1'])).toEqual(['G1', 'G2', 'G10']);
     expect(sorted('day', ['Thu', 'Mon, Thu', 'Mon', 'Fri'])).toEqual(['Mon', 'Mon, Thu', 'Thu', 'Fri']);
-    expect(sorted('band', ['Evening', 'Morning', 'Afternoon'])).toEqual(['Morning', 'Afternoon', 'Evening']);
+    expect(sorted('start', ['19:00', '08:15', '12:00'])).toEqual(['08:15', '12:00', '19:00']);
   });
 
   it('has unique ids', () => {

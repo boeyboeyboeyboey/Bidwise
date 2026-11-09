@@ -77,8 +77,6 @@ const dayCmp = (a: Value, b: Value) => {
   return ia.length - ib.length;
 };
 
-export const BANDS = ['Morning', 'Afternoon', 'Evening'];
-
 /** Minutes after midnight as "08:15". */
 export const fmtMinutes = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
@@ -114,10 +112,11 @@ export const FIELDS: Field[] = [
   cat('section', 'Section', (r) => r.section || null),
   cat('instructor', 'Professor', (r) => r.instructor),
   cat('day', 'Day', (r) => parseSlot(r.slot).days, { compare: dayCmp, noneLabel: 'No time set' }),
-  cat('band', 'Time of day', (r) => {
+  // The slot's start time itself ("16:00"); zero-padded, so text order is time order.
+  cat('start', 'Start time', (r) => {
     const s = parseSlot(r.slot).start;
-    return s === null ? null : band(fmtMinutes(s));
-  }, { compare: (a, b) => BANDS.indexOf(String(a)) - BANDS.indexOf(String(b)), noneLabel: 'No time set' }),
+    return s === null ? null : fmtMinutes(s);
+  }, { compare: (a, b) => String(a).localeCompare(String(b)), noneLabel: 'No time set' }),
   num('vacancy', 'Seats in section', 'seats', (r) => r.vacancy, fmtInt),
   num('before', 'Seats offered', 'seats', (r) => r.before, fmtInt),
   num('after', 'Seats left', 'seats', (r) => r.after, fmtInt),
@@ -139,8 +138,3 @@ export const isFieldId = (id: string): boolean => BY_ID.has(id);
 /** "e$", "seats", "%" for the axis title; '' for none. */
 export const unitLabel = (u: FieldUnit): string => (u === 'none' ? '' : u);
 
-export function band(start: string): string {
-  if (!start) return 'No time set';
-  const h = Number(start.slice(0, 2));
-  return h < 12 ? 'Morning' : h < 16 ? 'Afternoon' : 'Evening';
-}

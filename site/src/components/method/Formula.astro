@@ -23,7 +23,7 @@ const sections: Sec[] = [
         ['filled', 'vacancy after processing is 0'],
         [R`<code>mn</code>, <code>med</code>`, 'minimum and median of the successful bids, in cents'],
         [R`floor @[F]@`, R`1000 cents, unless a course's lowest observed minimum is e$11 to e$20 and at least 3 rows sit within a cent of it`],
-        ['slot', 'time bucket of the first meeting, plus <code>_fri</code> if the first listed day is Friday'],
+        ['slot', 'start time of the first meeting (see Slot key below), plus <code>_fri</code> if the first listed day is Friday'],
       ] } },
       R`Rows are dropped if @[S\le 0]@, the vacancy after processing is negative or above @[S]@, the term is not Term 1 or Term 2 (3A and 3B are tiny), or the window is not one of the 11 listed. Windows are matched on BOSS's exact label, so each window has its own parameters. Rows from the term being forecast, or later, are never used for training.`,
       R`<b>Censoring.</b> If the section did not fill, every bidder succeeded, so @[N=B]@ exactly. If it filled, only @[N\ge S]@ is known (right-censored). For the clearing bid: if the section did not fill, every bid at or above the floor succeeds, so the clearing bid is the floor; if it filled, it is the lowest successful bid <code>mn</code> (pay-as-bid, highest bids win, ties random). The backtest target is therefore @[a=\texttt{mn}]@ if filled, else @[F]@.`,
@@ -90,7 +90,7 @@ const sections: Sec[] = [
     id: 'slots',
     h: '5. Time-slot effects',
     blocks: [
-      R`Slot key: first meeting starting at 08:30 or earlier is early, 18:00 or later is late, else mid; plus <code>_fri</code> if the first listed day is Friday. Six keys: <code>early, mid, late, early_fri, mid_fri, late_fri</code>.`,
+      R`Slot key: a first meeting starting at 08:30 or earlier (the 08:15 slot) gets key <code>early</code>, one starting at 18:00 or later (the 19:00 slot) <code>late</code>, any start in between <code>mid</code>; plus <code>_fri</code> if the first listed day is Friday. Six keys: <code>early, mid, late, early_fri, mid_fri, late_fri</code>.`,
       R`<b>Contrasts.</b> Within each (term, window, course) cell that has at least one mid section, each non-mid section @[o]@ is compared with the cell's mid sections:`,
       { ul: [
         R`demand: @[\Delta^d_o=\ln\!\big(1+L_o/S_o\big)-\overline{\ln(1+L_i/S_i)}_{i\in\text{mid}}]@ with @[L=S]@ if filled, else @[B]@ (a lower bound for @[N]@);`,

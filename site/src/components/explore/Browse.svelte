@@ -3,11 +3,11 @@
   import { APPROX_NOTE, scanTimeText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
   import MultiSelect from '../ui/MultiSelect.svelte';
-  import { R, TIMES, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
+  import { R, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
   import { fmtBid, fmtSeats, fullWindow, pastSections, seatsTaken, type BrowseRow, type CourseTerms } from './browse';
   import { fetchCourseTerms, fetchManifest, fetchTerm } from './browseClient';
   import {
-    activeFilterCount, browseDefaults, dayOptions, decodeBrowse, encodeBrowse, groupCourses, filterCourses, instructorLine, sectionFilterOn, sectionMatches, shortTerm,
+    activeFilterCount, browseDefaults, dayOptions, decodeBrowse, encodeBrowse, groupCourses, filterCourses, instructorLine, maskToTimes, timeOptions, timesToMask, sectionFilterOn, sectionMatches, shortTerm,
     subjectsOf, termChoices, type BrowseState, type CourseEntry,
   } from './courses';
 
@@ -24,7 +24,8 @@
 
   const subjects = $derived(subjectsOf(courses));
   const dayChoices = $derived(dayOptions(courses, bs.days));
-  const timeChoices = TIMES.map((t) => ({ bit: t.bit, label: t.label }));
+  const timeList = $derived(timeOptions(courses, bs.times));
+  const timeChoices = $derived(timeList.map((label, i) => ({ bit: 1 << i, label })));
   const hits = $derived(filterCourses(courses, bs));
   const count = $derived(activeFilterCount(bs));
   const filtered = $derived(sectionFilterOn(bs));
@@ -131,8 +132,8 @@
   const pastList = $derived(open && past ? pastSections(past, open.code) : []);
 
   const toggleBit = (mask: number, bit: number) => (mask & bit ? mask & ~bit : mask | bit);
-  const clear = () => (bs = { ...bs, sub: '', days: 0, times: 0, seats: false, nofinal: false });
-  const clearSectionFilters = () => (bs = { ...bs, days: 0, times: 0, seats: false, nofinal: false });
+  const clear = () => (bs = { ...bs, sub: '', days: 0, times: [], seats: false, nofinal: false });
+  const clearSectionFilters = () => (bs = { ...bs, days: 0, times: [], seats: false, nofinal: false });
   const pickTerm = (t: string) => (bs = { ...bs, term: t, sec: '' });
   const toggleSec = (s: string) => (bs = { ...bs, sec: bs.sec === s ? '' : s });
   const secLabel = (n: number, total: number) => (n === total ? `${n} ${n === 1 ? 'section' : 'sections'}` : `${n} of ${total} sections`);
@@ -262,7 +263,7 @@
           </select>
         </label>
         <div class="g"><MultiSelect label="Day" options={dayChoices} value={bs.days} onchange={(m) => (bs = { ...bs, days: m })} anyLabel="Any day" noun="days" /></div>
-        <div class="g"><MultiSelect label="Time" options={timeChoices} value={bs.times} onchange={(m) => (bs = { ...bs, times: m })} anyLabel="Any time" noun="times" listMax={3} /></div>
+        <div class="g"><MultiSelect label="Start time" options={timeChoices} value={timesToMask(timeList, bs.times)} onchange={(m) => (bs = { ...bs, times: maskToTimes(timeList, m) })} anyLabel="Any start time" noun="start times" listMax={3} /></div>
         <div class="checks">
           <label class="chk"><input type="checkbox" checked={bs.seats} onchange={() => (bs = { ...bs, seats: !bs.seats })} /><span>Has seats left</span></label>
           <label class="chk"><input type="checkbox" checked={bs.nofinal} onchange={() => (bs = { ...bs, nofinal: !bs.nofinal })} /><span>No final exam listed</span></label>

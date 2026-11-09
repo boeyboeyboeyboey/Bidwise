@@ -26,7 +26,7 @@
   /** Rows shown in the screen-reader table. */
   const ROW_CAP = 500;
   /** Placeholder (and accessible name) of each narrowing select. */
-  const NARROW_LABEL: Record<NarrowKey, string> = { day: 'Day', band: 'Time of day', section: 'Section', instructor: 'Professor' };
+  const NARROW_LABEL: Record<NarrowKey, string> = { day: 'Day', start: 'Start time', section: 'Section', instructor: 'Professor' };
 
   let spec = $state<Spec>(defaultSpec());
   let ready = $state(false);

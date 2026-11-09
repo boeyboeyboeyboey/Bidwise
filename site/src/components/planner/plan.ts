@@ -9,7 +9,7 @@ import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
 import { dayText } from '../course/history';
 import { formatSlot } from '../../lib/format/slot';
 import { eS } from '../course/fmt';
-import { GROUP_LETTERS, slotOf, type PlanRowState } from './types';
+import { GROUP_LETTERS, isSlot, slotOf, startText, type PlanRowState } from './types';
 
 /** Same runs and seed as the course page, so a section shows the same bid and chance on both pages. */
 export const PLAN_RUNS = FORECAST_RUNS;
@@ -123,9 +123,16 @@ export function freeLetter(rows: Pick<PlanRowState, 'role' | 'oneOf'>[]): string
 
 const dayShort = (d: string) => dayText(d).slice(0, 3);
 
-/** Slots ("Mon-morning") a section occupies, for the avoid-times filter. */
+/** Slots ("Mon-08:15") a section occupies: each meeting's day and start time, for the avoid-times filter. */
 export function slotsOf(section: Section): string[] {
-  return section.meetings.filter((m) => m.start).map((m) => slotOf(dayShort(m.day), m.start));
+  return section.meetings.filter((m) => startText(m.start)).map((m) => slotOf(dayShort(m.day), m.start));
+}
+
+/** The distinct meeting start times of these sections ("08:15"), sorted: the rows of the can't-attend grid. */
+export function startTimesOf(sections: readonly Pick<Section, 'meetings'>[]): string[] {
+  const seen = new Set<string>();
+  for (const s of sections) for (const m of s.meetings) if (startText(m.start)) seen.add(startText(m.start));
+  return [...seen].sort();
 }
 
 /** How many sections of a course the avoid-times filter hides (the chosen one always stays). */
@@ -177,7 +184,7 @@ export interface StoredPlan {
   s: number;
   /** window label ('' = current) */
   w: string;
-  /** avoided slots */
+  /** avoided slots ("Mon-08:15"); old "Mon-morning" entries are dropped on decode */
   a: string[];
   /** rows: course, section id, group size, role, one-of group letter */
   r: { c: string; i: string; g: number; o: Role; l: string }[];
@@ -190,7 +197,7 @@ export function decodePlan(raw: unknown): StoredPlan | null {
   const b = typeof st.b === 'number' && Number.isFinite(st.b) ? Math.min(MAX_BALANCE_CENTS, Math.max(0, Math.round(st.b))) : null;
   const s = typeof st.s === 'number' && Number.isFinite(st.s) ? Math.min(1, Math.max(0, st.s)) : DEFAULT_TARGET;
   const w = typeof st.w === 'string' ? st.w : '';
-  const a = Array.isArray(st.a) ? st.a.filter((x): x is string => typeof x === 'string') : [];
+  const a = Array.isArray(st.a) ? st.a.filter((x): x is string => typeof x === 'string' && isSlot(x)) : [];
   const r: StoredPlan['r'] = [];
   if (Array.isArray(st.r)) {
     for (const x of st.r.slice(0, 20)) {

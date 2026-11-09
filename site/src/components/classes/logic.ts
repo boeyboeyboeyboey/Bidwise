@@ -5,10 +5,10 @@ import { formatExam, type ExamSlot } from '../../lib/format/exam';
 import { seatsOf, type SeatInput } from '../../lib/data/seats';
 import type { Meeting } from '../../lib/data/types';
 
-/** [code, title, section, instructor, day/time text, seats left, seats total, approx 0|1, day mask, time-of-day mask, exam text ("Thu 29 Apr, 13:00", '' = none listed)]. */
+/** [code, title, section, instructor, day/time text, seats left, seats total, approx 0|1, day mask, start times ("08:15", sorted, on real days), exam text ("Thu 29 Apr, 13:00", '' = none listed)]. */
 export type ClassRow = [
   code: string, title: string, section: string, instructor: string, slot: string,
-  left: number, total: number, approx: 0 | 1, days: number, times: number, exam: string,
+  left: number, total: number, approx: 0 | 1, days: number, times: string[], exam: string,
 ];
 export const R = { code: 0, title: 1, section: 2, instructor: 3, slot: 4, left: 5, total: 6, approx: 7, days: 8, times: 9, exam: 10 } as const;
 
@@ -21,20 +21,12 @@ export interface ClassesPayload {
 }
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-/** Time of day by meeting start: morning before 12:00, afternoon 12:00 to 17:59, evening 18:00 on. */
-export const TIMES = [
-  { id: 'm', label: 'Morning', bit: 1 },
-  { id: 'a', label: 'Afternoon', bit: 2 },
-  { id: 'e', label: 'Evening', bit: 4 },
-] as const;
-
 export const subjectOf = (code: string): string => code.replace(/\d.*$/, '');
 
-const timeBit = (start: string | null | undefined): number => {
+/** A meeting start as "08:15" (zero-padded); '' when it is empty or not a time. */
+export const startOf = (start: string | null | undefined): string => {
   const m = /^(\d{1,2}):(\d{2})/.exec((start ?? '').trim());
-  if (!m) return 0;
-  const h = +m[1];
-  return h < 12 ? 1 : h < 18 ? 2 : 4;
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
 };
 
 const dayBit = (day: string | null | undefined): number => {
@@ -56,8 +48,13 @@ export function buildRows(courses: readonly CourseLike[]): ClassRow[] {
   for (const c of courses) {
     for (const s of c.sectionsNow) {
       const seats = seatsOf(s);
-      let days = 0, times = 0;
-      for (const m of s.meetings) { days |= dayBit(m.day); times |= dayBit(m.day) ? timeBit(m.start) : 0; }
+      let days = 0;
+      const starts = new Set<string>();
+      for (const m of s.meetings) {
+        days |= dayBit(m.day);
+        if (dayBit(m.day) && startOf(m.start)) starts.add(startOf(m.start));
+      }
+      const times = [...starts].sort();
       rows.push([
         c.code, c.title, s.section, (s.instructor ?? '').trim(), formatSlot(s.meetings),
         Math.max(0, seats.left), seats.total, seats.source === 'approx' ? 1 : 0, days, times, formatExam(s.exam),

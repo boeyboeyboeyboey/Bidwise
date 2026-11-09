@@ -7,7 +7,7 @@ import type { PlanItem } from '../../lib/sim/planner';
 import {
   balanceFromCents, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, pickGroupFor, dropToFit, encodeShare, decodeShare,
-  isCapped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, hiddenSections, toPlanSimInput, typicalNeedCents,
+  isCapped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
 } from './plan';
 
 const W = 'Round 1A Window 3';
@@ -51,13 +51,20 @@ describe('toPlanSimInput', () => {
   });
 });
 
+describe('startTimesOf', () => {
+  it('lists the distinct start times, sorted, skipping TBA meetings', () => {
+    const at = (start: string | null) => sec({ meetings: [{ day: start ? 'MON' : 'TBA', start: start as string, end: '', venue: '' }] });
+    expect(startTimesOf([at('19:00'), at('08:15'), at('19:00'), at('8:15'), at(null), at('12:00')])).toEqual(['08:15', '12:00', '19:00']);
+  });
+});
+
 describe('hiddenSections', () => {
   const tue = sec({ id: '2', meetings: [{ day: 'TUE', start: '08:15', end: '11:30', venue: '' }] });
   it('counts blocked sections but never the chosen one', () => {
     const all = [sec(), tue, sec({ id: '3' })];
     expect(hiddenSections(all, '9', [])).toBe(0);
-    expect(hiddenSections(all, '9', ['Mon-morning'])).toBe(2);
-    expect(hiddenSections(all, '1', ['Mon-morning'])).toBe(1);
+    expect(hiddenSections(all, '9', ['Mon-08:15'])).toBe(2);
+    expect(hiddenSections(all, '1', ['Mon-08:15'])).toBe(1);
   });
 });
 
@@ -101,13 +108,13 @@ describe('sections', () => {
     expect(sectionOption(sec())).toBe('G1 · Mon 08:15–11:30');
     expect(sectionOption(sec({ meetings: [] }))).toBe('G1 · Time not set');
     expect(sectionOption(sec({ seatsLeft: 0 }))).toContain('(full)');
-    expect(slotsOf(sec())).toEqual(['Mon-morning']);
+    expect(slotsOf(sec())).toEqual(['Mon-08:15']);
     expect(slotsOf(sec({ meetings: [] }))).toEqual([]);
   });
   it('default section skips taken, full and avoided ones', () => {
     const list = [sec({ id: '1' }), sec({ id: '2', seatsLeft: 0 }), sec({ id: '3', meetings: [{ day: 'TUE', start: '13:00', end: '15:00', venue: '' }] })];
     expect(defaultSection(list, ['1'], [])?.id).toBe('3');
-    expect(defaultSection(list, [], ['Mon-morning'])?.id).toBe('3');
+    expect(defaultSection(list, [], ['Mon-08:15'])?.id).toBe('3');
     expect(defaultSection(list, ['1', '3'], [])?.id).toBe('2');
   });
   it('picks a free one-of letter', () => {
@@ -119,10 +126,11 @@ describe('decodePlan', () => {
   it('rejects non-plans and sanitises fields', () => {
     expect(decodePlan(null)).toBeNull();
     expect(decodePlan('x')).toBeNull();
-    const p = decodePlan({ b: -5, s: 3, a: ['Mon-morning', 4], r: [{ c: 'ACCT101', i: '1', g: 99, o: 'weird' }, { c: 1 }, null] })!;
+    const p = decodePlan({ b: -5, s: 3, a: ['Mon-morning', 'Mon-08:15', 'Tue-19:00', 'Sun-08:15', 'Mon-25:00', 4], r: [{ c: 'ACCT101', i: '1', g: 99, o: 'weird' }, { c: 1 }, null] })!;
     expect(p.b).toBe(0);
     expect(p.s).toBe(1);
-    expect(p.a).toEqual(['Mon-morning']);
+    // Old time-of-day slots, other days and impossible times are dropped.
+    expect(p.a).toEqual(['Mon-08:15', 'Tue-19:00']);
     expect(p.r).toEqual([{ c: 'ACCT101', i: '1', g: 6, o: 'required', l: 'A' }]);
     expect(decodePlan({}) !.b).toBeNull();
   });
@@ -241,7 +249,7 @@ describe('samePlan', () => {
     expect(samePlan(base, JSON.parse(JSON.stringify(base)))).toBe(true);
     expect(samePlan(base, { ...base, b: 6600 })).toBe(false);
     expect(samePlan(base, { ...base, r: [{ ...base.r[0], i: '2' }] })).toBe(false);
-    expect(samePlan(base, { ...base, a: ['Mon-morning'] })).toBe(false);
+    expect(samePlan(base, { ...base, a: ['Mon-08:15'] })).toBe(false);
   });
 });
 

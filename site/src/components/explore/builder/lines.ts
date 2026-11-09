@@ -22,7 +22,7 @@ export function lineFilters(l: LineSpec): Filter[] {
 /** The text of a narrowing value in a label ("(none)" of a missing time reads "No time set"). */
 const valueText = (k: NarrowKey, v: string): string => (v === NONE ? (fieldById(k)?.noneLabel ?? NONE) : v);
 
-/** "IS214", "IS214 · Mon", "IS214 · Mon · Morning · G1 · ANN LEE": the course, then the narrowing in day, time, section, professor order. */
+/** "IS214", "IS214 · Mon", "IS214 · Mon · 08:15 · G1 · ANN LEE": the course, then the narrowing in day, time, section, professor order. */
 export function lineLabel(l: LineSpec): string {
   return [l.course || 'New line', ...NARROW_KEYS.filter((k) => l[k]).map((k) => valueText(k, l[k] as string))].join(' · ');
 }

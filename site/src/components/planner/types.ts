@@ -10,12 +10,14 @@ export interface PlanRowState {
 }
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
-export const BANDS = ['morning', 'afternoon', 'evening'] as const;
-export const BAND_LABEL = { morning: 'AM', afternoon: 'PM', evening: 'Eve' } as const;
 export const GROUP_LETTERS = ['A', 'B', 'C', 'D'] as const;
 
-export function bandOf(start: string): (typeof BANDS)[number] {
-  const h = parseInt(start.slice(0, 2), 10);
-  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+/** A start time as "08:15" (zero-padded); '' when it is not a time. */
+export function startText(start: string | null | undefined): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec((start ?? '').trim());
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
 }
-export const slotOf = (day: string, start: string) => `${day}-${bandOf(start)}`;
+/** An avoid-times slot: a day and the start time of a meeting ("Mon-08:15"). */
+export const slotOf = (day: string, start: string) => `${day}-${startText(start)}`;
+/** True for a slot written by slotOf; old "Mon-morning" entries are not. */
+export const isSlot = (x: string): boolean => /^(Mon|Tue|Wed|Thu|Fri)-([01]\d|2[0-3]):[0-5]\d$/.test(x);

@@ -13,8 +13,8 @@ const spec = (o: Partial<BuilderSpec>): BuilderSpec => normalizeSpec({ ...defaul
 describe('line to filters', () => {
   it('maps the course and each narrowing to an in-filter, in order', () => {
     expect(lineFilters({ course: 'IS214' })).toEqual([{ field: 'course', in: ['IS214'] }]);
-    expect(lineFilters({ course: 'IS214', day: 'Mon', band: 'Morning', section: 'G1', instructor: 'ANN LEE' })).toEqual([
-      { field: 'course', in: ['IS214'] }, { field: 'day', in: ['Mon'] }, { field: 'band', in: ['Morning'] },
+    expect(lineFilters({ course: 'IS214', day: 'Mon', start: '08:15', section: 'G1', instructor: 'ANN LEE' })).toEqual([
+      { field: 'course', in: ['IS214'] }, { field: 'day', in: ['Mon'] }, { field: 'start', in: ['08:15'] },
       { field: 'section', in: ['G1'] }, { field: 'instructor', in: ['ANN LEE'] },
     ]);
   });
@@ -29,7 +29,7 @@ describe('labels', () => {
   it('names a line by course then narrowing', () => {
     expect(lineLabel({ course: 'IS214' })).toBe('IS214');
     expect(lineLabel({ course: 'IS214', day: 'Mon' })).toBe('IS214 · Mon');
-    expect(lineLabel({ course: 'IS214', instructor: 'ANN LEE', day: 'Thu', band: 'Evening' })).toBe('IS214 · Thu · Evening · ANN LEE');
+    expect(lineLabel({ course: 'IS214', instructor: 'ANN LEE', day: 'Thu', start: '19:00' })).toBe('IS214 · Thu · 19:00 · ANN LEE');
     expect(lineLabel({ course: 'IS214', day: '(none)' })).toBe('IS214 · No time set');
     expect(lineLabel({ course: '' })).toBe('New line');
   });

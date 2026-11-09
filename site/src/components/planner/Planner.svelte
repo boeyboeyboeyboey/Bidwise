@@ -21,10 +21,12 @@
     DEFAULT_TARGET, balanceFromCents, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance,
     pickGroupFor, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
-  import { BANDS, BAND_LABEL, DAYS, type PlanRowState } from './types';
+  import { DAYS, type PlanRowState } from './types';
 
-  let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [] }: {
+  let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [], startTimes = [] }: {
     windows: string[];
+    /** Distinct meeting start times this term ("08:15"), sorted: the rows of the can't-attend grid. */
+    startTimes?: string[];
     /** The window the build picked as current; the browser re-picks from the clock. */
     currentWindow: string;
     lowConfidence?: string[];
@@ -548,16 +550,16 @@
   <div class="avoid">
     <span></span>
     {#each DAYS as d (d)}<span class="dh">{d}</span>{/each}
-    {#each BANDS as b (b)}
-      <span class="bh">{BAND_LABEL[b]}</span>
+    {#each startTimes as t (t)}
+      <span class="bh">{t}</span>
       {#each DAYS as d (d)}
-        {@const slot = `${d}-${b}`}
+        {@const slot = `${d}-${t}`}
         <button
           type="button"
           class="slot"
           class:on={avoid.includes(slot)}
           aria-pressed={avoid.includes(slot)}
-          aria-label="Can't attend {d} {b}"
+          aria-label="Can't attend {d} {t}"
           onclick={() => toggle(slot)}
         ><span aria-hidden="true">{avoid.includes(slot) ? '×' : ''}</span></button>
       {/each}
@@ -866,12 +868,12 @@
   .pc.warn { color: var(--danger); border-color: var(--danger); background: var(--surface); }
   .addpick { min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); cursor: pointer; }
   .addpick:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-  .avoid { width: 100%; display: grid; grid-template-columns: 32px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
+  .avoid { width: 100%; display: grid; grid-template-columns: 44px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
   .dh, .bh { font-size: 13px; color: var(--muted); text-align: center; }
   .slot { min-height: 44px; padding: 0; border-radius: var(--r-sm); border: 1px solid var(--rule-strong); background: var(--surface); color: var(--accent); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
   .slot.on { background: var(--accent-soft); border-color: var(--accent); }
   .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--accent-ink); background: var(--accent); border-radius: 999px; }
-  .avoidbox { display: grid; gap: var(--s2); width: 100%; max-width: 280px; }
+  .avoidbox { display: grid; gap: var(--s2); width: 100%; max-width: 300px; }
   .avoidh { margin: 0; font-size: 15px; font-weight: 600; }
   .pickh { font-size: 15px; }
   .pickh b { font-weight: 600; }
@@ -898,10 +900,8 @@
     .side { grid-column: 2; grid-row: 1; align-self: start; }
     .side { position: sticky; top: calc(var(--topbar-h) + var(--s4)); max-height: calc(100vh / var(--z) - var(--topbar-h) - var(--s5)); overflow-y: auto; }
     .bar { display: none; }
-    /* One screen: the plan list scrolls inside its own column and the summary stays beside it. --avail is the viewport minus the page header, footer and padding. */
-    .main { --avail: calc(100vh / var(--z) - var(--topbar-h) - 220px); display: flex; flex-direction: column; max-height: var(--avail); }
-    .main > :global(*) { flex: none; }
-    .main > .rows { flex: 1 1 auto; min-height: 160px; overflow-y: auto; align-content: start; border-top: 0; margin-inline: calc(-1 * (var(--s3) + 5px)); padding-inline: calc(var(--s3) + 5px); }
+    /* The whole page scrolls; the summary card stays in view beside the list (.side is sticky). */
+    .main > .rows { border-top: 0; }
     .legend { padding-bottom: var(--s2); border-bottom: 1px solid var(--rule); }
   }
   .legend { margin: 0; display: flex; align-items: center; gap: var(--s3); font-size: 14px; color: var(--muted); }

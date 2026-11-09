@@ -1,18 +1,22 @@
 ---
 import Base from '../layouts/Base.astro';
 import Planner from '../components/planner/Planner.svelte';
-import { getForecastMeta, getWindow, windowLabel } from '../lib/data';
-import { getForecastHighlights } from '../lib/data/server';
+import { getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../lib/data';
+import { getCourse, getForecastHighlights } from '../lib/data/server';
+import { startTimesOf } from '../components/planner/plan';
 
 const fm = getForecastMeta();
 const hl = getForecastHighlights();
 const seen = new Set<string>();
 const hot = (hl?.mostContested ?? []).filter((h) => !seen.has(h.code) && seen.add(h.code)).slice(0, 8).map((h) => ({ code: h.code, cents: h.p50Cents }));
 const lowConfidence = fm.windows.filter((w) => fm.byWindow[w]?.confidence !== 'ok');
+const startTimes = startTimesOf(
+  getCourseIndex().filter((c) => c.offeredNow).flatMap((c) => getCourse(c.code)?.sectionsNow ?? []),
+);
 ---
 <Base title="Bid planner · Bidwise" active="planner">
   <h1>Bid planner</h1>
-  <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot}>
+  <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot} startTimes={startTimes}>
     <p slot="fallback" class="loading">Loading…</p>
   </Planner>
 </Base>

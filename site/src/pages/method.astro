@@ -19,7 +19,7 @@ const accounts = [
   ['Seats against bidders', 'The chance depends on how many people bid for the seats, not on one typical bid.'],
   ['One seat or many', 'With one seat left you must beat nearly every other bid. With many, the cutoff sits near the minimum.'],
   ['Bids bunch at the minimum', 'Many bid the minimum or just above it. The forecast keeps that pile, so a section that does not fill clears at the minimum.'],
-  ['Professor and time slot', 'Each is read from that professor\'s history. Early, evening and Friday sections get their own adjustment per window.'],
+  ['Professor and time slot', 'Each is read from that professor\'s history. Sections starting at 08:30 or earlier (the 08:15 slot), at 18:00 or later (the 19:00 slot) and on Fridays get their own adjustment per window.'],
 ];
 const swap = [
     'Swap mode on a course page shows how likely a swap from your section into each other section is. The chance depends on how much more or less wanted the other section is than yours. Wantedness is the log of the predicted Round 1 Window 1 clearing bid, the first bidding window after the swap round, from the same simulation as the bids on the page (one person, the section\'s full seat count). That already reflects day, time and instructor. Many sections clear at the minimum bid, so ties are broken by expected bidders per seat, which counts for a quarter as much as the bid on a log scale. Where a section has no such forecast, it uses last term\'s clearing bids for the same instructor (or the same day and start time), compared with the course\'s other sections.',
@@ -117,7 +117,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     <div class="card">
       <h2>What it adjusts for</h2>
       <ul class="bul">
-        <li>Course, professor, time slot (early, evening, Friday)</li>
+        <li>Course, professor, start time (08:30 or earlier, 18:00 or later) and Friday</li>
         <li>Seats on offer, and each bidding window</li>
         <li>Little history on a professor: it leans on the course, then the subject, then all courses</li>
         <li>Recent terms count more</li>

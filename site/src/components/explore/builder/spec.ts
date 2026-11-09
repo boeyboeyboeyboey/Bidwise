@@ -8,21 +8,21 @@ export const CHART_TYPES: ChartType[] = ['line', 'bar', 'scatter'];
 export const CHART_LABEL: Record<ChartType, string> = { line: 'Line', bar: 'Bar', scatter: 'Scatter' };
 
 /** X choices in menu order; Scatter takes only the numbers. */
-export const X_IDS = ['term', 'window', 'termWindow', 'day', 'band', 'instructor', 'section', 'vacancy', 'median', 'min'];
+export const X_IDS = ['term', 'window', 'termWindow', 'day', 'start', 'instructor', 'section', 'vacancy', 'median', 'min'];
 /** Y choices in menu order. */
 export const Y_IDS = ['median', 'min', 'before', 'after', 'fillPct', 'taken'];
 /** The number X fields: the only X a Scatter can use. */
 export const NUMBER_X_IDS = X_IDS.filter((id) => fieldById(id)?.kind === 'number');
 
 /** Narrowing a line can take, in label order. */
-export const NARROW_KEYS = ['day', 'band', 'section', 'instructor'] as const;
+export const NARROW_KEYS = ['day', 'start', 'section', 'instructor'] as const;
 export type NarrowKey = (typeof NARROW_KEYS)[number];
 
 export interface LineSpec {
   /** Course code as typed (upper case); '' for a line with no course yet. */
   course: string;
   day?: string;
-  band?: string;
+  start?: string;
   section?: string;
   instructor?: string;
 }
@@ -53,7 +53,8 @@ export function cleanLine(l: Partial<LineSpec> | undefined): LineSpec {
   const out: LineSpec = { course: (text(l?.course, 20) ?? '').toUpperCase() };
   for (const k of NARROW_KEYS) {
     const v = text(l?.[k]);
-    if (v) out[k] = v;
+    // A start time is "16:00" or (none); old time-of-day words in saved links are dropped.
+    if (v && (k !== 'start' || v === '(none)' || /^\d{1,2}:\d{2}$/.test(v))) out[k] = v;
   }
   return out;
 }
@@ -71,7 +72,7 @@ export function normalizeSpec(input: Partial<BuilderSpec> | undefined): BuilderS
 
 // ---- URL
 
-// A line is written as `kl=COURSE:day:band:section:instructor` (lines with no course are left out); only `%` and `:` need escaping (the URL layer escapes the rest once).
+// A line is written as `kl=COURSE:day:start:section:instructor` (lines with no course are left out); only `%` and `:` need escaping (the URL layer escapes the rest once).
 const esc = (v: string) => v.replace(/[%:]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
 
 const lineToken = (l: LineSpec): string => [l.course, ...NARROW_KEYS.map((k) => l[k] ?? '')].map(esc).join(':');

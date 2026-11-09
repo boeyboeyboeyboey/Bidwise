@@ -17,17 +17,17 @@ describe('buildRows', () => {
   it('orders by code, then section naturally', () => {
     expect(codes(rows)).toEqual(['ACCT101 G1', 'COR-LAW2243 G1', 'ECON111 G2', 'ECON111 G10']);
   });
-  it('uses live seats, flags approx, and sets day/time masks', () => {
+  it('uses live seats, flags approx, and sets the day mask and sorted start times', () => {
     const law = rows.find((r) => r[R.code] === 'COR-LAW2243')!;
-    expect([law[R.left], law[R.total], law[R.approx], law[R.days], law[R.times]]).toEqual([7, 30, 1, 0b10010, 0b101]);
+    expect([law[R.left], law[R.total], law[R.approx], law[R.days], law[R.times]]).toEqual([7, 30, 1, 0b10010, ['09:00', '18:30']]);
     expect(law[R.slot]).toBe('Tue 18:30–21:45 · Fri 09:00–10:00');
   });
   it('writes the exam as day name, day and short month, or empty when none is listed', () => {
     expect(rows.map((r) => r[R.exam])).toEqual(['', 'Mon 3 May, 09:00', 'Thu 29 Apr, 13:00', '']);
   });
-  it('gives TBA sections empty masks and no slot', () => {
+  it('gives TBA sections no days or start times and no slot', () => {
     const acct = rows[0];
-    expect([acct[R.days], acct[R.times], acct[R.slot]]).toEqual([0, 0, '']);
+    expect([acct[R.days], acct[R.times], acct[R.slot]]).toEqual([0, [], '']);
   });
 });
 
@@ -40,9 +40,9 @@ describe('subjectOf', () => {
 
 describe('seatText', () => {
   it('marks estimates and zeros', () => {
-    expect(seatText(['A', '', 'G1', '', '', 5, 9, 0, 0, 0, ''])).toBe('5 left');
-    expect(seatText(['A', '', 'G1', '', '', 5, 9, 1, 0, 0, ''])).toBe('~5 left');
-    expect(seatText(['A', '', 'G1', '', '', 0, 9, 0, 0, 0, ''])).toBe('Full');
-    expect(seatText(['A', '', 'G1', '', '', 0, 9, 1, 0, 0, ''])).toBe('Likely full');
+    expect(seatText(['A', '', 'G1', '', '', 5, 9, 0, 0, [], ''])).toBe('5 left');
+    expect(seatText(['A', '', 'G1', '', '', 5, 9, 1, 0, [], ''])).toBe('~5 left');
+    expect(seatText(['A', '', 'G1', '', '', 0, 9, 0, 0, [], ''])).toBe('Full');
+    expect(seatText(['A', '', 'G1', '', '', 0, 9, 1, 0, [], ''])).toBe('Likely full');
   });
 });

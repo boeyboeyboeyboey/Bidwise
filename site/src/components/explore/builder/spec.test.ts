@@ -3,7 +3,7 @@ import { CHART_TYPES, MAX_LINES, decodeSpec, defaultSpec, encodeSpec, normalizeS
 
 const full = (): BuilderSpec => ({
   chart: 'bar', x: 'termWindow', y: 'fillPct', more: true,
-  lines: [{ course: 'IS214', day: 'Mon' }, { course: 'IS214', day: 'Thu', band: 'Morning', section: 'G1', instructor: 'LEE, YUN: A%B' }, { course: 'IS216' }],
+  lines: [{ course: 'IS214', day: 'Mon' }, { course: 'IS214', day: 'Thu', start: '08:15', section: 'G1', instructor: 'LEE, YUN: A%B' }, { course: 'IS216' }],
 });
 
 describe('spec URL', () => {
@@ -32,6 +32,11 @@ describe('spec URL', () => {
     expect(s.x).toBe('term');
     expect(s.lines).toEqual([{ course: 'IS214' }]);
   });
+  it('drops the old time-of-day values: an x of band and a Morning narrowing', () => {
+    const s = decodeSpec('v=build&kv=2&kx=band&kl=IS214::Morning::&kl=IS216::08%253A15::');
+    expect(s.x).toBe('term');
+    expect(s.lines).toEqual([{ course: 'IS214' }, { course: 'IS216', start: '08:15' }]);
+  });
 });
 
 describe('normalizeSpec', () => {
@@ -48,7 +53,7 @@ describe('normalizeSpec', () => {
     expect(normalizeSpec({ lines: [] }).lines).toEqual([{ course: '' }]);
   });
   it('is idempotent', () => {
-    const s = normalizeSpec({ ...full(), chart: 'scatter', x: 'band' });
+    const s = normalizeSpec({ ...full(), chart: 'scatter', x: 'start' });
     expect(normalizeSpec(s)).toEqual(s);
   });
 });

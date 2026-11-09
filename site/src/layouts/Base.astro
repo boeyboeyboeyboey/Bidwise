@@ -49,7 +49,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
           ))}
         </nav>
         {windowPicker && (
-        <label class="winpick"><span>Bidding window</span>
+        <label class="winpick">
           <select id="win-pick" data-open={openLabel} aria-label="Bidding window">
             {choices.map((w) => <option value={w} selected={w === openLabel}>{w === openLabel ? `${w}${tagFor(openStatus)}` : w}</option>)}
           </select>
@@ -153,7 +153,6 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
   }
   .brand { font-family: var(--font); font-weight: 700; font-size: 21px; letter-spacing: -0.035em; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
   .winpick { display: flex; align-items: center; gap: var(--s2); font-size: 14px; color: var(--muted); min-width: 0; margin-left: auto; flex: 1 1 232px; }
-  .winpick span { display: none; white-space: nowrap; }
   .winpick select { min-width: 0; width: 100%; height: 44px; font-size: 13px; padding-right: 32px; padding-left: 10px; background-position: right 8px center; text-overflow: ellipsis; }
   .desk-nav { display: none; gap: var(--s5); margin-left: auto; }
   .desk-nav a {
@@ -204,7 +203,6 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
     .top-inner { justify-content: flex-start; column-gap: var(--s4); }
     .winpick { margin-left: 0; flex: 0 1 auto; }
     .winpick select { width: auto; max-width: 100%; font-size: 14px; padding-right: 40px; padding-left: 12px; background-position: right 12px center; }
-    .winpick span { display: inline; }
     main { padding-bottom: var(--s7); }
   }
 </style>

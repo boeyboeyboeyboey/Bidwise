@@ -1,15 +1,14 @@
 ---
 import Base from '../layouts/Base.astro';
 import Search from '../components/Search.svelte';
-import WindowCard from '../components/home/WindowCard.svelte';
-import { getSearchIndex, getWindow, getSchedule, windowLabel, formatWhen } from '../lib/data';
+import Countdown from '../components/home/Countdown.svelte';
+import { getSearchIndex, getSchedule, windowLabel } from '../lib/data';
 import { PLANNER_ENABLED } from '../lib/flags';
 
 const index = getSearchIndex();
-const win = getWindow();
-const windows = getSchedule().map((s) => ({
-  label: windowLabel(s), opensAt: s.opensAt, closesAt: s.closesAt, opens: formatWhen(s.opensAt), closes: formatWhen(s.closesAt),
-}));
+// All window times are SGT with an explicit offset; the component picks the state in the browser (this is only the build-time fallback).
+const windows = getSchedule().map((s) => ({ label: windowLabel(s), opensAt: s.opensAt, closesAt: s.closesAt }));
+const builtAt = Date.now();
 ---
 <Base title="Courses · Bidwise" active="search">
   <div class="home">
@@ -17,15 +16,7 @@ const windows = getSchedule().map((s) => ({
       <h1>How much should I bid?</h1>
       <div class="find"><Search client:load index={index} /></div>
       <div class="status">
-        <WindowCard
-          client:load
-          quiet
-          label={windowLabel(win)}
-          closesLabel={formatWhen(win.closesAt)}
-          closesAt={win.closesAt}
-          status={win.status}
-          windows={windows}
-        />
+        <Countdown client:load windows={windows} builtAt={builtAt} />
       </div>
     </div>
     <nav class="paths" aria-label="More">
@@ -40,7 +31,7 @@ const windows = getSchedule().map((s) => ({
 <style>
   .home { width: 100%; max-width: 680px; margin: 0 auto; display: grid; gap: var(--s4); justify-items: stretch; padding-top: var(--s4); }
   .lead { display: contents; }
-  .status { order: 2; }
+  .status { order: 2; display: grid; justify-items: center; text-align: center; }
   .paths { order: 1; }
   h1 { font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; text-align: center; }
   .find { min-width: 0; }

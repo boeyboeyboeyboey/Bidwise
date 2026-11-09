@@ -200,8 +200,10 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
   @media (min-width: 768px) {
     .tabbar { display: none; }
     .desk-nav { display: flex; }
-    .top-inner { justify-content: flex-start; column-gap: var(--s4); }
-    .winpick { margin-left: 0; flex: 0 1 auto; }
+    /* Brand left, tabs centred on the page, window picker right. */
+    .top-inner { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: var(--s4); }
+    .desk-nav { justify-self: center; margin: 0; }
+    .winpick { margin-left: 0; justify-self: end; min-width: 0; }
     .winpick select { width: auto; max-width: 100%; font-size: 14px; padding-right: 40px; padding-left: 12px; background-position: right 12px center; }
     main { padding-bottom: var(--s7); }
   }

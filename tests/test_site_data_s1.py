@@ -88,6 +88,14 @@ class Accuracy(unittest.TestCase):
         self.assertNotIn("accuracyBasis", bsd.build_forecast_meta(params, full, "t"))
         self.assertEqual(bsd.build_forecast_meta(params, full, "t", "fit+gbm-b2")["accuracyBasis"], "next-window")
 
+    def test_median_miss_on_filled_sections_is_added_when_present(self):
+        bt = {"overall": {"term": "T-a", "filled": 4, "coverage80Filled": 0.75, "medianAbsErrFilledCondCents": 700,
+                          "baseline": {"modelMaeFilledCondOnSameSamples": 15.5, "maeFilledCents": 20.0}},
+              "heldOut": {"term": "T-b", "filled": 6, "coverage80Filled": 0.8, "medianAbsErrFilledCondCents": 776,
+                          "baseline": {"modelMaeFilledCondOnSameSamples": 13.5, "maeFilledCents": 21.0}}}
+        a = bsd.build_accuracy(bt)
+        self.assertEqual([t["fMed"] for t in a["filledTests"]], [700, 776])
+
     def test_missing_pieces_are_left_out_not_invented(self):
         self.assertEqual(bsd.build_accuracy(None), {"filledTests": [], "heldOut": None})
         a = bsd.build_accuracy({"overall": {"term": "T", "filled": 1}})
@@ -102,8 +110,8 @@ class AccuracyMatchesModelOutput(unittest.TestCase):
         a = bsd.build_accuracy(json.loads(p.read_text()))
         by = {t["term"]: t for t in a["filledTests"]}
         self.assertEqual(set(by), {"2025-26 Term 2", "2026-27 Term 1"})
-        self.assertEqual(by["2025-26 Term 2"], {"term": "2025-26 Term 2", "filled": 1302, "fMae": 1527.5, "fBase": 2179.6, "fCov": 0.8425})
-        self.assertEqual(by["2026-27 Term 1"], {"term": "2026-27 Term 1", "filled": 1696, "fMae": 1305.41, "fBase": 2019.66, "fCov": 0.8054})
+        self.assertEqual(by["2025-26 Term 2"], {"term": "2025-26 Term 2", "filled": 1302, "fMae": 1527.5, "fBase": 2179.6, "fCov": 0.8425, "fMed": 989})
+        self.assertEqual(by["2026-27 Term 1"], {"term": "2026-27 Term 1", "filled": 1696, "fMae": 1305.41, "fBase": 2019.66, "fCov": 0.8054, "fMed": 884})
         self.assertEqual(a["heldOut"], {"term": "2026-27 Term 1", "n": 7243, "baseN": 6989, "mae": 515.67, "base": 697.1, "cov": 0.8172})
 
 

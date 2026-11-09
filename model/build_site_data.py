@@ -798,7 +798,8 @@ def build_accuracy(backtest: dict | None, model_version: str = "fit") -> dict:
 
     `filledTests`: per backtest term, the sections that filled (clearing bid above the minimum): filled count, the model's
     miss on them (fMae, scored on the same sections as the baseline), the baseline's miss (fBase) and the share whose real
-    bid fell inside the 10th-90th percentile range (fCov). `heldOut`: all-forecast figures on the held-out term
+    bid fell inside the 10th-90th percentile range (fCov), and fMed: the median miss on those sections (left out when the
+    backtest has no median). `heldOut`: all-forecast figures on the held-out term
     (n forecasts, baseN forecastable by the baseline, mae, base mae, cov). Empty lists/None when there is no backtest.
     """
     empty = {"filledTests": [], "heldOut": None}
@@ -811,7 +812,10 @@ def build_accuracy(backtest: dict | None, model_version: str = "fit") -> dict:
             (block or {}).get("coverage80Filled")
         if not term or any(v is None for v in need):
             return None
-        return {"term": term, "filled": need[0], "fMae": need[1], "fBase": need[2], "fCov": need[3]}
+        out = {"term": term, "filled": need[0], "fMae": need[1], "fBase": need[2], "fCov": need[3]}
+        if (block or {}).get("medianAbsErrFilledCondCents") is not None:
+            out["fMed"] = block["medianAbsErrFilledCondCents"]
+        return out
 
     tests = [t for t in (filled(backtest.get("overall"), (backtest.get("overall") or {}).get("term") or backtest.get("term")),
                          filled(backtest.get("heldOut"), (backtest.get("heldOut") or {}).get("term"))) if t]

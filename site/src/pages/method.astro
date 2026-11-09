@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro';
 import 'katex/dist/katex.min.css';
 import { FORECASTS_ENABLED } from '../lib/flags';
-import { FILLED_TESTS, HELD_OUT_TEST } from '../lib/data/accuracy';
+import { FILLED_TESTS, HELD_OUT_TEST, LATEST_FILLED_TEST } from '../lib/data/accuracy';
 import { dataMeta, getForecastMeta } from '../lib/data';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
@@ -55,6 +55,8 @@ const tests = [
     n: HELD_OUT_TEST.n, baseN: HELD_OUT_TEST.baseN, mae: HELD_OUT_TEST.mae, base: HELD_OUT_TEST.base, cov: HELD_OUT_TEST.cov,
   },
 ];
+// Headline figures: the latest test (held-out term), sections that filled.
+const latest = LATEST_FILLED_TEST;
 const e = (c: number | null) => (c === null ? '–' : eS(c));
 const p = (v: number | null) => (v === null ? '–' : pct(v));
 const { sourceRows: results, sourceTerms: terms } = dataMeta as { sourceRows?: number; sourceTerms?: number };
@@ -144,7 +146,26 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
 
   <section id="accuracy" class="acc-sec">
     <h2>How accurate it is</h2>
-    <p class="acc">Tested on terms the model had not seen. Sections that filled are the real test: only there is the clearing bid above the minimum.</p>
+    {latest.fMed !== undefined && <p class="acc-big">Median miss: {eS(latest.fMed)}</p>}
+
+    <h3 id="accounts">What it accounts for</h3>
+    <ul class="acc-points">
+      {accounts.map((a) => <li><b>{a[0]}</b><span>{a[1]}</span></li>)}
+    </ul>
+
+    {bt.length > 0 && (
+    <details id="accuracy-more" class="bt more">
+      <summary>More accuracy detail</summary>
+    <ul class="bul notes">
+      <li>Average miss: how far our predicted clearing bid (the lowest bid that got in) was from the real one, on sections that filled.</li>
+      <li>Accuracy is for forecasts made just before each window opens; forecasts for windows further ahead are less certain.</li>
+      <li>Last term’s bid: the last term of the same type, for the same section, else the instructor, else the course.</li>
+      <li>Our 80% range: the forecast’s 10th to 90th percentile. About 80% is the target.</li>
+      <li>Weak spot: for sections with a middling chance of filling, it said “fills” more often than it happened.</li>
+    </ul>
+      <div class="inner">
+      <p class="acc">Each test fits the model only on terms before the test term, then forecasts every section in every bidding window of that term. The model’s settings were tuned on an earlier term (2024-25 Term 2), so neither test term was used for tuning.</p>
+      <h3>Sections that filled</h3>
     <div class="tbl t4" role="table" aria-label="Accuracy on sections that filled" id="accuracy-summary">
       <div class="th" role="row">
         <span role="columnheader">Test term</span>
@@ -163,24 +184,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         </div>
       ))}
     </div>
-    <ul class="bul notes">
-      <li>Average miss: how far our predicted clearing bid (the lowest bid that got in) was from the real one, on sections that filled.</li>
-      <li>Accuracy is for forecasts made just before each window opens; forecasts for windows further ahead are less certain.</li>
-      <li>Last term’s bid: the last term of the same type, for the same section, else the instructor, else the course.</li>
-      <li>Our 80% range: the forecast’s 10th to 90th percentile. About 80% is the target.</li>
-      <li>Weak spot: for sections with a middling chance of filling, it said “fills” more often than it happened.</li>
-    </ul>
-
-    <h3 id="accounts">What it accounts for</h3>
-    <ul class="acc-points">
-      {accounts.map((a) => <li><b>{a[0]}</b><span>{a[1]}</span></li>)}
-    </ul>
-
-    {bt.length > 0 && (
-    <details id="accuracy-more" class="bt more">
-      <summary>More accuracy detail</summary>
-      <div class="inner">
-      <p class="acc">Each test fits the model only on terms before the test term, then forecasts every section in every bidding window of that term. The model’s settings were tuned on an earlier term (2024-25 Term 2), so neither test term was used for tuning. The home page shows the 2026-27 Term 1 row of the table above.</p>
       <h3>All forecasts</h3>
       <p class="acc">Most section-windows do not fill and clear at the minimum bid, where the miss is tiny. That keeps the average over all forecasts small, so read it alongside the filled-section figures above. Here the 80% range is checked with ties at the minimum bid broken at random, so it can land on exactly 80% when the forecast is well calibrated.</p>
       <div class="tbl t5" role="table" aria-label="Accuracy on all forecasts">
@@ -309,6 +312,10 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .acc-points span { color: var(--muted); }
   .acc-sec { margin-bottom: var(--s4); display: grid; gap: var(--s3); }
   .acc-sec h3 { font-size: 17px; font-weight: 600; margin: var(--s3) 0 0; }
+  .acc-lines { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s3); }
+  .acc-lines li { display: grid; gap: 2px; }
+  .acc-big { font-size: 18px; line-height: 1.4; max-width: 60ch; }
+  .acc-lines small { font-size: 13px; opacity: 0.75; }
   .notes { color: var(--muted); max-width: 70ch; }
   .discs { margin-bottom: var(--s5); }
   .bul { list-style: disc; padding-left: 1.2em; }

@@ -17,6 +17,8 @@ export interface FilledTest {
   fBase: number;
   /** Share of those sections whose real bid fell inside the forecast's 10th to 90th percentile range, 0..1. */
   fCov: number;
+  /** Median miss on those sections, cents (absent in backtests made before it was recorded). */
+  fMed?: number;
 }
 
 /** Figures over every forecast (not only sections that filled) on the held-out term. */

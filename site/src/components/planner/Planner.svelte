@@ -183,9 +183,6 @@
   const saver = $derived((over || anyCut) && balanceCents !== null ? needSaver(planItems, balanceCents) : null);
   const showNotice = $derived(!!result && !pending && (hopeless || over));
   const showCallout = $derived(anyCut || showNotice);
-  function makeOptional(keys: string[]) {
-    for (const r of rows) if (keys.includes(r.id)) r.role = 'optional';
-  }
   // Pick one group of a row, named by its courses ("IS469 / IS470").
   const pickOf = (row: PlanRowState) => (row.role === 'oneOf' ? courseLabel(rows.filter((r) => r.role === 'oneOf' && r.oneOf === row.oneOf).map((r) => r.course)) : '');
   /** One line on why the plan bids this much on a row, from its own forecast. */
@@ -614,7 +611,7 @@
           Times I can't attend{#if avoid.length}<span class="badge" aria-label="{avoid.length} {avoid.length === 1 ? 'time' : 'times'} blocked">{avoid.length}</span>{/if}
         </button>
         <button type="button" class="btn clear" onclick={sharePlan}>Copy plan link</button>
-        <button type="button" class="btn clear" onclick={clearAll}>Clear all</button>
+        <button type="button" class="btn clear danger" onclick={clearAll}>Clear all</button>
         </div>
       {/if}
     </div>
@@ -740,12 +737,11 @@
         <div class="notice" role="status">
           {#if anyCut && balanceCents !== null}<p><b>Bids cut to fit {balanceLabel(balanceCents)}</b></p>{/if}
           {#if showNotice}
-            <p>{#if over && balanceCents !== null}{#if overBudget}<b>Not possible</b>{' · '}{/if}{needSentence(planItems, reqNeedCents, balanceCents)}{#if saver}{' '}· {saver.label} to Nice to have frees <b>{eS(saver.freedCents)}</b>{/if}{:else}Best possible: <b>{pct(result.pAll)}</b>{/if}</p>
+            <p>{#if over && balanceCents !== null}{#if overBudget}<b>Not possible</b>{' · '}{/if}{needSentence(planItems, reqNeedCents, balanceCents)}{:else}Best possible: <b>{pct(result.pAll)}</b>{/if}</p>
           {/if}
           {#if saver || over}
             <div class="acts">
               {#if saver}{@const sv = saver}
-                <button type="button" class="btn btn-primary" onclick={() => makeOptional(sv.keys)}>Make {sv.label} a Nice to have</button>
                 {#if over && sv.fits}<button type="button" class="btn" onclick={() => (rows = rows.filter((r) => !sv.keys.includes(r.id)))}>Drop {sv.label}</button>{/if}
               {/if}
               {#if over}<button type="button" class="btn" onclick={raiseBudget}>Set balance to e${Math.ceil(reqNeedCents / 100)}</button>{/if}
@@ -834,6 +830,7 @@
   .tools { display: flex; flex-wrap: wrap; gap: var(--s2); margin-left: auto; max-width: 100%; }
   @media (max-width: 767px) { .tools { width: 100%; margin-left: 0; } .tools .clear { padding: 0 var(--s2); } }
   .clear { gap: var(--s2); min-height: 44px; padding: 0 var(--s3); font-size: 14px; white-space: nowrap; flex: none; }
+  .clear.danger { color: var(--danger); border-color: var(--danger); }
   .shareurl { display: flex; gap: var(--s2); align-items: center; }
   .shareurl .field { flex: 1 1 auto; min-width: 0; }
   .toast { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + 64px); display: flex; align-items: center; gap: var(--s2); min-height: 48px; padding: 0 var(--s2) 0 var(--s4); font-size: 15px; color: var(--surface); background: var(--text); border-radius: var(--r-md); white-space: nowrap; }

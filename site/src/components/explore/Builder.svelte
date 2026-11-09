@@ -50,8 +50,12 @@
   const val = (e: Event) => (e.currentTarget as HTMLInputElement | HTMLSelectElement).value;
 
   onMount(() => {
-    const fromUrl = new URLSearchParams(location.search).get('kv') !== null;
-    spec = fromUrl ? decodeSpec(location.search) : (lastSpec ?? defaultSpec());
+    const q = new URLSearchParams(location.search);
+    // An old Compare link (`c=ACCT101,ACCT102`) becomes one builder line per course.
+    const legacy = (q.get('c') ?? '').split(',').map((c) => c.trim()).filter(Boolean).slice(0, MAX_LINES);
+    spec = q.get('kv') !== null ? decodeSpec(location.search)
+      : legacy.length ? normalizeSpec({ lines: legacy.map((course) => ({ course })) })
+      : (lastSpec ?? defaultSpec());
     loadManifest().then((m) => (man = m), () => (failed = true));
     saved = loadSaved();
     ready = true;
@@ -133,6 +137,9 @@
     const top = (host.getBoundingClientRect().top + scrollY) / zoom;
     return Math.round(Math.max(380, Math.min(700, vh - top - 150)));
   }
+
+  /** The empty canvas takes the height the chart will have. */
+  const canvasH = $derived.by(() => { void width; void vh; void host; return baseHeight(); });
 
   $effect(() => {
     const r = result; const s = plain; const w = width; void vh;
@@ -232,7 +239,7 @@
           <div class="head">
             <i class="chip" style:background={lineColor(i)} aria-hidden="true"></i>
             <input
-              class="field course" type="text" list="bld-codes" placeholder="Type a course code" aria-label={`Line ${i + 1} course`}
+              class="field course" type="text" list="bld-codes" placeholder="Course code" aria-label={`Line ${i + 1} course`}
               autocomplete="off" autocapitalize="characters" spellcheck="false" value={l.course} oninput={(e) => setCourse(i, val(e).trim().toUpperCase())}
             />
             <button type="button" class="x" aria-label={`Remove line ${i + 1}`} onclick={() => removeLine(i)}>×</button>
@@ -267,17 +274,20 @@
   </aside>
 
   <section class="main" aria-label="Chart">
-    {#if failed}
-      <p class="empty" role="alert">Could not load data</p>
-    {:else if !wanted}
-      <p class="empty" role="status">Type a course code</p>
-    {:else if loading && !hasPoints}
-      <p class="empty" role="status">Loading…</p>
-    {:else if !hasPoints}
-      <p class="empty" role="status">No data{plain.more ? '' : ' in the last four terms'}</p>
-    {/if}
-
-    <div class="plot" bind:this={host}></div>
+    <div class="stage">
+      <div class="plot" bind:this={host}></div>
+      {#if !hasPoints}
+        <div class="canvas" style:height="{canvasH}px" aria-hidden={!failed && !wanted ? 'true' : undefined}>
+          {#if failed}
+            <p class="cmsg" role="alert">Could not load data</p>
+          {:else if wanted && loading}
+            <p class="cmsg" role="status">Loading…</p>
+          {:else if wanted && man}
+            <p class="cmsg" role="status">No data{plain.more ? '' : ' in the last four terms'}</p>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     {#if hasPoints && result}
       <ul class="legend" aria-label="Lines">
@@ -382,7 +392,22 @@
   .main > * { min-width: 0; margin: 0; }
   .plot { width: 100%; min-width: 0; }
   .plot :global(svg) { display: block; max-width: 100%; }
-  .empty { margin: 0; padding: var(--s6) 0; text-align: center; color: var(--muted); }
+  .stage { position: relative; min-width: 0; }
+  /* Empty chart canvas: a frame with faint gridlines and two axes, replaced by the chart once a course is added. */
+  .canvas {
+    position: relative; width: 100%; min-height: 240px; display: grid; place-items: center; overflow: hidden;
+    border: 1px solid var(--rule); border-radius: var(--r-sm); background-color: var(--surface);
+    background-image:
+      linear-gradient(to bottom, color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(to right, color-mix(in srgb, var(--rule) 55%, transparent) 1px, transparent 1px);
+    background-size: 100% 20%, 12.5% 100%;
+    background-position: 0 0, 0 0;
+    background-origin: border-box;
+  }
+  .canvas::before, .canvas::after { content: ''; position: absolute; background: var(--rule-strong); }
+  .canvas::before { left: 48px; top: 16px; bottom: 36px; width: 2px; }
+  .canvas::after { left: 48px; right: 16px; bottom: 36px; height: 2px; }
+  .cmsg { position: relative; z-index: 1; margin: 0; padding: var(--s2) var(--s3); color: var(--muted); background: var(--surface); border-radius: var(--r-sm); }
   .legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); padding: 0; list-style: none; font-size: var(--fs-xs); }
   .legend li { display: inline-flex; align-items: center; gap: var(--s2); }
   .legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }

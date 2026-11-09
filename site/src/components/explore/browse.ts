@@ -76,7 +76,7 @@ export const WINDOW_ORDER = [
 const WINDOW_RANK = new Map(WINDOW_ORDER.map((w, i) => [w, i]));
 export const windowRank = (w: string): number => WINDOW_RANK.get(w) ?? WINDOW_ORDER.length;
 
-// ---- URL state (shares the page's query string with the Compare mode; `v=browse` selects this mode)
+// ---- URL state (shares the page's query string with the builder; `v=browse` selects this mode)
 
 const pick = <T extends string>(v: string | null, all: readonly T[], d: T): T =>
   v && (all as readonly string[]).includes(v) ? (v as T) : d;

@@ -9,8 +9,10 @@ interface Props {
   active?: 'search' | 'classes' | 'explore' | 'planner' | 'schedule' | 'method';
   /** The header's bidding-window select; off on pages that don't use it. */
   windowPicker?: boolean;
+  /** 'text': centred reading column (about 1000 px of content); 'wide' (default): full width. Both keep the same side padding. */
+  width?: 'text' | 'wide';
 }
-const { title = 'Bidwise', active, windowPicker = true } = Astro.props;
+const { title = 'Bidwise', active, windowPicker = true, width = 'wide' } = Astro.props;
 const openLabel = windowLabel(getWindow());
 const openStatus = getWindow().status;
 // Read in the browser by lib/data/window.ts, which re-picks the window against the clock.
@@ -57,7 +59,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
       </div>
     </header>
 
-    <main id="main" tabindex="-1">
+    <main id="main" tabindex="-1" data-width={width}>
       <slot />
       <footer class="sitefoot"><span>Not affiliated with SMU</span><span>Data: BOSS Overall Results, Nov 2026</span><a href="/method">How it works</a><a href="/contact">Contact</a>{LINKEDIN_URL && (<a class="ext" href={LINKEDIN_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={LINKEDIN_ICON} /></svg>LinkedIn</a>)}{GITHUB_URL !== 'https://github.com/' && (<a class="ext" href={GITHUB_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={GITHUB_ICON} /></svg>Source code</a>)}</footer>
     </main>
@@ -168,6 +170,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
     max-width: var(--maxw); margin: 0 auto;
     padding: var(--s5) var(--gutter) calc(var(--tabbar-h) + var(--s7) + env(safe-area-inset-bottom));
   }
+  main[data-width='text'] { max-width: calc(1000px + 2 * var(--gutter)); }
   main > :nth-last-child(2) { margin-bottom: var(--s6); }
   .sitefoot .ext { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
   .sitefoot .ext svg { width: 13px; height: 13px; fill: currentColor; }

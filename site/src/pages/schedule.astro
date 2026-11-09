@@ -6,6 +6,6 @@ import { getWindow, getSchedule } from '../lib/data';
 const configured = getWindow();
 const entries = getSchedule();
 ---
-<Base title="Schedule · Bidwise" active="schedule">
+<Base title="Schedule · Bidwise" active="schedule" width="text">
   <Schedule client:load entries={entries} configured={configured} builtAt={Date.now()} />
 </Base>

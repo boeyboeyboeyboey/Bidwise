@@ -2,7 +2,6 @@
 // Pure and DOM-free. Row semantics follow BOSS_FACTS.md: vacancy = seats in the section, before = seats offered in this window
 // (before-process vacancy), after = seats left after allocation, taken = before - after (successful bids).
 import { windowRank, type BrowseRow } from '../browse';
-import { band } from '../rows';
 
 export type FieldKind = 'category' | 'number';
 export type FieldUnit = 'e$' | 'seats' | '%' | 'none';
@@ -139,3 +138,9 @@ export const isFieldId = (id: string): boolean => BY_ID.has(id);
 
 /** "e$", "seats", "%" for the axis title; '' for none. */
 export const unitLabel = (u: FieldUnit): string => (u === 'none' ? '' : u);
+
+export function band(start: string): string {
+  if (!start) return 'No time set';
+  const h = Number(start.slice(0, 2));
+  return h < 12 ? 'Morning' : h < 16 ? 'Afternoon' : 'Evening';
+}

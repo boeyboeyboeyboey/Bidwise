@@ -3,7 +3,6 @@ import {
   browseDefaults, decodeBrowse, decodeShard, encodeBrowse, filterRows, fmtBid, fmtSeats, fmtSeatsLeft, fullWindow, PAGE_SIZE, groupRows, nameMatches, pageOf, sortGroups, sortRows, termsToLoad,
   type BrowseManifest, type BrowseRow, type BrowseShard, type CourseInfo,
 } from './browse';
-import { decode, defaults, encode } from './state';
 
 const man: BrowseManifest = {
   columns: ['course', 'window', 'section', 'instructor', 'medianCents', 'minCents', 'vacancy', 'before', 'after', 'filled'],
@@ -202,12 +201,7 @@ describe('url state', () => {
     expect(decodeBrowse('bo=nonsense&bp=-4').sort).toBe('course');
     expect(decodeBrowse('bo=nonsense&bp=-4').page).toBe(0);
   });
-  it('mode lives in the shared state: v=browse', () => {
-    expect(decode('v=browse').mode).toBe('browse');
-    expect(decode('').mode).toBe('compare');
-    expect(decode('v=junk').mode).toBe('compare');
-    expect(encode({ ...defaults(), mode: 'browse' })).toContain('v=browse');
-    expect(encode(defaults())).not.toContain('v=');
+  it('names its mode in the address: v=browse', () => {
     expect(encodeBrowse(browseDefaults())).toBe('v=browse');
   });
 });

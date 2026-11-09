@@ -85,7 +85,7 @@
               <span class="st">{#if st === 'done'}<b class="tag done">Done</b>{:else if st === 'open'}<b class="tag">Open now</b>{:else if st === 'next'}<b class="tag">Opens next</b>{/if}</span>
               <span class="o"><i class="k">Opens</i>{when(s.opensAt)}</span>
               <span class="c"><i class="k">Closes</i>{when(s.closesAt)}</span>
-              <a class="pb" href={pastBids(s)} aria-label="Past bids for {label(s)}">Past bids</a>
+              <a class="btn pb" href={pastBids(s)} aria-label="Past bids for {label(s)}">Past bids</a>
             </li>
           {/each}
         </ul>
@@ -97,32 +97,33 @@
 
 <style>
   .sched { min-width: 0; }
-  h1 { font-size: 30px; margin: 0 0 var(--s4); }
-  h2 { font-size: 17px; font-weight: 600; margin: 0 0 var(--s2); }
+  h1 { font-size: clamp(26px, 5vw, 36px); margin: var(--s4) 0 var(--s5); text-align: center; }
+  h2 { font-size: 18px; font-weight: 600; margin: 0 0 var(--s3); }
   .call { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3) var(--s5); padding: var(--s4); margin-bottom: var(--s5); background: var(--accent-soft); border-radius: var(--r-lg); }
   .call p { margin: 0; font-size: var(--fs-md); line-height: 1.4; }
-  .groups { display: grid; gap: var(--s6); align-items: start; }
+  .groups { display: grid; gap: var(--s6); }
   .group { min-width: 0; container-type: inline-size; }
   .colhead { display: none; }
-  .row { padding: var(--s3) var(--s2); border-bottom: 1px solid var(--rule); font-size: var(--fs-sm); display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: 2px; }
+  ul { display: grid; gap: var(--s2); }
+  .row { padding: var(--s3) var(--s4); background: var(--surface); border-radius: var(--r-lg); font-size: var(--fs-sm); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); row-gap: var(--s1); }
   .row .w { font-weight: 600; font-size: var(--fs-md); }
   .row .st { text-align: right; }
-  .o, .c { white-space: nowrap; grid-column: 1 / -1; }
-  .k { font-style: normal; color: var(--muted); display: inline-block; min-width: 56px; }
-  .pb { grid-column: 1 / -1; display: inline-flex; align-items: center; width: fit-content; min-height: 44px; padding: 0; }
-  .row.open { background: var(--accent-soft); border-radius: var(--r-sm); }
+  .o, .c { grid-column: 1 / -1; display: flex; gap: var(--s3); }
+  .k { font-style: normal; color: var(--muted); flex: 0 0 56px; }
+  .pb { grid-column: 1 / -1; margin-top: var(--s2); }
+  .row.open { background: var(--accent-soft); }
   .row.done { color: var(--muted); }
   .row.done .w { font-weight: 400; }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); border: 1px solid var(--accent); line-height: 1.5; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); border: 1px solid var(--accent); line-height: 1.5; white-space: nowrap; }
   .tag.done { color: var(--muted); border-color: var(--rule-strong); background: var(--surface); }
-  .tz { margin: var(--s3) 0 0; font-size: var(--fs-xs); color: var(--muted); }
-  @container (min-width: 620px) {
-    .colhead, .row { display: grid; grid-template-columns: minmax(150px, 1.3fr) 90px minmax(0, 1fr) minmax(0, 1fr) 80px; column-gap: var(--s3); align-items: baseline; }
-    .colhead { padding: 0 var(--s2) var(--s1); font-size: var(--fs-xs); color: var(--muted); border-bottom: 1px solid var(--rule-strong); }
+  .tz { margin: var(--s3) 0 0; font-size: var(--fs-xs); color: var(--muted); text-align: center; }
+  /* Table mode needs about 740px: two 170px date columns, so dates and the button never touch. */
+  @container (min-width: 740px) {
+    .colhead, .row { display: grid; grid-template-columns: minmax(140px, 1.2fr) 96px minmax(165px, 1fr) minmax(165px, 1fr) 112px; column-gap: var(--s3); align-items: center; }
+    .colhead { padding: 0 var(--s4) var(--s2); margin-bottom: var(--s2); font-size: var(--fs-xs); color: var(--muted); border-bottom: 1px solid var(--rule-strong); }
     .row .st { text-align: left; }
-    .o, .c { grid-column: auto; }
+    .o, .c { grid-column: auto; display: block; white-space: nowrap; }
     .k { display: none; }
-    .pb { grid-column: auto; }
+    .pb { grid-column: auto; margin-top: 0; }
   }
-  @media (min-width: 1100px) { .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s7); } }
 </style>

@@ -256,7 +256,7 @@ const n2 = (x: number, d = 2) => x.toFixed(d);
 </div>
 
 <style>
-  .formula-body { display: grid; gap: var(--s4); min-width: 0; }
+  .formula-body { display: grid; gap: var(--s4); min-width: 0; overflow-wrap: anywhere; }
   .formula-body :global(p), .formula-body :global(li) { line-height: 1.55; max-width: 75ch; margin: 0; }
   .formula-body :global(ul) { margin: 0; padding-left: 1.2em; display: grid; gap: var(--s2); }
   .fs { display: grid; gap: var(--s3); min-width: 0; scroll-margin-top: calc(var(--topbar-h) + var(--s4)); }
@@ -268,7 +268,7 @@ const n2 = (x: number, d = 2) => x.toFixed(d);
   th, td { padding: 6px var(--s3); border-bottom: 1px solid var(--rule); text-align: left; vertical-align: baseline; line-height: 1.4; }
   th { color: var(--muted); font-weight: 500; }
   .r { text-align: right; }
-  .math { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: var(--s2) 0; }
+  .math { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: var(--s3); background: var(--bg); border-radius: var(--r-md); }
   .math :global(.katex-display) { margin: 0; overflow: visible; text-align: left; }
   .math :global(.katex-display > .katex) { text-align: left; }
   .formula-body :global(.katex) { font-size: 1.05em; }

@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { SearchEntry } from '../lib/data/types';
 
-  let { index }: { index: SearchEntry[] } = $props();
+  /** `suffix` is appended to every result link (e.g. '?mode=swap' to open course pages in Swap mode). */
+  let { index, suffix = '' }: { index: SearchEntry[]; suffix?: string } = $props();
   const LIMIT = 12;
   const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -54,7 +55,7 @@
       if (!qf) return;
       const exact = moved ? undefined : index.find((e) => flat(e[0]) === qf || flat(e[0].slice(e[0].indexOf('-') + 1)) === qf);
       const target = exact ?? results[active];
-      if (target) location.href = `/course/${target[0]}`;
+      if (target) location.href = `/course/${target[0]}${suffix}`;
     }
   }
 </script>
@@ -88,7 +89,7 @@
       <ul class="list" id="q-list" role="listbox" aria-label="Matching courses">
         {#each results as [code, title, n], i (code)}
           <li id={`q-opt-${i}`} role="option" aria-selected={i === active} class:active={i === active}>
-            <a class="row-link" href={`/course/${code}`} tabindex="-1">
+            <a class="row-link" href={`/course/${code}${suffix}`} tabindex="-1">
               <span class="code">{code}</span>
               <span class="title">{title}</span>
               <span class="count">{n > 0 ? `${n} ${n === 1 ? 'section' : 'sections'}` : 'Not offered this term'}</span>

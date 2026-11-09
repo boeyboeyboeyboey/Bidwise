@@ -1,0 +1,29 @@
+---
+import Base from '../layouts/Base.astro';
+import Search from '../components/Search.svelte';
+import { getSearchIndex } from '../lib/data';
+
+const index = getSearchIndex();
+---
+<Base title="Swap a section · Bidwise" active="swap">
+  <div class="swap">
+    <h1>Swap a section</h1>
+    <p class="lead">Pick the course to see your chances of swapping into each other section.</p>
+    <div class="find"><Search client:load index={index} suffix="?mode=swap" /></div>
+  </div>
+</Base>
+
+<style>
+  .swap { width: 100%; max-width: 680px; margin: 0 auto; display: grid; gap: var(--s4); justify-items: stretch; padding-top: var(--s4); }
+  h1 { font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; text-align: center; }
+  .lead { margin: calc(-1 * var(--s2)) 0 0; text-align: center; color: var(--muted); }
+  .find { min-width: 0; }
+  .swap :global(label.find) {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  @media (min-width: 1024px) {
+    .swap { padding-top: 12vh; gap: var(--s5); }
+    h1 { font-size: var(--fs-hero); }
+  }
+</style>

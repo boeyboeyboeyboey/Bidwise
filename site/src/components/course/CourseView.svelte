@@ -238,7 +238,8 @@
     mounted = true;
     // ?s=G1 (section name or class number) or #id names the section to open instead of the lowest-bid one.
     const u = modeFromUrl(location.search);
-    mode = u.mode;
+    // Swap needs the Bid/Swap toggle, which only shows for courses with more than one section; otherwise stay in Bid.
+    mode = u.mode === 'swap' && sections.length > 1 ? 'swap' : 'bid';
     mine = sections.find((s) => !!u.from && s.section.toLowerCase() === u.from.toLowerCase())?.section ?? '';
     const want = new URLSearchParams(location.search).get('s')?.trim().toLowerCase() || decodeURIComponent(location.hash.slice(1)).toLowerCase();
     const named = want ? sections.find((s) => s.id.toLowerCase() === want || s.section.toLowerCase() === want || s.classNumber === want) : undefined;

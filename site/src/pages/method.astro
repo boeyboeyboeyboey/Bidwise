@@ -1,13 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
-import 'katex/dist/katex.min.css';
 import { FORECASTS_ENABLED } from '../lib/flags';
 import { FILLED_TESTS, HELD_OUT_TEST, LATEST_FILLED_TEST } from '../lib/data/accuracy';
 import { dataMeta, getForecastMeta } from '../lib/data';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
-import AccuracyChart from '../components/home/AccuracyChart.svelte';
-import Formula from '../components/method/Formula.astro';
+import { GITHUB_URL } from '../lib/links';
 const bars = [60, 75, 60, 42, 28, 18, 12, 8, 5, 3];
 const notes = [
   ['Chance of a seat', ''],
@@ -139,6 +137,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Drops and released seats</li>
         <li>What this term’s students decide</li>
         <li>Seats marked ≈ are estimates and can be wrong</li>
+        <li>Later windows (Round 2 Window 3 on): few sections fill, so forecasts there are low confidence</li>
       </ul>
     </div>
   </section>
@@ -153,89 +152,9 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       {accounts.map((a) => <li><b>{a[0]}</b><span>{a[1]}</span></li>)}
     </ul>
 
-    {bt.length > 0 && (
-    <details id="accuracy-more" class="bt more">
-      <summary>More accuracy detail</summary>
-    <ul class="bul notes">
-      <li>Average miss: how far our predicted clearing bid (the lowest bid that got in) was from the real one, on sections that filled.</li>
-      <li>Accuracy is for forecasts made just before each window opens; forecasts for windows further ahead are less certain.</li>
-      <li>Last term’s bid: the last term of the same type, for the same section, else the instructor, else the course.</li>
-      <li>Our 80% range: the forecast’s 10th to 90th percentile. About 80% is the target.</li>
-      <li>Weak spot: for sections with a middling chance of filling, it said “fills” more often than it happened.</li>
-    </ul>
-      <div class="inner">
-      <p class="acc">Each test fits the model only on terms before the test term, then forecasts every section in every bidding window of that term. The model’s settings were tuned on 2024-25 Term 2 and the correction’s settings on 2025-26 Term 2, so that term’s corrected figures are optimistic. 2026-27 Term 1, where the median miss comes from, was used for neither.</p>
-      <h3>Sections that filled</h3>
-    <div class="tbl t4" role="table" aria-label="Accuracy on sections that filled" id="accuracy-summary">
-      <div class="th" role="row">
-        <span role="columnheader">Test term</span>
-        <span role="columnheader" class="r">Average miss</span>
-        <span role="columnheader" class="r">Average miss, reusing last term’s bid</span>
-        <span role="columnheader" class="r">Real bid inside our 80% range</span>
-        <span role="columnheader" class="r">Filled sections</span>
-      </div>
-      {tests.map((t) => (
-        <div class="tr" role="row">
-          <span role="cell"><b>{t.term}</b></span>
-          <span role="cell" class="r num" data-label="Average miss">{eS(t.fMae)}</span>
-          <span role="cell" class="r num" data-label="Reusing last term’s bid">{eS(t.fBase)}</span>
-          <span role="cell" class="r num" data-label="Inside our 80% range">{pct(t.fCov)}</span>
-          <span role="cell" class="r num" data-label="Filled sections">{t.filled.toLocaleString('en-US')}</span>
-        </div>
-      ))}
-    </div>
-      <h3>All forecasts</h3>
-      <p class="acc">Most section-windows do not fill and clear at the minimum bid, where the miss is tiny. That keeps the average over all forecasts small, so read it alongside the filled-section figures above. Here the 80% range is checked with ties at the minimum bid broken at random, so it can land on exactly 80% when the forecast is well calibrated.</p>
-      <div class="tbl t5" role="table" aria-label="Accuracy on all forecasts">
-        <div class="th" role="row">
-          <span role="columnheader">Test term</span>
-          <span role="columnheader" class="r">Average miss, forecast</span>
-          <span role="columnheader" class="r">Average miss, reusing last term’s bid</span>
-          <span role="columnheader" class="r">Real bid inside 80% range</span>
-          <span role="columnheader" class="r">Forecasts (section-windows)</span>
-        </div>
-        {tests.map((t) => (
-          <div class="tr" role="row">
-            <span role="cell"><b>{t.term}</b></span>
-            <span role="cell" class="r num" data-label="Average miss, forecast">{e(t.mae)}</span>
-            <span role="cell" class="r num" data-label="Average miss, reusing last term’s bid">{e(t.base)}</span>
-            <span role="cell" class="r num" data-label="Real bid inside 80% range">{p(t.cov)}</span>
-            <span role="cell" class="r num" data-label="Forecasts (section-windows)">{t.n.toLocaleString('en-US')}</span>
-          </div>
-        ))}
-      </div>
-      <p class="acc">The last-term baseline can only forecast sections that had a bid to reuse, so it is scored on fewer forecasts ({tests.map((t) => t.baseN.toLocaleString('en-US')).join(' and ')}). The filled-section misses compare both on the filled sections the baseline could forecast.</p>
-      <h3>By window, 2025-26 Term 2</h3>
-      <p class="acc">The average miss is across all forecasts in the window. The range and the sections tested count only sections that filled.</p>
-      <AccuracyChart client:load byWindow={fm.byWindow} />
-      <div class="tbl" role="table" aria-label="Backtest by window">
-        <div class="th" role="row">
-          <span role="columnheader">Window</span>
-          <span role="columnheader" class="r">Real bid inside our range, filled sections</span>
-          <span role="columnheader" class="r">Filled sections tested</span>
-          <span role="columnheader" class="r">Average miss, all forecasts</span>
-          <span role="columnheader" class="r">Reliable: ≥70% right on ≥50 filled sections</span>
-        </div>
-        {bt.map((r) => (
-          <div class="tr" role="row">
-            <span role="cell"><b>{r.w}</b></span>
-            <span role="cell" class="r num" data-label="Real bid inside our range, filled sections">{r.coverage80Filled === null ? '–' : pct(r.coverage80Filled)}</span>
-            <span role="cell" class="r num" data-label="Filled sections tested">{r.filled}</span>
-            <span role="cell" class="r num" data-label="Average miss, all forecasts">{r.maeCents === null ? '–' : eS(r.maeCents)}</span>
-            <span role="cell" class="r" data-label="Reliable">{r.confidence === 'ok' ? 'Yes' : <span class="caution">Use with caution</span>}</span>
-          </div>
-        ))}
-      </div>
-      <p class="acc wk"><b>Weak spots.</b> From Round 2 Window 3 onward few sections fill, so there is little to check the bid range against and those windows are marked low confidence. Their average misses are small; most sections there do not fill and clear at the minimum bid.</p>
-      </div>
-    </details>
-    )}
   </section>
 
-  <details id="formula" class="formula-box">
-    <summary><span class="btn">See the formula</span></summary>
-    <div class="inner"><Formula /></div>
-  </details>
+  <p class="readme">For the full technical details, including the formulas and how they map to the code, see the <a href={`${GITHUB_URL}#readme`}>README on GitHub</a>.</p>
 
   <details id="drop-chance" class="more">
     <summary>Drop chance</summary>
@@ -314,6 +233,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .acc-sec { margin-bottom: var(--s6); display: grid; gap: var(--s4); }
   .acc-sec > h2, .acc-sec > h3 { text-align: center; margin: 0; }
   .acc-sec > h3 { font-size: 18px; font-weight: 600; margin-top: var(--s4); }
+  .readme { color: var(--muted); margin: var(--s5) 0; }
   .acc-big { display: grid; justify-items: start; gap: var(--s1); text-align: left; padding: var(--s4); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); margin: 0; }
   .acc-big .lbl { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
   .acc-big .val { font-size: clamp(32px, 8vw, 44px); font-weight: 600; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -335,6 +255,8 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .how p, .acc { line-height: 1.55; max-width: 70ch; }
   .acc { margin: 0 0 var(--s3); }
   /* Inside the expandable cards the prose fills the card; the measure limit only applies to prose outside them. */
+  /* Expandable cards sit in a reading-width column (~75 characters a line); their text fills the card. */
+  .more { max-width: 760px; margin-inline: auto; }
   .more .how p, .more .acc, .more .notes { max-width: none; }
   .notes { color: var(--muted); max-width: 70ch; }
   .bt h3 { font-size: 16px; font-weight: 600; margin: var(--s5) 0 var(--s2); }

@@ -16,7 +16,6 @@ site/                 Astro + Svelte website (static build)
   src/lib/swap/         swap-chance model
   src/lib/snipe/        drop-and-re-bid helpers
   src/lib/data/         readers for the generated JSON, seat and window helpers, accuracy figures
-  src/components/method/ the maths of the Method page, rendered with KaTeX at build time
 model/
   forecast/fit.py       fits the forecast parameters per section and window; backtests; writes JSON
   forecast/sim.py       Python port of the site's simulator (same random number generator)
@@ -35,7 +34,6 @@ Not in the repository: the bid-results data, the fitted parameter files, the gen
 
 Site (`site/package.json`):
 - Astro 5 with `output: 'static'`, so the site is built to plain files and hosted on Cloudflare Pages. Interactive parts are Svelte 5 components.
-- KaTeX renders the maths at build time (`site/src/components/method/tex.ts`), so no maths code ships to the browser.
 - Observable Plot draws the charts.
 - vitest runs the TypeScript unit tests.
 - TypeScript, checked with `astro check`.
@@ -361,7 +359,7 @@ In code: `evaluate` (the products and the optional term), `pAllOf` (the reported
 
 **Gate** (`main` in `fit.py`). Forecasts go live only if, on the test term, coverage is in range (0.75 to 0.85 over all forecasts and 0.70 to 0.90 on filled sections) and the model beats the baseline (lower average miss overall and on filled sections, and a Brier score below both baselines). Otherwise the parameter file is written under a `.rejected` name and the site shows no forecasts. Per window, the site marks confidence "low" unless filled-section coverage is within 70 to 90% on at least 50 filled sections (`window_confidence` in `build_site_data.py`).
 
-**Results on the held-out term, 2026-27 Term 1** (from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the Method page on the site is the current source). 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
+**Results on the held-out term, 2026-27 Term 1** (from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the "How it works" page on the site shows the current median miss). 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
 
 | Measure | Fit only | Fit plus correction | Reuse last term's bid |
 |---|---|---|---|

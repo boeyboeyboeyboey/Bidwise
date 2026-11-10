@@ -4,7 +4,7 @@
 // Kept in memory (also sharing a call that is still running) and in sessionStorage, which survives a reload or a page change.
 
 /** Bump when the simulation or planner maths changes, so answers stored by an older build are not reused. */
-export const SIM_CACHE_VERSION = 1;
+export const SIM_CACHE_VERSION = 2; // 2: uncontested floor bids win for sure (10 Nov 2026)
 const PREFIX = `bw:sim:v${SIM_CACHE_VERSION}:`;
 const MAX_STORED_CHARS = 400_000;
 

@@ -145,7 +145,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
 
   <section id="accuracy" class="acc-sec">
     <h2>How accurate it is</h2>
-    {latest.fMed !== undefined && <p class="acc-big"><span class="lbl">Median miss</span><span class="val">{eS(latest.fMed)}</span></p>}
+    {latest.fMed !== undefined && <p class="acc-big"><span class="lbl">Median miss</span><span class="val">{eS(latest.fMed)}</span><span class="cap">Clearing bid, sections that filled in {latest.term}, a term the model was not trained on</span></p>}
 
     <h3 id="accounts">What it accounts for</h3>
     <ul class="acc-points">
@@ -236,6 +236,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .readme { color: var(--muted); margin: var(--s5) 0; }
   .acc-big { display: grid; justify-items: start; gap: var(--s1); text-align: left; padding: var(--s4); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); margin: 0; }
   .acc-big .lbl { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
+  .acc-big .cap { font-size: var(--fs-xs); color: var(--muted); }
   .acc-big .val { font-size: clamp(32px, 8vw, 44px); font-weight: 600; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .acc-points { list-style: none; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
   .acc-points li { display: grid; gap: var(--s1); align-content: start; background: var(--surface); border-radius: var(--r-lg); padding: var(--s4); line-height: 1.4; }

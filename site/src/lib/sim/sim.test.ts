@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pInAt, recommendBid, simulate, type SimInput } from './index';
+import { pInAt, recommendBid, simulate, tieWinChance, type SimInput } from './index';
 
 const proc = (globalThis as unknown as { process: { cpuUsage: (p?: unknown) => { user: number; system: number } } }).process;
 
@@ -26,6 +26,24 @@ const withP = (o: Partial<SimInput['params']>, i: Partial<SimInput> = {}): SimIn
 });
 
 describe('simulate', () => {
+  it('a floor bid wins for certain when seats are left over (not half credit)', () => {
+    const r = simulate({ seats: 60, group: 1, minBidCents: 1000, runs: 4000, seed: 3, params: { demandMean: 1, demandDispersion: 1e9, priceLevelCents: 2000, priceSigma: 0.4, anchorSigma: 0.2, anchorShare: 0, anchorCents: 1000 } });
+    expect(r.curve.bidCents[0]).toBe(1000);
+    expect(r.curve.pIn[0]).toBeGreaterThan(0.99);
+  });
+  it('a tied bid wins by random draw among the tied: seats left over / (tied + group), all of a group together', () => {
+    expect(tieWinChance(10, 1, 9, 1)).toBeCloseTo(0.5, 12); // one seat, one rival tied
+    expect(tieWinChance(10, 1, 7, 4)).toBeCloseTo(0.6, 12); // 3 seats among 4 rivals + me
+    expect(tieWinChance(3, 3, 0, 10)).toBeCloseTo(1 / 286, 12); // a group of 3 for 3 seats against 10 tied rivals
+    expect(tieWinChance(5, 2, 4, 1)).toBe(0); // fewer seats left than the group needs
+  });
+  it('a floor bid against many floor bidders is far below half credit', () => {
+    // every rival bids the floor (priceSigma 0, no anchor): a floor bid ties with all of them, a bid above beats all
+    const r = simulate({ seats: 3, group: 3, minBidCents: 1000, runs: 4000, seed: 5, params: { demandMean: 10, demandDispersion: 1e9, priceLevelCents: 1000, priceSigma: 0, anchorSigma: 0, anchorShare: 0, anchorCents: 1000 } });
+    expect(r.curve.bidCents[0]).toBe(1000);
+    expect(r.curve.pIn[0]).toBeLessThan(0.05);
+    expect(r.curve.pIn[r.curve.pIn.length - 1]).toBeGreaterThan(0.99);
+  });
   it('is deterministic for a seed and differs across seeds', () => {
     expect(simulate(base)).toEqual(simulate(base));
     expect(simulate({ ...base, seed: 8 }).percentilesCents).not.toEqual(simulate(base).percentilesCents);

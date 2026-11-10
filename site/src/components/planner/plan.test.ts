@@ -7,7 +7,7 @@ import type { PlanItem } from '../../lib/sim/planner';
 import {
   balanceFromCents, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, pickGroupFor, dropToFit, encodeShare, decodeShare,
-  isCapped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
+  isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
 } from './plan';
 
 const W = 'Round 1A Window 3';
@@ -286,6 +286,12 @@ describe('share link', () => {
     expect(decodeShare('#share=%%%')).toBeNull();
     expect(decodeShare('')).toBeNull();
   });
+  it('keeps an explicit e$125 in new links but reads it as "none set" in old unversioned ones', () => {
+    const p125 = { ...plan, b: 12500 };
+    expect(decodeShare(encodeShare(p125))?.b).toBe(12500);
+    expect(decodeShare('#share=' + btoa(JSON.stringify(p125)))?.b).toBeNull();
+    expect(decodeShare('#share=' + btoa(JSON.stringify({ ...p125, b: 9000 })))?.b).toBe(9000);
+  });
 });
 
 describe('skipped Pick one options', () => {
@@ -305,6 +311,38 @@ describe('skipped Pick one options', () => {
     expect(isCapped(r.bids.a, full, true)).toBe(false);
     expect(isCapped(full - 100, full, true)).toBe(true);
     expect(isCapped(full - 100, full, false)).toBe(false);
+  });
+});
+
+describe('one bid per course', () => {
+  const curve = (level: number) => simulate({ seats: 12, group: 1, minBidCents: 1000, params: { ...params, priceLevelCents: level }, runs: 3000, seed: 1 });
+  const item = (key: string, courseCode: string, level: number): PlanItem => ({ key, courseCode, role: 'oneOf', oneOfGroup: 'A', curve: curve(level) });
+  it('keeps only the cheapest recommended bid of a course; the other row bids e$0 and adds no chance', () => {
+    const items = [item('x1', 'IS469', 6000), item('x2', 'IS469', 2000), item('y', 'ACCT101', 2000)];
+    const { kept, skipped } = oneBidPerCourse(items, 0.9);
+    expect(kept.map((i) => i.key)).toEqual(['x2', 'y']);
+    expect(skipped.map((i) => i.key)).toEqual(['x1']);
+    const r = withSkipped(bidsAtTarget(kept, 0.9, 12500), skipped);
+    expect(r.bids.x1).toBe(0);
+    expect(r.p.x1).toBe(0);
+    expect(r.bidTotalCents).toBe(r.bids.x2 + r.bids.y);
+    // the group chance is one section's chance, not the union of two
+    const p2 = r.p.x2;
+    const group = chanceOfAll([{ role: 'oneOf', oneOfGroup: 'A' }, { role: 'oneOf', oneOfGroup: 'A' }], [p2, r.p.x1]);
+    expect(group).toBeCloseTo(p2, 10);
+  });
+  it('never lets a cheaper Nice to have row displace a Must / Pick one row of the same course', () => {
+    const cheapOptional: PlanItem = { ...item('opt', 'IS469', 2000), role: 'optional', oneOfGroup: undefined };
+    const required = item('req', 'IS469', 6000);
+    const { kept, skipped } = oneBidPerCourse([cheapOptional, required], 0.9);
+    expect(kept.map((i) => i.key)).toEqual(['req']);
+    expect(skipped.map((i) => i.key)).toEqual(['opt']);
+    const mustRow: PlanItem = { ...item('must', 'IS469', 6000), role: 'required', oneOfGroup: undefined };
+    expect(oneBidPerCourse([cheapOptional, mustRow], 0.9).kept.map((i) => i.key)).toEqual(['must']);
+  });
+  it('leaves a plan of distinct courses unchanged', () => {
+    const items = [item('a', 'A1', 2000), item('b', 'B1', 2000)];
+    expect(oneBidPerCourse(items, 0.9)).toEqual({ kept: items, skipped: [] });
   });
 });
 

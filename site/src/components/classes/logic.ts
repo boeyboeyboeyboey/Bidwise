@@ -5,12 +5,13 @@ import { formatExam, type ExamSlot } from '../../lib/format/exam';
 import { seatsOf, type SeatInput } from '../../lib/data/seats';
 import type { Meeting } from '../../lib/data/types';
 
-/** [code, title, section, instructor, day/time text, seats left, seats total, approx 0|1, day mask, start times ("08:15", sorted, on real days), exam text ("Thu 29 Apr, 13:00", '' = none listed)]. */
+/** [code, title, section, instructor, day/time text, seats left, seats total, approx 0|1, day mask, start times ("08:15", sorted, on real days), exam text ("Thu 29 Apr, 13:00", '' = none listed), one [day bit, start time] pair per meeting so a day and a start-time filter must hit the same meeting]. */
 export type ClassRow = [
   code: string, title: string, section: string, instructor: string, slot: string,
   left: number, total: number, approx: 0 | 1, days: number, times: string[], exam: string,
+  meets: [day: number, start: string][],
 ];
-export const R = { code: 0, title: 1, section: 2, instructor: 3, slot: 4, left: 5, total: 6, approx: 7, days: 8, times: 9, exam: 10 } as const;
+export const R = { code: 0, title: 1, section: 2, instructor: 3, slot: 4, left: 5, total: 6, approx: 7, days: 8, times: 9, exam: 10, meets: 11 } as const;
 
 export interface ClassesPayload {
   /** ISO time of the newest live seat scan, or null. */
@@ -50,14 +51,18 @@ export function buildRows(courses: readonly CourseLike[]): ClassRow[] {
       const seats = seatsOf(s);
       let days = 0;
       const starts = new Set<string>();
+      const meets: [number, string][] = [];
       for (const m of s.meetings) {
         days |= dayBit(m.day);
-        if (dayBit(m.day) && startOf(m.start)) starts.add(startOf(m.start));
+        if (dayBit(m.day) && startOf(m.start)) {
+          starts.add(startOf(m.start));
+          meets.push([dayBit(m.day), startOf(m.start)]);
+        }
       }
       const times = [...starts].sort();
       rows.push([
         c.code, c.title, s.section, (s.instructor ?? '').trim(), formatSlot(s.meetings),
-        Math.max(0, seats.left), seats.total, seats.source === 'approx' ? 1 : 0, days, times, formatExam(s.exam),
+        Math.max(0, seats.left), seats.total, seats.source === 'approx' ? 1 : 0, days, times, formatExam(s.exam), meets,
       ]);
     }
   }

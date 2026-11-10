@@ -45,6 +45,15 @@ describe('groupCourses', () => {
   });
 });
 
+describe('day and start-time filters together', () => {
+  // COR-LAW2243 G1 meets Tue 18:30 and Fri 09:00
+  it('need one meeting that satisfies both, not a day from one meeting and a time from another', () => {
+    expect(f({ days: 2, times: ['09:00'] }).map((h) => h.course.code)).not.toContain('COR-LAW2243');
+    expect(f({ days: 16, times: ['09:00'] }).map((h) => h.course.code)).toContain('COR-LAW2243');
+    expect(f({ days: 2 | 16, times: ['18:30'] }).map((h) => h.course.code)).toContain('COR-LAW2243');
+  });
+});
+
 describe('filterCourses', () => {
   it('searches code, title and professor, with or without separators', () => {
     expect(codes(f({ q: 'econ 111' }))).toEqual(['ECON111']);

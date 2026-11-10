@@ -326,6 +326,37 @@ export function isCapped(bid: number | null, fullBid: number | null, capMode: bo
   return capMode && fullBid !== null && bid !== null && bid > 0 && bid < fullBid;
 }
 
+/**
+ * BOSS lets a student bid on one section of a course per window, so rows of the same course are alternatives, not
+ * extra chances. Of each course only the row with the cheapest recommended bid for `target` is kept (the first on a
+ * tie); the others are returned as skipped and must bid e$0 and add no chance.
+ */
+export function oneBidPerCourse(items: PlanItem[], target: number): { kept: PlanItem[]; skipped: PlanItem[] } {
+  // A row the student must get (Must / Pick one) is never displaced by a cheaper Nice to have row of the same course.
+  const rank = (r: Role) => (r === 'required' ? 0 : r === 'oneOf' ? 1 : 2);
+  const best = new Map<string, PlanItem>();
+  for (const it of items) {
+    const cur = best.get(it.courseCode);
+    if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && recommendBid(it.curve, target) < recommendBid(cur.curve, target))) {
+      best.set(it.courseCode, it);
+    }
+  }
+  const kept = items.filter((it) => best.get(it.courseCode) === it);
+  return { kept, skipped: items.filter((it) => best.get(it.courseCode) !== it) };
+}
+
+/** `result` for the kept items, with each skipped row at a bid of e$0 and no chance. */
+export function withSkipped(result: PlanResult, skipped: PlanItem[]): PlanResult {
+  if (!skipped.length) return result;
+  const bids = { ...result.bids };
+  const p = { ...result.p };
+  for (const it of skipped) {
+    bids[it.key] = 0;
+    p[it.key] = 0;
+  }
+  return { ...result, bids, p };
+}
+
 /** Items the optimiser may bid on. Over balance, Nice to have rows get nothing: Must gets come first. */
 export function biddableItems<T extends { role: Role }>(items: T[], over: boolean): T[] {
   return over ? items.filter((i) => i.role !== 'optional') : items;
@@ -492,10 +523,13 @@ export function clashSummary(pairs: ClashPair[]): string {
 }
 
 const SHARE_PREFIX = 'share=';
+/** Links without a version (v) are the old ones, where a balance of exactly e$125 was the default and meant "none set". */
+const SHARE_VERSION = 2;
+const LEGACY_DEFAULT_BALANCE_CENTS = 12500;
 
 /** Link fragment for a shared plan: "#share=<base64 of the plan>". */
 export function encodeShare(plan: StoredPlan): string {
-  return `#${SHARE_PREFIX}${btoa(JSON.stringify(plan))}`;
+  return `#${SHARE_PREFIX}${btoa(JSON.stringify({ ...plan, v: SHARE_VERSION }))}`;
 }
 
 /** A plan from a "#share=..." fragment. Any other fragment (old plain ones included) is not a plan. */
@@ -503,7 +537,10 @@ export function decodeShare(hash: string): StoredPlan | null {
   const h = hash.replace(/^#/, '');
   if (!h.startsWith(SHARE_PREFIX)) return null;
   try {
-    return decodePlan(JSON.parse(atob(h.slice(SHARE_PREFIX.length))));
+    const raw = JSON.parse(atob(h.slice(SHARE_PREFIX.length)));
+    const plan = decodePlan(raw);
+    if (plan && plan.b === LEGACY_DEFAULT_BALANCE_CENTS && !(raw && typeof raw === 'object' && raw.v === SHARE_VERSION)) plan.b = null;
+    return plan;
   } catch {
     return null;
   }

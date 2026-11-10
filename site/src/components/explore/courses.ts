@@ -71,8 +71,11 @@ export function matchesWords(hay: string, q: string): boolean {
 }
 
 export function sectionMatches(r: ClassRow, f: Pick<BrowseState, 'days' | 'times' | 'seats' | 'nofinal'>): boolean {
+  // With both a day and a start time chosen, one meeting must satisfy both (Mon 12:00 + Thu 10:00 is not "Mon at 10:00").
+  const slotOk = f.days && f.times.length ? r[R.meets].some(([d, t]) => (d & f.days) !== 0 && f.times.includes(t)) : true;
   return (!f.days || (r[R.days] & f.days) !== 0)
     && (!f.times.length || r[R.times].some((t) => f.times.includes(t)))
+    && slotOk
     && (!f.seats || r[R.left] > 0)
     && (!f.nofinal || r[R.exam] === '');
 }

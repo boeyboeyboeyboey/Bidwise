@@ -40,9 +40,9 @@ describe('subjectOf', () => {
 
 describe('seatText', () => {
   it('marks estimates and zeros', () => {
-    expect(seatText(['A', '', 'G1', '', '', 5, 9, 0, 0, [], ''])).toBe('5 left');
-    expect(seatText(['A', '', 'G1', '', '', 5, 9, 1, 0, [], ''])).toBe('~5 left');
-    expect(seatText(['A', '', 'G1', '', '', 0, 9, 0, 0, [], ''])).toBe('Full');
-    expect(seatText(['A', '', 'G1', '', '', 0, 9, 1, 0, [], ''])).toBe('Likely full');
+    expect(seatText(['A', '', 'G1', '', '', 5, 9, 0, 0, [], '', []])).toBe('5 left');
+    expect(seatText(['A', '', 'G1', '', '', 5, 9, 1, 0, [], '', []])).toBe('~5 left');
+    expect(seatText(['A', '', 'G1', '', '', 0, 9, 0, 0, [], '', []])).toBe('Full');
+    expect(seatText(['A', '', 'G1', '', '', 0, 9, 1, 0, [], '', []])).toBe('Likely full');
   });
 });

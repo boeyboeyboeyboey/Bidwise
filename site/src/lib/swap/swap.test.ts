@@ -312,7 +312,16 @@ describe('swapOptions', () => {
   });
 });
 
-describe('real course smoke tests', () => {
+const hasRealData = () => {
+  try {
+    readFileSync('src/data/real/courses/MGMT102.json', 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+};
+// The generated course JSON is private and not in the public checkout, so these only run where it exists.
+describe.skipIf(!hasRealData())('real course smoke tests', () => {
   const load = (code: string) => JSON.parse(readFileSync(`src/data/real/courses/${code}.json`, 'utf8')) as CourseData;
 
   it('MGMT102 from G9 (a cheap section): the much pricier sections are Unlikely, the same-priced ones are not', () => {

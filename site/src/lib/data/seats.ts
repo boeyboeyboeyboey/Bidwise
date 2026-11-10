@@ -1,5 +1,5 @@
 // Which seat count to show for a current-term section. Pure, so it is unit tested (seats.test.ts).
-// Live = scanned in ClassSearch. Approx = not visible to the scanning account, taken from the previous
+// Live = scanned in ClassSearch. Approx = not listed in ClassSearch for this section, taken from the previous
 // window's after-process vacancy. Last = no availability file, so the last results window's vacancy.
 import type { LiveSeats } from './types';
 

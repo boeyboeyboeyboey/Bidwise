@@ -47,6 +47,14 @@ function quickselect(buf: Float64Array, n: number, kth: number): number {
   return buf[kth];
 }
 
+/** Chance all `group` members win when they bid exactly the cutoff: `above` rivals bid more, `tied` bid the same, the
+ *  remaining seats go by random draw. C(seats - above, group) / C(tied + group, group), as a product (same as sim.py). */
+export function tieWinChance(seats: number, group: number, above: number, tied: number): number {
+  let w = 1;
+  for (let i = 0; i < group; i++) w *= (seats - above - i) / (tied + group - i);
+  return w > 0 ? w : 0;
+}
+
 export function simulate(input: SimInput): SimResult {
   const { seats, group, minBidCents: minBid, params: p } = input;
   const runs = Math.max(1, Math.floor(input.runs ?? 30000));
@@ -55,12 +63,14 @@ export function simulate(input: SimInput): SimResult {
   let buf = new Float64Array(256);
   const cutoffs = new Int32Array(runs);
   let filled = 0;
+  const tieWin = new Float64Array(runs); // chance a bid equal to this run's cutoff wins (1 when seats were left over)
 
   for (let r = 0; r < runs; r++) {
     const n = rng.negBin(p.demandMean, p.demandDispersion);
     if (n < k || k <= 0 && n === 0) {
       // N < k: seats are not contested; k<=0: group alone fills.
       cutoffs[r] = minBid;
+      if (n < k && k > 0) tieWin[r] = 1;
       if (n >= k) filled++;
       continue;
     }
@@ -82,7 +92,19 @@ export function simulate(input: SimInput): SimResult {
       }
     }
     // k-th highest == (n-k)-th smallest (0-indexed)
-    cutoffs[r] = k <= 0 ? minBid : quickselect(buf, n, n - k);
+    if (k <= 0) {
+      cutoffs[r] = minBid;
+    } else {
+      const c = quickselect(buf, n, n - k);
+      cutoffs[r] = c;
+      let above = 0;
+      let tied = 0;
+      for (let i = 0; i < n; i++) {
+        if (buf[i] > c) above++;
+        else if (buf[i] === c) tied++;
+      }
+      tieWin[r] = tieWinChance(seats, group, above, tied);
+    }
   }
 
   const sorted = Int32Array.from(cutoffs).sort();
@@ -97,7 +119,11 @@ export function simulate(input: SimInput): SimResult {
     counts[b < 0 ? 0 : b]++;
   }
 
-  // lowerBound(x): count of sorted values < x
+  // A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
+  const tieSum = new Map<number, number>(); // summed in run order, as sim.py does
+  for (let i = 0; i < runs; i++) tieSum.set(cutoffs[i], (tieSum.get(cutoffs[i]) ?? 0) + tieWin[i]);
+
+  // lowerBound(x): count of cutoffs < x
   const lower = (x: number) => {
     let a = 0;
     let b = runs;
@@ -116,10 +142,8 @@ export function simulate(input: SimInput): SimResult {
     const b = i === GRID_POINTS - 1 ? hi : Math.round(minBid + i * step);
     if (b <= prev) continue;
     prev = b;
-    const lt = lower(b);
-    const le = lower(b + 1);
     bidCents.push(b);
-    pIn.push((lt + 0.5 * (le - lt)) / runs);
+    pIn.push((lower(b) + (tieSum.get(b) ?? 0)) / runs);
   }
 
   return { runs, pFill: filled / runs, percentilesCents, histogram: { startCents: minBid, binWidthCents, counts }, curve: { bidCents, pIn } };

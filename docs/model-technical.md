@@ -135,9 +135,9 @@ For each replay, with $k=S-g+1$:
 
 So a section with $S$ seats clears at the $S$-th highest bid among the other bidders, and at the minimum bid when fewer than $S$ bid. A group of $g$ friends who all bid $b$ all get in iff fewer than $k=S-g+1$ other bidders bid above $b$.
 
-*Outputs.* Sort the cutoffs $C_1\le\dots\le C_R$. $\hat P_{\text{fill}}=$ `pFill` $=\#\{\text{filled}\}/R$. Percentiles $p_q=C_{\lfloor qR\rfloor}$ (`index.ts:89-90`): the site shows $p_{50}$ and $p_{90}$ from this, and the 10th percentile of the range is read off the chance curve (`cutoffAt`, `forecast.ts:33-47`). The chance of a seat for bid $b$ counts ties as half:
+*Outputs.* Sort the cutoffs $C_1\le\dots\le C_R$. $\hat P_{\text{fill}}=$ `pFill` $=\#\{\text{filled}\}/R$. Percentiles $p_q=C_{\lfloor qR\rfloor}$ (`index.ts:89-90`): the site shows $p_{50}$ and $p_{90}$ from this, and the 10th percentile of the range is read off the chance curve (`cutoffAt`, `forecast.ts:33-47`). The chance of a seat for bid $b$ counts a bid equal to the cutoff by random draw (BOSS breaks ties randomly). In replay $i$, $A_i$ rivals bid more than the cutoff and $T_i$ bid exactly the cutoff; the group of $g$ gets the $S-A_i$ remaining seats only if all its members are drawn, so $w_i=\binom{S-A_i}{g}/\binom{T_i+g}{g}$ (for one bidder, $(S-A_i)/(T_i+1)$). When seats are left over ($N<S-g+1$) the cutoff is the floor and $w_i=1$:
 
-$$\mathrm{pIn}(b)=\frac{\#\{C_i<b\}+\tfrac12\#\{C_i=b\}}{R},$$
+$$\mathrm{pIn}(b)=\frac{\#\{C_i<b\}+\sum_{i:\,C_i=b}w_i}{R},$$
 
 evaluated on up to 120 grid points from $F$ to $\max(F+100,\lceil1.15\,p_{99}\rceil)$ and linearly interpolated (`index.ts:92-142`). The recommended bid for a target (80, 90, 95%) is the smallest odd-cent bid with $\mathrm{pIn}\ge$ target (`recommendBid`, `index.ts:146-161`; odd cents to avoid ties with round-number bids). The swap view uses 4,000 runs (`swapSim.ts:10`); the home-page highlights use 20,000 runs, same seed (`build_site_data.py:53-55`).
 
@@ -154,7 +154,7 @@ evaluated on up to 120 grid points from $F$ to $\max(F+100,\lceil1.15\,p_{99}\rc
 - Baseline "reuse last term's clearing bid": for the same window, the clearing bid of the same section, else same course and instructor, else same course, from the latest earlier term of the same term type, else the latest earlier term (`naive_baseline`, `fit.py:534-551`).
 - Brier of $\Pr(\text{fill})$ against the fill outcome, versus a hard baseline and a climatology (weighted fill rate per window).
 
-Figures (from `model/forecast/out/backtest.json`, `site/src/data/real/accuracy.json`):
+Figures for the plain fit, the baseline before the correction (the live site uses the corrected fit; its current figures are on the method page) (from `model/forecast/out/backtest.json`, `site/src/data/real/accuracy.json`):
 
 | Term | Forecasts | Filled | Filled MAE, model vs baseline | 80% range, filled | All-forecast MAE, model vs baseline | 80% coverage, all |
 |---|---|---|---|---|---|---|
@@ -225,7 +225,7 @@ Simulation (20,000 runs, seed 12345, group 1, run with `sim.py`, which mirrors t
 | pIn at e$30.00 | 86.4% | 53.6% |
 | bid for 90% (odd cents) | e$32.97 | e$86.71 |
 
-Reading the first column: only 61% of replays fill, so the median replay cutoff is just above the floor; a bid of e$15.00 beats the cutoff in 57.2% of replays (counting ties as half), and e$30.00 in 86.4%. In Round 1B Window 1 the one remaining seat is contested by about 10 bidders with a wide bid spread ($\sigma=0.74$), so the chance climbs slowly with the bid.
+Reading the first column: only 61% of replays fill, so the median replay cutoff is just above the floor; a bid of e$15.00 beats the cutoff in 57.2% of replays (ties settled by random draw), and e$30.00 in 86.4%. In Round 1B Window 1 the one remaining seat is contested by about 10 bidders with a wide bid spread ($\sigma=0.74$), so the chance climbs slowly with the bid.
 
 ## 10. Known limits
 
@@ -236,7 +236,7 @@ Reading the first column: only 61% of replays fill, so the median replay cutoff 
 - Demand and price are fitted per window with no link between windows, and $\sigma$, $q$, $s$ are shared by all courses in a window. $s$ is also shared across windows, and its residuals ignore the slot effect.
 - Slot effects use crude proxies for demand (lower bound of $N$, ×2 scale) and are shrunk by $n/(n+30)$ with no uncertainty carried forward.
 - Seats for some sections are estimated from the previous window and can be wrong.
-- At a bid exactly equal to the floor, pIn counts uncontested replays as a tie and so reads half of their mass; one cent above the floor it reads in full. The recommended odd-cent bids avoid this.
+- Ties are settled by random draw among the tied bids, but rivals are assumed to bid independently of each other and of the group; a bid exactly equal to the cutoff can therefore read very low for a large group (for example three seats for a group of three against ten rivals all at the floor). The recommended odd-cent bids sit one cent above round numbers and mostly avoid ties.
 - The pre-assigned course path and every swap number rest on judgment settings, with no outcome data to test them.
 
 ## 11. Mismatches with the site text

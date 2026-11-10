@@ -18,7 +18,7 @@ The model estimates how many students will bid and how much each bids, then repl
 
 ## How accurate it was
 
-On unseen terms, for sections that filled in 2026-27 Term 1, the average miss was e$13.05, against e$20.20 for reusing last term's clearing bid, and the real bid fell inside our 80% range 81% of the time. In 2025-26 Term 2: e$15.28 against e$21.80, and 84%. One weakness: for sections with a middling chance of filling, it predicted "fills" more often than it happened.
+On unseen terms, for sections that filled in 2026-27 Term 1, the plain fit's average miss was e$13.05 (the live site now uses a corrected fit, which does better; see the method page for its current figure), against e$20.20 for reusing last term's clearing bid, and the real bid fell inside our 80% range 81% of the time. In 2025-26 Term 2: e$15.28 against e$21.80, and 84%. One weakness: for sections with a middling chance of filling, it predicted "fills" more often than it happened.
 
 ## What it can't know
 

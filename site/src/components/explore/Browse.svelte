@@ -163,7 +163,9 @@
 
     {#if active?.now}
       <p class="meta">{active.term}{scanText ? ` · seats as of ${scanText}` : ''}</p>
-      {#if nowShown.length < nowAll.length || (filtered && !nowMatching.length)}
+      {#if filtered && !nowMatching.length}
+        <p class="meta">No section matches your filters; showing all {secLabel(nowAll.length, nowAll.length)}. <button type="button" class="link" onclick={clearSectionFilters}>Clear filters</button></p>
+      {:else if nowShown.length < nowAll.length}
         <p class="meta">{secLabel(nowShown.length, nowAll.length)} match your filters. <button type="button" class="link" onclick={clearSectionFilters}>Show all</button></p>
       {/if}
       <ul class="secs">

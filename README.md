@@ -217,7 +217,7 @@ After $`R`$ replays, with cutoffs $`C_1, \dots, C_R`$:
 \hat P_{\text{fill}} = \frac{\#\lbrace \text{replays with } N \ge k \rbrace}{R}, \qquad \mathrm{pIn}(b) = \frac{\#\lbrace C_i < b \rbrace + \tfrac{1}{2} \#\lbrace C_i = b \rbrace}{R}
 ```
 
-The cutoff distribution (median, 90th percentile and so on) is read from the sorted cutoffs. $`\mathrm{pIn}`$ is the chance that a bid of $`b`$ gets a seat; ties count as half because BOSS breaks them randomly. It is evaluated on up to 120 grid points from $`F`$ to $`\max(F + 100,\ \lceil 1.15\, p_{99} \rceil)`$ and linearly interpolated. The recommended bid for a target chance (80, 90 or 95%) is the smallest odd-cent bid with $`\mathrm{pIn}(b) \ge`$ target; odd cents avoid ties with round-number bids.
+The cutoff distribution (median, 90th percentile and so on) is read from the sorted cutoffs. $`\mathrm{pIn}`$ is the chance that a bid of $`b`$ gets a seat; a bid equal to a replay's cutoff wins by random draw, as BOSS breaks ties randomly: with $`A`$ rivals bidding more and $`T`$ tied at the cutoff, a group of $`g`$ wins with probability $`\binom{S-A}{g} / \binom{T+g}{g}`$ (one bidder: $`(S-A)/(T+1)`$), and a floor bid wins for certain when seats are left over. It is evaluated on up to 120 grid points from $`F`$ to $`\max(F + 100,\ \lceil 1.15\, p_{99} \rceil)`$ and linearly interpolated. The recommended bid for a target chance (80, 90 or 95%) is the smallest odd-cent bid with $`\mathrm{pIn}(b) \ge`$ target; odd cents avoid ties with round-number bids.
 
 In code: `simulate`, `sample_cutoffs`, `Rng.neg_bin`, `p_in_at` and `recommend_bid` in `model/forecast/sim.py`, and the same functions (`simulate`, `pInAt`, `recommendBid`) in `site/src/lib/sim/index.ts`, which is what runs in the browser. The fit's backtest calls `sample_cutoffs` through `_sim_one` in `fit.py`.
 
@@ -359,7 +359,7 @@ In code: `evaluate` (the products and the optional term), `pAllOf` (the reported
 
 **Gate** (`main` in `fit.py`). Forecasts go live only if, on the test term, coverage is in range (0.75 to 0.85 over all forecasts and 0.70 to 0.90 on filled sections) and the model beats the baseline (lower average miss overall and on filled sections, and a Brier score below both baselines). Otherwise the parameter file is written under a `.rejected` name and the site shows no forecasts. Per window, the site marks confidence "low" unless filled-section coverage is within 70 to 90% on at least 50 filled sections (`window_confidence` in `build_site_data.py`).
 
-**Results on the held-out term, 2026-27 Term 1** (from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the "How it works" page on the site shows the current median miss). 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
+**Results on 2026-27 Term 1, a term excluded from training (a retrospective result, not a prospective one: the correction was chosen with this term's scores in view, so treat it as optimistic)** (from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the "How it works" page on the site shows the current median miss). 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
 
 | Measure | Fit only | Fit plus correction | Reuse last term's bid |
 |---|---|---|---|
@@ -381,7 +381,7 @@ The Brier score of $`\Pr(\text{fill})`$ is 0.118 on the sections the baseline co
 - Demand and price are fitted per window with no link between windows. $`\sigma`$, $`q`$ and $`s`$ are shared by all courses in a window, and $`s`$ is shared across windows and ignores the slot effect.
 - The hierarchy double-counts a child's data (see above). Slot effects rest on crude proxies for demand and carry no uncertainty forward.
 - The correction rescales the price level only. The spread, the chance of filling and the demand still come from the fit, and the correction is trained on filled sections only.
-- At a bid exactly equal to the floor, uncontested replays count as a tie and read half their weight; one cent above the floor they read in full. The recommended odd-cent bids avoid this.
+- Ties are settled by random draw among the tied bids, but rivals are assumed to bid independently of each other and of the group; a bid exactly equal to the cutoff can therefore read very low for a large group (for example three seats for a group of three against ten rivals all at the floor). The recommended odd-cent bids avoid round-number ties.
 - Seat counts for some sections are estimates from the previous window and can be wrong, for example when reserved seats are released or students drop.
 - The planner treats sections as independent, which is optimistic when students compete for the same seats in correlated ways. It flags timetable clashes but does not model e\$ rollover rules or credit limits.
 - The swap chance, its settings, and the drop-and-re-bid chance have not been tested against real outcomes; the percentages are rough guides for ranking options. The drop chance counts past cases of the same course, which are correlated within a term.

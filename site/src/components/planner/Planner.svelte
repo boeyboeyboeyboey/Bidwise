@@ -18,7 +18,7 @@
   import CourseAdd from './CourseAdd.svelte';
   import PlanRow from './PlanRow.svelte';
   import {
-    DEFAULT_TARGET, balanceFromCents, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance,
+    DEFAULT_TARGET, balanceFromCents, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
     pickGroupFor, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, type PlanRowState } from './types';
@@ -58,6 +58,8 @@
   let mine = $state.raw<StoredPlan | null>(null);
   /** The window chosen before a shared plan switched it, so "Restore mine" can put it back. */
   let mineWindow: string | null = null;
+  /** The balance in use before a shared plan replaced it, so "Restore mine" can put it back. */
+  let mineBal: BalanceState | null = null;
   let copied = $state(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   /** Shown in a read-only field when the clipboard is blocked. */
@@ -110,7 +112,7 @@
   );
   const okRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
   const excluded = $derived(info.filter((x) => x.issue).length);
-  const planItems = $derived.by(() => {
+  const simItems = $derived.by(() => {
     const out: PlanItem[] = [];
     for (const r of okRows) {
       const c = curves[simKey(r)];
@@ -118,6 +120,10 @@
     }
     return out;
   });
+
+  /** One bid per course: other rows of a course are alternatives (BOSS allows one section of a course per window). */
+  const onePer = $derived(oneBidPerCourse(simItems, target));
+  const planItems = $derived(onePer.kept);
 
   const blocks = $derived.by(() => {
     const out: number[][] = [];
@@ -162,12 +168,15 @@
   const hasRequired = $derived(planItems.some((i) => i.role !== 'optional'));
   /** True when no row that can be simulated is a must-get or pick-one: the headline chance would be meaningless. */
   const noMust = $derived(okRows.length > 0 && !okRows.some((r) => r.role !== 'optional'));
-  const allSimmed = $derived(okRows.length > 0 && planItems.length === okRows.length);
+  const allSimmed = $derived(okRows.length > 0 && simItems.length === okRows.length);
   /** Every row at the course page's recommended bid for the chance you want. */
   const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0) : null);
   /** The recommended bids add up to more than the balance, so they have to be cut to fit. */
   const needsFit = $derived(!!full && balanceCents !== null && full.bidTotalCents > balanceCents);
-  const result = $derived(needsFit ? fitted : full);
+  const result = $derived.by(() => {
+    const r = needsFit ? fitted : full;
+    return r ? withSkipped(r, onePer.skipped) : r;
+  });
   const pending = $derived(okRows.length > 0 && (!allSimmed || (needsFit && fitting)));
   const fullBidOf = (row: PlanRowState) => {
     const c = curves[simKey(row)];
@@ -211,7 +220,7 @@
   const clashNote = $derived(clashSummary(clashPairs));
   function raiseBudget() {
     bal = balanceFromCents(Math.ceil(reqNeedCents / 100) * 100, true);
-    setBalanceText(String(bal.cents! / 100));
+    if (!mine) setBalanceText(String(bal.cents! / 100));
   }
 
   /**
@@ -292,12 +301,15 @@
       if (!mine) {
         mine = saved;
         mineWindow = getChosenWindow();
+        mineBal = bal;
       }
     } else clearHash();
     apply(shared);
-    // 12500 was the old default balance (e$125); shared links made with it carry no balance.
-    const sharedBal = shared.b === 12500 ? null : shared.b;
-    if (sharedBal !== null) bal = balanceFromCents(sharedBal, true);
+    // decodeShare already drops the old default balance of unversioned links; an explicit e$125 now survives.
+    if (shared.b !== null) {
+      bal = balanceFromCents(shared.b, true);
+      if (!mine) setBalanceText(String(shared.b / 100)); // no plan of the student's own to protect: keep the balance across reloads
+    }
     setWindow(windowFor(shared.w || currentWindow));
   }
   function restoreMine() {
@@ -305,12 +317,19 @@
       apply(mine);
       win = windowFor(mineWindow);
       setChosenWindow(mineWindow);
+      if (mineBal) {
+        bal = mineBal;
+        if (!bal.bad) setBalanceText(bal.cents === null ? '' : String(bal.cents / 100)); // storage gets the saved balance back
+      }
     }
     mine = null;
+    mineBal = null;
     clearHash();
   }
   function keepShared() {
     mine = null;
+    mineBal = null;
+    if (!bal.bad) setBalanceText(bal.cents === null ? '' : String(bal.cents / 100));
     clearHash();
   }
   async function sharePlan() {
@@ -441,7 +460,7 @@
   function onBalance(e: Event) {
     const text = (e.currentTarget as HTMLInputElement).value;
     bal = typeBalance(bal, text);
-    if (!bal.bad) setBalanceText(text);
+    if (!bal.bad && !mine) setBalanceText(text); // while previewing a share, edits stay out of storage until "Keep this one"
   }
   // Adds courses only: the balance, priority and busy times the student set stay as they are.
   async function tryExample() {
@@ -783,7 +802,7 @@
   {#if rows.length && !wide}
     <button type="button" class="bar num" class:busy={pending} aria-busy={pending} onclick={toResult} aria-label="Show plan details">
       {#if result}
-        {#if noMust}<b>No must-get courses</b>{:else if overBudget}<b>Not possible</b><span>· need about {eS(reqNeedCents)}</span>{:else}<b>{pct(result.pAll)} chance of all</b>{#if showCallout}<span class="fit">· Over balance</span>{:else}<span>· bids {eS(result.bidTotalCents)}</span>{#if sum}<span>· {eS(Math.max(0, sum.leftCents))} left</span>{/if}{/if}{/if}
+        {#if noMust}<b>No must-get courses</b>{:else if overBudget}<b>Not possible</b><span>· need about {eS(reqNeedCents)}</span>{:else}<b>{pct(result.pAll)} chance of all</b>{#if showCallout}<span class="fit">· {over || hopeless ? 'Over balance' : 'Bids cut to fit'}</span>{:else}<span>· bids {eS(result.bidTotalCents)}</span>{#if sum}<span>· {eS(Math.max(0, sum.leftCents))} left</span>{/if}{/if}{/if}
         {#if overBudget && showCallout}<span class="fit">· Over balance</span>{/if}
       {:else}
         <span class="lab">Calculating…</span>

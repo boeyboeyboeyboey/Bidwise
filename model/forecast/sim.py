@@ -7,6 +7,7 @@ the TypeScript engine up to libm differences in log/exp/cos/sin (tests allow
 """
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import asdict, dataclass, field
 
@@ -160,12 +161,26 @@ class Rng:
         return self.poisson(self.gamma(size) * (mean / size))
 
 
-def sample_cutoffs(seats: int, group: int, min_bid: int, p: SimParams, runs: int, seed: int):
-    """Return (cutoffs, filled_count, filled_flags).  Mirrors the loop in simulate()."""
+def tie_win_chance(seats: int, group: int, above: int, tied: int) -> float:
+    """Chance that all `group` members win when they bid exactly the cutoff: `above` rivals bid more, `tied` rivals bid the
+    same, and the seats left over (`seats - above`) go by random draw among the group and the tied rivals.
+    = C(seats - above, group) / C(tied + group, group), as a product so both engines round identically."""
+    w = 1.0
+    for i in range(group):
+        w *= (seats - above - i) / (tied + group - i)
+    return w if w > 0 else 0.0
+
+
+def sample_cutoffs(seats: int, group: int, min_bid: int, p: SimParams, runs: int, seed: int, tie_win: list | None = None):
+    """Return (cutoffs, filled_count, filled_flags).  Mirrors the loop in simulate().
+    If `tie_win` is a list it is filled with one float per run: the chance the group wins when its bid equals that run's
+    cutoff (1.0 when seats were left over, so a floor bid wins for certain; see tie_win_chance otherwise)."""
     rng = Rng(seed)
     k = seats - group + 1
     cutoffs = [0] * runs
     flags = [False] * runs
+    if tie_win is not None:
+        tie_win[:] = [0.0] * runs
     filled = 0
     exp, rnd = math.exp, js_round
     share, ac, ps = p.anchorShare, p.anchorCents, p.priceSigma
@@ -173,6 +188,8 @@ def sample_cutoffs(seats: int, group: int, min_bid: int, p: SimParams, runs: int
         n = rng.neg_bin(p.demandMean, p.demandDispersion)
         if n < k or (k <= 0 and n == 0):
             cutoffs[r] = min_bid
+            if tie_win is not None and n < k and k > 0:
+                tie_win[r] = 1.0
             if n >= k:
                 filled += 1
                 flags[r] = True
@@ -195,7 +212,12 @@ def sample_cutoffs(seats: int, group: int, min_bid: int, p: SimParams, runs: int
             cutoffs[r] = min_bid
         else:
             buf.sort()
-            cutoffs[r] = buf[n - k]
+            c = buf[n - k]
+            cutoffs[r] = c
+            if tie_win is not None:
+                above = n - bisect.bisect_right(buf, c)
+                tied = bisect.bisect_right(buf, c) - bisect.bisect_left(buf, c)
+                tie_win[r] = tie_win_chance(seats, group, above, tied)
     return cutoffs, filled, flags
 
 
@@ -205,7 +227,11 @@ def _pct(sorted_c, q):
 
 def simulate(seats: int, group: int, min_bid: int, params: SimParams, runs: int = 30000, seed: int = 12345) -> dict:
     runs = max(1, math.floor(runs))
-    cutoffs, filled, _ = sample_cutoffs(seats, group, min_bid, params, runs, seed)
+    tw: list = []
+    cutoffs, filled, _ = sample_cutoffs(seats, group, min_bid, params, runs, seed, tw)
+    tie_sum: dict = {}  # cutoff -> summed chance of winning a bid equal to it (added in run order, as the TS engine does)
+    for c, w in zip(cutoffs, tw):
+        tie_sum[c] = tie_sum.get(c, 0.0) + w
     s = sorted(cutoffs)
     pc = {"p50": _pct(s, 0.5), "p80": _pct(s, 0.8), "p90": _pct(s, 0.9), "p95": _pct(s, 0.95), "p99": _pct(s, 0.99)}
     hi = max(min_bid + 100, math.ceil(pc["p99"] * 1.15))
@@ -215,8 +241,6 @@ def simulate(seats: int, group: int, min_bid: int, params: SimParams, runs: int 
         b = min(HIST_BINS - 1, math.floor((c - min_bid) / bw))
         counts[0 if b < 0 else b] += 1
 
-    import bisect
-
     bids, pin = [], []
     step = max(1.0, (hi - min_bid) / (GRID_POINTS - 1))
     prev = -math.inf
@@ -225,10 +249,10 @@ def simulate(seats: int, group: int, min_bid: int, params: SimParams, runs: int 
         if b <= prev:
             continue
         prev = b
+        # A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
         lt = bisect.bisect_left(s, b)
-        le = bisect.bisect_left(s, b + 1)
         bids.append(b)
-        pin.append((lt + 0.5 * (le - lt)) / runs)
+        pin.append((lt + tie_sum.get(b, 0.0)) / runs)
     return {
         "runs": runs,
         "pFill": filled / runs,

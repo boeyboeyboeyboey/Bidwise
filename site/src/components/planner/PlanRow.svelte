@@ -160,7 +160,7 @@
   @container (min-width: 620px) {
     .role > button { flex: 0 1 104px; width: 104px; padding: 0 var(--s1); }
     .line {
-      grid-template-columns: 150px minmax(110px, 1fr) 314px 44px;
+      grid-template-columns: 96px minmax(110px, 1fr) 314px 44px;
       grid-template-areas: 'id sec role rm' 'l2 l2 l2 l2';
       column-gap: var(--s3);
     }

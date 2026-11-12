@@ -17,7 +17,7 @@
   import SectionCard from './SectionCard.svelte';
   import SectionDetail from './SectionDetail.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
-  import HistoryPanel from './HistoryPanel.svelte';
+  import HistorySummary from './HistorySummary.svelte';
   import { isPreAssigned, swapOptions, type SwapOption } from '../../lib/swap/swap';
   import { swapBidCents } from '../../lib/swap/swapSim';
   import { formatSlot } from '../../lib/format/slot';
@@ -27,7 +27,6 @@
     /** Set while the newest window's results are only partly released. */
     resultsPartial?: ResultsPartial | null; code: string; title?: string; sections: Section[]; windowName: string; currentTerm: string; latestWindow: string; openScanAt?: string | null; prevScanAt?: string | null; forecastMeta: ForecastMeta } = $props();
   const ordered = $derived(orderSections(sections));
-  const preferred = [windowName, latestWindow];
   // The current window re-picked from the clock in the browser (open now, or the next to open); the build's pick until then.
   let curName = $state<string | null>(null);
   let curUpcoming = $state(false);
@@ -312,7 +311,7 @@
   {#if failed}
     <p class="off" role="alert">Could not load past results</p>
   {:else if history}
-    <HistoryPanel {history} {preferred} />
+    <HistorySummary {history} {code} {currentTerm} />
   {/if}
 {:else}
 <div class="cols">
@@ -358,7 +357,8 @@
           bid={rowBid(s)}
           {history}
           {failed}
-          {preferred}
+          {code}
+          {currentTerm}
           {desktop}
           {openScanAt}
           open={!desktop && openId === s.id}
@@ -381,7 +381,7 @@
       <div class="panel">
         <h2>{current.section} <span>{current.instructor || 'Instructor not listed'}</span></h2>
         {#key current.id}
-          <SectionDetail section={current} {history} {failed} {preferred} {openScanAt} forecastCard={!swapping} />
+          <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} />
         {/key}
       </div>
     </aside>

@@ -15,7 +15,8 @@
     bid,
     history = null,
     failed = false,
-    preferred = [],
+    code,
+    currentTerm,
     open = false,
     selected = false,
     desktop = false,
@@ -33,7 +34,8 @@
     section: Section;
     history?: HistoryRow[] | null;
     failed?: boolean;
-    preferred?: string[];
+    code: string;
+    currentTerm: string;
     open?: boolean;
     selected?: boolean;
     desktop?: boolean;
@@ -92,7 +94,7 @@
   {/if}
   {#if open}
     <div class="panel detail" id={panelId}>
-      <SectionDetail {section} {history} {failed} {preferred} {openScanAt} forecastCard={!swap} />
+      <SectionDetail {section} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swap} />
     </div>
   {/if}
 </li>

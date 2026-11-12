@@ -3,26 +3,27 @@
   import type { HistoryRow, Section } from '../../lib/data/types';
   import { hasContext } from 'svelte';
   import { FORECASTS_ENABLED } from '../../lib/flags';
-  import HistoryPanel from './HistoryPanel.svelte';
+  import HistorySummary from './HistorySummary.svelte';
   import ForecastPanel from './ForecastPanel.svelte';
   import SeatTrend from './SeatTrend.svelte';
   import Snipe from './Snipe.svelte';
 
-  let { section, history, failed = false, preferred = [], openScanAt = null, forecastCard = true }: {
+  let { section, history, failed = false, code, currentTerm, openScanAt = null, forecastCard = true }: {
     openScanAt?: string | null;
     /** false hides the forecast card (Swap mode); history and seat parts stay. */
     forecastCard?: boolean;
     section: Section;
     history: HistoryRow[] | null;
     failed?: boolean;
-    preferred?: string[];
+    code: string;
+    currentTerm: string;
   } = $props();
   const forecast = FORECASTS_ENABLED && hasContext('forecast');
 </script>
 
 <div class="detail">
   {#if forecast && forecastCard}
-    <ForecastPanel {section} {history} {failed} {preferred}>
+    <ForecastPanel {section} {history} {failed} {currentTerm}>
       <SeatTrend {section} {openScanAt} />
     </ForecastPanel>
     <Snipe {section} />
@@ -32,7 +33,7 @@
     <div class="skel" aria-busy="true" aria-label="Loading"></div>
   {:else}
     <SeatTrend {section} {openScanAt} />
-    <HistoryPanel {history} instructor={section.instructor} {preferred} />
+    <HistorySummary {history} {code} {currentTerm} instructor={section.instructor} />
   {/if}
   <p class="cn num">Class number <b>{section.classNumber}</b></p>
 </div>

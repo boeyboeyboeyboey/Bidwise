@@ -9,15 +9,15 @@
   import type { ForecastCtx } from './forecast-ctx';
   import OtherSections from './OtherSections.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
-  import HistoryPanel from './HistoryPanel.svelte';
+  import HistorySummary from './HistorySummary.svelte';
   import { simSection } from './sectionSim';
   import { bidOrNone, eS, pct } from './fmt';
 
-  let { section, history, failed = false, preferred = [], children }: {
+  let { section, history, failed = false, currentTerm, children }: {
     section: Section;
     history: HistoryRow[] | null;
     failed?: boolean;
-    preferred?: string[];
+    currentTerm: string;
     /** Shown between the answer block and the tabs (the seat trend). */
     children?: Snippet;
   } = $props();
@@ -114,7 +114,7 @@
     <span class="lab aimlab" aria-hidden="true">Chance you want:</span>
     <div class="seg aim">
       {#each TARGETS as t}
-        <button type="button" class="num" aria-pressed={target === t} onclick={() => ctx.setTarget(t)}>{pct(t)}{#if sim}<span class="to"><span class="ar">&nbsp;→&nbsp;</span>{eS(recommendBid(sim, t))}</span>{/if}</button>
+        <button type="button" class="num" aria-pressed={target === t} onclick={() => ctx.setTarget(t)}>{pct(t)}</button>
       {/each}
     </div>
   </div>
@@ -213,7 +213,7 @@
     {:else if !history}
       <div class="skel" aria-busy="true" aria-label="Loading"></div>
     {:else}
-      <HistoryPanel {history} instructor={section.instructor} {preferred} hideTitle />
+      <HistorySummary {history} code={ctx.code} {currentTerm} instructor={section.instructor} hideTitle />
     {/if}
   {:else}
     {#if !ctx.bySection && !ctx.failed}
@@ -245,8 +245,10 @@
   .range { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
   .seg > button { min-height: 44px; padding: 0 var(--s3); }
   .link { min-height: 44px; padding: 0 var(--s1); font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; text-decoration: underline; cursor: pointer; }
-  .acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+  .acts { display: grid; gap: var(--s2); }
   .acts .btn { min-height: 44px; }
+  .acts .btn-primary, .acts .in { min-height: 48px; font-size: var(--fs-md); }
+  .acts .btn:not(.btn-primary):not(.in) { justify-self: start; min-height: 40px; font-weight: 400; font-size: var(--fs-sm); }
   .in { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); white-space: nowrap; }
   .ghost { visibility: hidden; }
   .how { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--s4); }
@@ -255,6 +257,9 @@
   .aimlab { white-space: nowrap; }
   .aim { display: flex; flex: 1 1 320px; }
   .aim > button { flex: 1 1 0; min-height: 44px; padding: 0 var(--s2); white-space: nowrap; font-size: var(--fs-sm); }
+  /* Selected chance: light tint, green edge, dark text, so "Add to plan" is the one filled button. */
+  .aim > button[aria-pressed='true'] { color: var(--text); background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 600; }
+  .aim > button[aria-pressed='true']:hover { background: var(--accent-soft); }
   .capline { margin: 0; font-size: var(--fs-md); }
   .sub { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s2) var(--s4); margin: 0; }
@@ -285,8 +290,5 @@
   .skel { height: 160px; border-radius: var(--r-sm); background: linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat; }
   @media (max-width: 640px) {
     .aim { min-width: 0; flex: 1 1 100%; }
-    .to { display: block; }
-    .ar { display: none; }
-    .aim > button { flex-direction: column; padding: 0 2px; font-size: var(--fs-xs); white-space: normal; text-align: center; line-height: 1.2; }
   }
 </style>

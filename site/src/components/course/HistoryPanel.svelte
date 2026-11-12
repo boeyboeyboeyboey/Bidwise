@@ -97,7 +97,7 @@
   .ctl { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
   .seg button:disabled { opacity: 0.5; cursor: not-allowed; }
   .ctl { gap: var(--s2) var(--s4); }
-  .pair { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+  .pair { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; max-width: 100%; }
   .lab { font-size: 14px; color: var(--muted); }
   .win { flex: 1 1 260px; }
   .win select { flex: 1 1 auto; min-width: 0; width: auto; min-height: 44px; padding-top: 8px; padding-bottom: 8px; font-size: 15px; }

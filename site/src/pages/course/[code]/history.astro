@@ -1,0 +1,28 @@
+---
+import Base from '../../../layouts/Base.astro';
+import HistoryView from '../../../components/course/HistoryView.svelte';
+import { dataMeta, getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
+import { getCourse } from '../../../lib/data/server';
+
+export function getStaticPaths() {
+  return getCourseIndex().map((c) => ({ params: { code: c.code } }));
+}
+
+const course = getCourse(Astro.params.code!)!;
+const instructor = course.sectionsNow[0]?.instructor ?? null;
+---
+<Base title={`${course.code} past results · Bidwise`} active="search">
+  <a class="back" href={`/course/${course.code}`}>‹ {course.code}</a>
+  <header>
+    <h1>Past results</h1>
+    <p>{course.code} {course.title}</p>
+  </header>
+  <HistoryView client:load code={course.code} windowName={windowLabel(getWindow())} latestWindow={dataMeta.latestResultsWindow} {instructor} />
+</Base>
+
+<style>
+  .back { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; font-size: 15px; color: var(--accent); text-decoration: none; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); padding-bottom: var(--s3); }
+  h1 { font-size: 30px; font-weight: 600; }
+  p { margin: 0; color: var(--muted); font-size: 17px; }
+</style>

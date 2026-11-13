@@ -1,13 +1,14 @@
-// Pure helpers for the home page's "I don't know what to take": option lists for the selects, grouping and wording
-// of result blocks, and the saved-on-this-device record. No DOM, no fetch.
+// Pure helpers for Plan B's "Match my degree" part: option lists for the selects, grouping and wording of requirement
+// blocks, and the saved-on-this-device record. No DOM, no fetch.
 import { findDegree } from '../../lib/gradreq';
-import type { Block, Candidate, CandidateResult, GradIndex, IndexDegree, IndexTrack, Intake, LoadedView, Selection } from '../../lib/gradreq';
+import { TARGETS } from '../../lib/sim/forecast';
+import type { Block, GradIndex, IndexDegree, IndexTrack, Intake, LoadedView, Selection } from '../../lib/gradreq';
 
 export interface Option { value: string; label: string }
 
-export const STORE_KEY = 'bidwise.take';
-export const DEFAULT_BID_EUROS = '30';
-const MAX_BID_CENTS = 100_000;
+export const STORE_KEY = 'bidwise.planb';
+/** The key the earlier home-page panel used; read once if the new one is empty, so a saved degree carries over. */
+export const LEGACY_STORE_KEY = 'bidwise.take';
 
 /** The intakes the degree has a view for, in the index's order. */
 export function intakesFor(index: GradIndex, degree: IndexDegree | null): Intake[] {
@@ -122,12 +123,6 @@ export function leftText(b: Pick<Block, 'left' | 'unit'>): string {
   return b.unit === 'cu' ? `${n} ${n === 1 ? 'CU' : 'CUs'} left` : `${n} ${n === 1 ? 'course' : 'courses'} left`;
 }
 
-/** Courses that can be bid for now, apart from the ones whose every section is full. */
-export function splitCandidates(r: CandidateResult): { open: Candidate[]; fullCount: number } {
-  const open = r.candidates.filter((c) => c.sections.length > 0);
-  return { open, fullCount: r.candidates.length - open.length };
-}
-
 /**
  * The block's raw group has pool sets named for a track (`track-*`): several courses count, but all from one track.
  * deriveBlocks leaves pool sets out of Block.choiceSets, so this reads the loaded view.
@@ -137,32 +132,20 @@ export function isTrackBlock(b: Pick<Block, 'id' | 'viewId'>, views: readonly Lo
   return !!g?.choiceSets?.some((s) => s.id.startsWith('track-'));
 }
 
-/** The section a row shows: the best chance, or for "Cheapest" the lowest bid. */
-export function shownSection(c: Candidate, sort: 'chance' | 'cheapest') {
-  if (sort === 'cheapest') {
-    const priced = c.sections.filter((s) => s.bidCents !== null);
-    if (priced.length) return priced.reduce((a, s) => ((s.bidCents as number) < (a.bidCents as number) ? s : a));
-  }
-  return c.sections[0];
-}
-
-// ---------------------------------------------------------------- inputs
-
-/** Euros typed into the bid box -> cents, or null when it is not a usable amount (0 to 1000, at most 2 decimals). */
-export function parseBidCents(text: string): number | null {
-  const t = text.trim().replace(/^e?\$\s*/i, '');
-  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
-  const cents = Math.round(Number(t) * 100);
-  return cents > 0 && cents <= MAX_BID_CENTS ? cents : null;
-}
+// ---------------------------------------------------------------- saved on this device
 
 export interface Saved {
   school: string; degree: string; intake: string; major: string; track: string; second: string;
-  completed: string[]; bid: string; sort: 'chance' | 'cheapest';
+  completed: string[];
+  /** e$ left, as typed. */
+  left: string;
+  courses: 1 | 2 | 3;
+  /** Chance you want, one of TARGETS. */
+  target: number;
 }
 
 export const emptySaved = (): Saved => ({
-  school: '', degree: '', intake: '', major: '', track: '', second: '', completed: [], bid: DEFAULT_BID_EUROS, sort: 'chance',
+  school: '', degree: '', intake: '', major: '', track: '', second: '', completed: [], left: '', courses: 1, target: TARGETS[0],
 });
 
 /** Reads the stored text defensively: anything unexpected falls back to the default for that field. */
@@ -179,9 +162,8 @@ export function parseSaved(raw: string | null): Saved {
   const r = o as Record<string, unknown>;
   for (const k of ['school', 'degree', 'intake', 'major', 'track', 'second'] as const) if (typeof r[k] === 'string') out[k] = r[k] as string;
   if (Array.isArray(r.completed)) out.completed = [...new Set(r.completed.filter((c): c is string => typeof c === 'string' && c.length < 20))].slice(0, 300);
-  if (typeof r.bid === 'string' && parseBidCents(r.bid) !== null) out.bid = r.bid;
-  if (r.sort === 'cheapest') out.sort = 'cheapest';
+  if (typeof r.left === 'string' && r.left.length < 12) out.left = r.left;
+  if (r.courses === 2 || r.courses === 3) out.courses = r.courses;
+  if ((TARGETS as readonly number[]).includes(r.target as number)) out.target = r.target as number;
   return out;
 }
-
-export const percent = (x: number): string => `${Math.round(x * 100)}%`;

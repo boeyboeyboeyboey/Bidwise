@@ -1,0 +1,18 @@
+---
+import Base from '../layouts/Base.astro';
+import PlanB from '../components/planb/PlanB.svelte';
+import { getWindow, windowLabel } from '../lib/data';
+
+const builtWindow = windowLabel(getWindow());
+---
+<Base title="Plan B · Bidwise" active="planb" width="text">
+  <h1>Plan B</h1>
+  <PlanB client:only="svelte" builtWindow={builtWindow}>
+    <p slot="fallback" class="loading">Loading…</p>
+  </PlanB>
+</Base>
+
+<style>
+  .loading { margin: 0; color: var(--muted); font-size: 15px; }
+  h1 { font-size: 30px; font-weight: 600; padding-bottom: var(--s4); }
+</style>

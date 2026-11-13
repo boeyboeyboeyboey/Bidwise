@@ -2,13 +2,10 @@
 import Base from '../layouts/Base.astro';
 import Search from '../components/Search.svelte';
 import Countdown from '../components/home/Countdown.svelte';
-import TakeButton from '../components/home/TakeButton.svelte';
-import TakePanel from '../components/home/TakePanel.svelte';
-import { getSearchIndex, getSchedule, getWindow, windowLabel } from '../lib/data';
+import { getSearchIndex, getSchedule, windowLabel } from '../lib/data';
 import { PLANNER_ENABLED } from '../lib/flags';
 
 const index = getSearchIndex();
-const builtWindow = windowLabel(getWindow());
 // All window times are SGT with an explicit offset; the component picks the state in the browser (this is only the build-time fallback).
 const windows = getSchedule().map((s) => ({ label: windowLabel(s), opensAt: s.opensAt, closesAt: s.closesAt }));
 const builtAt = Date.now();
@@ -24,11 +21,10 @@ const builtAt = Date.now();
     </div>
     <nav class="paths" aria-label="More">
       {PLANNER_ENABLED && <a class="btn big" href="/planner/">Plan for multiple courses</a>}
-      <TakeButton client:load />
+      <a class="btn big" href="/plan-b/">Missed a bid? Find a Plan B</a>
       <a class="btn big" href="/method/">How does it work?</a>
       <a class="btn big" href="/swap/">Swap a section</a>
     </nav>
-    <TakePanel client:load builtWindow={builtWindow} />
   </div>
 </Base>
 
@@ -44,7 +40,6 @@ const builtAt = Date.now();
     overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
   .paths { display: grid; gap: var(--s2); }
-  .home :global(#take) { order: 3; }
   .big { min-height: 52px; flex-direction: column; gap: 0; text-align: center; }
   .big small { font-size: var(--fs-xs); font-weight: 400; }
   @media (max-width: 767px) {
@@ -58,7 +53,6 @@ const builtAt = Date.now();
     }
     .lead { display: grid; gap: var(--s4); grid-row: 2; }
     .paths { grid-row: 3; align-self: end; }
-    .home :global(#take) { grid-row: 4; margin-top: var(--s5); }
   }
   @media (min-width: 768px) {
     .paths { grid-template-columns: repeat(2, minmax(0, 1fr)); }

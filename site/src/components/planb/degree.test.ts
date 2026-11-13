@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupBlocks, isTrackBlock, leftText, parseBidCents, parseSaved, secondOptions, splitSecond, toSelection } from './take';
+import { groupBlocks, isTrackBlock, leftText, parseSaved, secondOptions, splitSecond, toSelection } from './degree';
 import { group, loaded, view } from '../../lib/gradreq/fixtures';
 import type { Block, GradIndex } from '../../lib/gradreq';
 
@@ -44,20 +44,13 @@ describe('secondOptions', () => {
   });
 });
 
-describe('parseBidCents', () => {
-  it('accepts e$ amounts with up to 2 decimals', () => {
-    expect(parseBidCents('30')).toBe(3000);
-    expect(parseBidCents(' e$ 25.5 ')).toBe(2550);
-  });
-  it('rejects empty, zero, negative, too many decimals and huge amounts', () => {
-    for (const t of ['', '0', '-3', '1.234', 'abc', '1001']) expect(parseBidCents(t)).toBeNull();
-  });
-});
-
 describe('parseSaved', () => {
   it('falls back to defaults on bad storage', () => {
-    for (const raw of [null, '', '{', '"x"', '[]']) expect(parseSaved(raw).bid).toBe('30');
-    expect(parseSaved('{"completed":[1,"A",{}],"bid":"zz","sort":"cheapest"}')).toMatchObject({ completed: ['A'], bid: '30', sort: 'cheapest' });
+    for (const raw of [null, '', '{', '"x"', '[]']) expect(parseSaved(raw)).toMatchObject({ left: '', courses: 1, target: 0.8, completed: [] });
+  });
+  it('keeps valid fields and drops invalid ones', () => {
+    expect(parseSaved('{"completed":[1,"A",{}],"left":"60","courses":2,"target":0.9}')).toMatchObject({ completed: ['A'], left: '60', courses: 2, target: 0.9 });
+    expect(parseSaved('{"courses":7,"target":0.5}')).toMatchObject({ courses: 1, target: 0.8 });
   });
 });
 

@@ -23,11 +23,14 @@
   let shift = $state(0);
   /** Opens above the button when it would run under a fixed bottom bar (phone tab bar, planner summary bar). */
   let up = $state(false);
+  /** Height cap when the popover fits neither below nor above (short screens, e.g. a phone in landscape). */
+  let maxH = $state<number | null>(null);
 
   // Keeps the popover inside the screen: shifts it sideways by however much it would overhang.
   async function place() {
     shift = 0;
     up = false;
+    maxH = null;
     await tick();
     const pop = root?.querySelector<HTMLElement>('.pop');
     if (!pop) return;
@@ -41,7 +44,16 @@
       if (cs.display !== 'none' && cs.position === 'fixed') floor = Math.min(floor, el.getBoundingClientRect().top);
     }
     const bt = btn?.getBoundingClientRect();
-    if (r.bottom > floor - 4 && bt && bt.top - r.height - 4 > 0) up = true;
+    if (r.bottom <= floor - 4 || !bt) return;
+    if (bt.top - r.height - 4 > 0) {
+      up = true;
+      return;
+    }
+    // Fits on neither side: open towards the larger space and scroll inside it.
+    const below = floor - 4 - r.top;
+    const above = bt.top - 4;
+    up = above > below;
+    maxH = Math.floor(Math.max(above, below));
   }
   function toggle() {
     open = !open;
@@ -76,7 +88,7 @@
     <span class="mark" aria-hidden="true">?</span>{#if showLabel}<span class="txt">{label}</span>{/if}
   </button>
   {#if open}
-    <div class="pop" class:up id="tip-{uid}" role="region" aria-label={label} style:left="{shift}px">
+    <div class="pop" class:up id="tip-{uid}" role="region" aria-label={label} style:left="{shift}px" style:max-height={maxH === null ? null : `${maxH}px`} style:overflow-y={maxH === null ? null : 'auto'}>
       {#each lines as l}<p>{l}</p>{/each}
       <a href="/method#{anchor}" onclick={() => close(false)}>{linkText}</a>
     </div>

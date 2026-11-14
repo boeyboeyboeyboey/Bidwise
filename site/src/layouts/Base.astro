@@ -21,7 +21,6 @@ const tagFor = (s: string) => (s === 'open' ? ' (open now)' : s === 'upcoming' ?
 const windows = getForecastMeta().windows;
 const choices = windows.includes(openLabel) ? windows : [openLabel, ...windows];
 const allTabs = [
-  { id: 'search', href: '/', label: 'Courses', icon: 'M11 4a7 7 0 1 0 4.2 12.6l4.1 4.1 1.4-1.4-4.1-4.1A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z' },
   { id: 'explore', href: '/explore/', label: 'Browse', icon: 'M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z' },
   { id: 'planner', href: '/planner', label: 'Bid planner', short: 'Planner', icon: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z' },
   { id: 'planb', href: '/plan-b/', label: 'Plan B', icon: 'M6 3a3 3 0 0 1 1 5.8V11a3 3 0 0 0 3 3h4.2A3 3 0 1 1 14.2 16H10a5 5 0 0 1-3-1v1.2a3 3 0 1 1-2 0V8.8A3 3 0 0 1 6 3Zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm0 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm11-5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z' },
@@ -239,7 +238,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
   .plan-badge[hidden] { display: none; }
   .tabbar .plan-badge { position: absolute; top: 6px; left: 50%; margin-left: 8px; }
   .tabbar a[aria-current='page'] { color: var(--accent); }
-  /* Six tabs on a narrow phone: smaller labels on one line; the planner tab uses its short label here. */
+  /* Narrow phone: smaller labels on one line; the planner tab uses its short label here. */
   @media (max-width: 420px) { .tabbar a { font-size: 11px; } }
 
   @media (min-width: 768px) {

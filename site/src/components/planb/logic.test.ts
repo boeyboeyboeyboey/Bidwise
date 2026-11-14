@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { affordableRows, blockCodes, chunk, dedupeBlocks, effectiveRequisites, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, splitBudget, withNotes } from './logic';
+import { affordableRows, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, reserveCap, capTooLow, blockTabs, resolveTab, tabKeyTarget, withNotes } from './logic';
 import { candidates, clearCandidateCache } from '../../lib/gradreq';
 import type { Candidate, OfferedCourse, Requisites, SectionOption } from '../../lib/gradreq';
 import type { Section } from '../../lib/data/types';
@@ -12,15 +12,21 @@ const cand = (code: string, sections: SectionOption[]): Candidate => ({
   code, title: 'T' + code, cls: 'rule', mandatory: false, cus: 1, eligibility: 'ok', sections, fullSections: 0, chance: null, bidCents: null,
 });
 
-describe('splitBudget', () => {
-  it('divides e$ left over the courses and rounds down to a cent', () => {
-    expect(splitBudget(6000, 2)).toBe(3000);
-    expect(splitBudget(1000, 3)).toBe(333);
-    expect(splitBudget(5000, 1)).toBe(5000);
+describe('reserveCap', () => {
+  it('leaves e$10 for each other course still needed', () => {
+    expect(reserveCap(6000, 1)).toBe(6000);
+    expect(reserveCap(6000, 2)).toBe(5000);
+    expect(reserveCap(6000, 3)).toBe(4000);
+  });
+  it('is no limit when e$ left is blank, and flags a limit under the e$10 minimum bid', () => {
+    expect(reserveCap(null, 3)).toBeNull();
+    expect(capTooLow(reserveCap(null, 3))).toBe(false);
+    expect(capTooLow(reserveCap(2500, 3))).toBe(true);
+    expect(capTooLow(reserveCap(3000, 3))).toBe(false);
+    expect(capTooLow(reserveCap(900, 1))).toBe(true);
   });
   it('clamps the number of courses to 1..3', () => {
-    expect(splitBudget(900, 0)).toBe(900);
-    expect(splitBudget(900, 9)).toBe(300);
+    expect([reserveCap(6000, 0), reserveCap(6000, 9)]).toEqual([6000, 4000]);
   });
   it('writes whole e$ plainly and others with two decimals', () => {
     expect([moneyText(4000), moneyText(4050), moneyText(333), eText(1234)]).toEqual(['40', '40.50', '3.33', 'e$12.34']);
@@ -40,6 +46,10 @@ describe('affordableRows', () => {
   it('includes a bid exactly at the budget and nothing when the budget is below every bid', () => {
     expect(affordableRows(cands, 4001).some((r) => r.code === 'C')).toBe(true);
     expect(affordableRows(cands, 1000)).toEqual([]);
+  });
+  it('keeps every section with seats and a price when there is no limit', () => {
+    const rows = affordableRows(cands, null);
+    expect(rows.map((r) => `${r.code}${r.section.section}`)).toEqual(['BG1', 'AG2', 'AG1', 'CG1']);
   });
   it('splits the no-degree list from the courses that fill an open requirement', () => {
     const rows = affordableRows(cands, 3000);
@@ -62,6 +72,9 @@ describe('no-degree list through candidates()', () => {
   ];
   it('prunes unpriced sections and those whose minimum bid is over budget', () => {
     expect(prunedCourses(courses, 5000).map((c) => c.code)).toEqual(['CHEAP', 'DEAR']);
+  });
+  it('prunes only the unpriced sections when there is no limit', () => {
+    expect(prunedCourses(courses, null).map((c) => c.code)).toEqual(['CHEAP', 'DEAR', 'FLOOR']);
   });
   it('lists only courses whose bid at the chosen chance fits, excluding completed ones', () => {
     clearCandidateCache();
@@ -129,5 +142,47 @@ describe('dedupeBlocks', () => {
     expect(m.get('a')!.rows.map((r) => r.code)).toEqual(['IS112', 'IS112', 'X']);
     expect(m.get('b')).toMatchObject({ rows: [expect.objectContaining({ code: 'CS440' })], also: ['IS112'] });
     expect(m.get('c')).toMatchObject({ rows: [], also: ['CS440', 'IS112'] });
+  });
+});
+
+describe('requirement tabs', () => {
+  const blocks = [
+    { key: 'v\0a', name: 'Major core', heading: 'Core', count: 12 },
+    { key: 'v\0b', name: 'Electives', heading: 'Major', count: 0 },
+    { key: 'w\0c', name: 'Electives', heading: 'Second major', count: 4 },
+  ];
+  it('lists All, each block that has rows with its count, and free electives only when there are rows', () => {
+    const tabs = blockTabs(blocks, 7);
+    expect(tabs.map((t) => `${t.label}|${t.count}`)).toEqual(['All|-1', 'Major core|12', 'Electives · Second major|4', 'Free electives|7']);
+    expect(blockTabs(blocks, 0).some((t) => t.id === 'other')).toBe(false);
+  });
+  it('falls back to All when the selected tab is gone', () => {
+    const tabs = blockTabs(blocks, 0);
+    expect(resolveTab(tabs, 'v\0a')).toBe('v\0a');
+    expect(resolveTab(tabs, 'other')).toBe('all');
+    expect(resolveTab(tabs, 'gone')).toBe('all');
+  });
+  it('moves between tabs with the arrow keys, wrapping, and with Home and End', () => {
+    expect([tabKeyTarget('ArrowRight', 3, 4), tabKeyTarget('ArrowLeft', 0, 4), tabKeyTarget('Home', 2, 4), tabKeyTarget('End', 0, 4), tabKeyTarget('a', 0, 4), tabKeyTarget('ArrowRight', 0, 0)]).toEqual([0, 3, 0, 3, null, null]);
+  });
+});
+
+describe('noFinalOnly', () => {
+  const osec = (id: string, exam?: Section['exam']) => ({ id, section: id, classNumber: id, instructor: 'P', meetings: [], minBidCents: 100, ...(exam === undefined ? {} : { exam }) }) as unknown as Section;
+  const slot = { date: '2027-04-29', start: '13:00', end: '15:00' };
+  const courses: OfferedCourse[] = [
+    { code: 'A', title: 'A', sectionsNow: [osec('A1', slot), osec('A2', null)] },
+    { code: 'B', title: 'B', sectionsNow: [osec('B1', slot)] },
+    { code: 'C', title: 'C', sectionsNow: [osec('C1'), osec('C2', { date: 'TBA', start: '', end: null })] },
+  ];
+  it('returns every course unchanged when off', () => {
+    expect(noFinalOnly(courses, false)).toBe(courses);
+  });
+  it('keeps a course with only its exam-free sections and drops a course with none', () => {
+    const out = noFinalOnly(courses, true);
+    expect(out.map((c) => [c.code, c.sectionsNow.map((s) => s.id)])).toEqual([['A', ['A2']], ['C', ['C1', 'C2']]]);
+  });
+  it('treats missing, null and unreadable exam data as no exam listed, like Browse', () => {
+    expect(noFinalOnly([{ code: 'D', title: 'D', sectionsNow: [osec('D1'), osec('D2', null)] }], true)[0].sectionsNow).toHaveLength(2);
   });
 });

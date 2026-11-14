@@ -6,7 +6,7 @@ import { getWindow, windowLabel } from '../lib/data';
 const builtWindow = windowLabel(getWindow());
 ---
 <Base title="Plan B · Bidwise" active="planb" width="text">
-  <h1>Plan B</h1>
+  <h1>Plan B <span class="beta">Beta</span></h1>
   <PlanB client:only="svelte" builtWindow={builtWindow}>
     <p slot="fallback" class="loading">Loading…</p>
   </PlanB>
@@ -15,4 +15,5 @@ const builtWindow = windowLabel(getWindow());
 <style>
   .loading { margin: 0; color: var(--muted); font-size: 15px; }
   h1 { font-size: 30px; font-weight: 600; padding-bottom: var(--s4); }
+  .beta { display: inline-block; vertical-align: middle; margin-left: var(--s1); padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.4; }
 </style>

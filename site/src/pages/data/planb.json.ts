@@ -1,9 +1,11 @@
 import type { APIRoute } from 'astro';
 import { getCourseIndex } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
+import { formatExam } from '../../lib/format/exam';
 
 // What Plan B needs to price this term's open sections in the browser: per section its seats, time, instructor, minimum
 // bid and fitted forecast (the same fields the course page's simulator reads), without history, venues or seat trends.
+// `exam` is sent only when a final exam is listed (readable date), so a missing key means "no final exam listed", as in Browse.
 export const GET: APIRoute = () => {
   const courses = getCourseIndex()
     .filter((c) => c.offeredNow)
@@ -19,6 +21,7 @@ export const GET: APIRoute = () => {
         ...(s.live ? { live: { available: s.live.available, total: s.live.total, source: s.live.source, capturedAt: s.live.capturedAt } } : {}),
         ...(s.minBidCents !== undefined ? { minBidCents: s.minBidCents } : {}),
         ...(s.forecast ? { forecast: s.forecast } : {}),
+        ...(s.exam && formatExam(s.exam) !== '' ? { exam: s.exam } : {}),
       })),
     }));
   return new Response(JSON.stringify(courses), { headers: { 'Content-Type': 'application/json' } });

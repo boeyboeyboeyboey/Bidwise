@@ -3,6 +3,7 @@ import Base from '../layouts/Base.astro';
 import { FORECASTS_ENABLED } from '../lib/flags';
 import { FILLED_TESTS, HELD_OUT_TEST, LATEST_FILLED_TEST } from '../lib/data/accuracy';
 import { dataMeta, getForecastMeta } from '../lib/data';
+import { refitNote } from '../lib/data/refitNote';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
 import { GITHUB_URL } from '../lib/links';
@@ -58,12 +59,14 @@ const latest = LATEST_FILLED_TEST;
 const e = (c: number | null) => (c === null ? '–' : eS(c));
 const p = (v: number | null) => (v === null ? '–' : pct(v));
 const { sourceRows: results, sourceTerms: terms } = dataMeta as { sourceRows?: number; sourceTerms?: number };
+const note = refitNote(fm);
 const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
 ---
 <Base title="How the forecast works · Bidwise" active="method" width="text">
   <header class="head">
     <h1>How the forecast works</h1>
     {results && terms && <p class="src">{terms} terms, {results.toLocaleString('en-US')} results, BOSS Overall Results, Nov 2026</p>}
+    {FORECASTS_ENABLED && note && <p class="src">{note}</p>}
   </header>
 
   {FORECASTS_ENABLED ? (<>

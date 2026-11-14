@@ -45,6 +45,8 @@ export interface SectionOption {
   times: string;
   meetings: Meeting[];
   minBidCents: number | null;
+  /** Change in open seats since the previous scan (live seats only); null when unknown. */
+  sinceLast?: number | null;
   /** Forecast window used. */
   window: string | null;
   /** Bid for `target` chance, group of 1. Null without a forecast. */
@@ -106,7 +108,7 @@ function sectionOption(s: Section, o: CandidateOptions, bid: number, target: num
     classNumber: s.classNumber, section: s.section, instructor: s.instructor,
     seatsLeft: seatsLeftNow(s), seatsTotal: seats.total, seatSource: seats.source,
     times: formatSlot(s.meetings), meetings: s.meetings,
-    minBidCents: s.minBidCents ?? null, window: null, bidCents: null, chance: null, pFill: null, issue,
+    minBidCents: s.minBidCents ?? null, sinceLast: s.live?.source === 'live' ? (s.live.sinceLast ?? null) : null, window: null, bidCents: null, chance: null, pFill: null, issue,
   };
   const input = toPlanSimInput(s, win, 1);
   if (!input) return base;

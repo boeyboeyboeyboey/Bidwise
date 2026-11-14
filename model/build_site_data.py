@@ -752,6 +752,25 @@ def accuracy_basis(model_version: str) -> str | None:
     return "next-window" if model_version != "fit" else None
 
 
+def load_refit_note(path: Path) -> dict:
+    """refitAt / afterWindow / newBids from the refit's fit-meta.json; keys the file lacks (or a missing file) are left out."""
+    try:
+        meta = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    out = {}
+    if isinstance(meta.get("refitAt"), str) and meta["refitAt"]:
+        out["refitAt"] = meta["refitAt"]
+        if isinstance(meta.get("afterWindow"), str) and meta["afterWindow"]:
+            out["afterWindow"] = meta["afterWindow"]
+        n = meta.get("newBids")
+        if isinstance(n, int) and not isinstance(n, bool) and n >= 0:
+            out["newBids"] = n
+    return out
+
+
 def build_forecast_meta(params: dict | None, backtest: dict | None, generated: str, model_version: str = "fit") -> dict:
     if not params or not backtest:
         return {"term": None, "windows": [], "byWindow": {}, "coverage80": None, "maeCents": None,
@@ -1103,6 +1122,8 @@ def main(argv=None) -> int:
                 accuracy_bt = backtest
         attached = attach_forecasts(docs, params) if params else 0
         fmeta = build_forecast_meta(params, backtest, generated, model_version)
+        if params:
+            fmeta.update(load_refit_note(args.params.parent / "fit-meta.json"))
         highlights = build_highlights(docs, params, cfg["window"], runs=args.highlight_runs)
         browse = build_browse(rows, index, args.browse_from_term)
         write_outputs(args.out, meta, index, docs, fmeta, highlights, browse, build_accuracy(accuracy_bt, model_version))

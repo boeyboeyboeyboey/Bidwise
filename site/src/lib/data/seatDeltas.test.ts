@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deltaMarker, deltaText, lastScanText, sparkline, topFreed } from './seatDeltas';
+import { deltaMarker, deltaText, lastScanText, scanBadge, scanBadgeFor, sparkline, topFreed } from './seatDeltas';
 
 const live = (o: Record<string, unknown> = {}) => ({
   available: 6, total: 48, source: 'live' as const, capturedAt: '2026-11-07T09:42:39+08:00', window: 'w', ...o,
@@ -74,5 +74,29 @@ describe('topFreed', () => {
       sec('H', 'G1'),
     ], 3);
     expect(rows.map((r) => `${r.code}${r.sinceOpen}`)).toEqual(['C9', 'A2', 'B2']);
+  });
+});
+
+describe('scanBadge', () => {
+  const NEWEST = '2026-11-12T21:00:00+08:00';
+  it('says how many seats were taken since the previous scan, with its time', () => {
+    expect(scanBadge({ live: live({ sinceLast: -3 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '−3 since 09:00', tone: 'down', label: '3 fewer seats since 09:00', n: -3 });
+  });
+  it('says how many were freed, singular for one', () => {
+    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '+2 since 09:00', tone: 'up', label: '2 more seats since 09:00' });
+    expect(scanBadge({ live: live({ sinceLast: 1 }) }, '2026-11-12T09:00:00+08:00', NEWEST)?.label).toBe('1 more seat since 09:00');
+  });
+  it('adds the date when the previous scan was on another day', () => {
+    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-11T21:00:00+08:00', NEWEST)?.text).toBe('+2 since 11 Nov, 21:00');
+  });
+  it('adds the date when the newest scan time is unknown', () => {
+    expect(scanBadgeFor(-1, '2026-11-12T09:00:00+08:00')?.text).toBe('−1 since 12 Nov, 09:00');
+  });
+  it('is null for no change, no data, approx seats or no previous scan time', () => {
+    expect(scanBadge({ live: live({ sinceLast: 0 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toBeNull();
+    expect(scanBadge({ live: live({ sinceLast: null }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toBeNull();
+    expect(scanBadge({ live: live({ sinceLast: 2, source: 'approx' }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toBeNull();
+    expect(scanBadge({}, '2026-11-12T09:00:00+08:00', NEWEST)).toBeNull();
+    expect(scanBadge({ live: live({ sinceLast: 2 }) }, null, NEWEST)).toBeNull();
   });
 });

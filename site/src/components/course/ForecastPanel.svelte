@@ -12,6 +12,7 @@
   import HistorySummary from './HistorySummary.svelte';
   import { simSection } from './sectionSim';
   import { bidOrNone, eS, pct } from './fmt';
+  import { refitNote } from '../../lib/data/refitNote';
 
   let { section, history, failed = false, currentTerm, children }: {
     section: Section;
@@ -42,6 +43,7 @@
     picked = !ctx.desktop && tab === t ? 'none' : t;
   }
 
+  const note = $derived(refitNote(ctx.meta));
   const fw = $derived(full?.forecast?.[win] ?? null);
   const minBid = $derived(full?.minBidCents ?? null);
   const seats = $derived(seatsLeftNow(section));
@@ -158,6 +160,7 @@
         Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
       </p>
       <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
+      {#if note}<p class="disc">{note}</p>{/if}
       {#if lowRel}<span class="tag">Low reliability</span>{/if}
       {#if allSame}
         <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>

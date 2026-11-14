@@ -18,7 +18,7 @@ export const GET: APIRoute = () => {
         id: s.id, section: s.section, classNumber: s.classNumber, instructor: s.instructor,
         meetings: s.meetings.map((m) => ({ day: m.day, start: m.start, end: m.end })),
         seatsTotal: s.seatsTotal, seatsLeft: s.seatsLeft,
-        ...(s.live ? { live: { available: s.live.available, total: s.live.total, source: s.live.source, capturedAt: s.live.capturedAt } } : {}),
+        ...(s.live ? { live: { available: s.live.available, total: s.live.total, source: s.live.source, capturedAt: s.live.capturedAt, ...(s.live.sinceLast ? { sinceLast: s.live.sinceLast } : {}) } } : {}),
         ...(s.minBidCents !== undefined ? { minBidCents: s.minBidCents } : {}),
         ...(s.forecast ? { forecast: s.forecast } : {}),
         ...(s.exam && formatExam(s.exam) !== '' ? { exam: s.exam } : {}),

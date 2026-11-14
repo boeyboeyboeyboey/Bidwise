@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
-import { getWindow, getSchedule, windowLabel, getForecastMeta } from '../lib/data';
+import { getWindow, getSchedule, windowLabel, getForecastMeta, dataMeta } from '../lib/data';
+import { fallbackText } from '../lib/data/freshness';
 import { PLANNER_ENABLED } from '../lib/flags';
 import { GITHUB_URL, LINKEDIN_URL, GITHUB_ICON, LINKEDIN_ICON } from '../lib/links';
 
@@ -17,6 +18,10 @@ const openLabel = windowLabel(getWindow());
 const openStatus = getWindow().status;
 // Read in the browser by lib/data/window.ts, which re-picks the window against the clock.
 const winData = JSON.stringify({ schedule: getSchedule(), configured: getWindow() }).replace(/</g, '\\u003c');
+// Scan times for the freshness line and the section rows' change badges (read in the browser by lib/data/freshness.ts). Absent without seat data.
+const seats = dataMeta.seats;
+const seatData = seats ? JSON.stringify({ scanAt: seats.scanAt ?? null, capturedAt: seats.capturedAt, openScanAt: seats.openScanAt ?? null, prevScanAt: seats.prevScanAt ?? null, window: seats.window }).replace(/</g, '\\u003c') : '';
+const freshText = seats ? fallbackText(seats) : '';
 const tagFor = (s: string) => (s === 'open' ? ' (open now)' : s === 'upcoming' ? ' (next)' : '');
 const windows = getForecastMeta().windows;
 const choices = windows.includes(openLabel) ? windows : [openLabel, ...windows];
@@ -60,6 +65,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
         </div>
       </div>
     </header>
+    {freshText && <div class="fresh" data-width={width}><p id="fresh">{freshText}</p></div>}
 
     <main id="main" tabindex="-1" data-width={width}>
       <slot />
@@ -86,6 +92,21 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
       ))}
     </nav>
     <script type="application/json" id="win-data" set:html={winData}></script>
+    {seatData && <script type="application/json" id="seat-data" set:html={seatData}></script>}
+    <script>
+      import { freshnessText, readSeatMeta } from '../lib/data/freshness';
+      import { nowMs } from '../lib/data/window';
+      const el = document.getElementById('fresh');
+      const meta = readSeatMeta();
+      if (el && meta) {
+        let schedule = [];
+        try { schedule = JSON.parse(document.getElementById('win-data')?.textContent ?? '{}').schedule ?? []; } catch { /* no schedule: no next scan */ }
+        // Textual changes only: the line is not a live region, so a screen reader reads it once, in place.
+        const tick = () => { const t = freshnessText(meta, schedule, nowMs()); if (t && el.textContent !== t) el.textContent = t; };
+        tick();
+        setInterval(tick, 60_000);
+      }
+    </script>
     <script>
       import { getChosenWindow, setChosenWindow, onWindowChange } from '../lib/state';
       import { liveWindow } from '../lib/data/window';
@@ -149,6 +170,9 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
     border-bottom: 1px solid var(--rule);
     padding-top: env(safe-area-inset-top);
   }
+  .fresh { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: var(--s2) var(--gutter) 0; }
+  .fresh[data-width='text'] { max-width: calc(1000px + 2 * var(--gutter)); }
+  .fresh p { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
   .skip {
     position: absolute; left: var(--s2); top: var(--s2); z-index: 20;
     padding: var(--s3) var(--s4); font-weight: 600; text-decoration: none;

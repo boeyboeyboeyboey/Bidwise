@@ -44,6 +44,41 @@ export function deltaMarker(s: DeltaInput, openScanAt?: string | null, prevScanA
   return { text: deltaText(v.sinceOpen), tone: v.sinceOpen > 0 ? 'up' : 'down', title, label: title };
 }
 
+export interface ScanBadge {
+  /** "−3 since 09:00" (a real minus sign), or "+2 since 10 Nov, 21:00" when the previous scan was on another day. */
+  text: string;
+  tone: DeltaTone;
+  /** Screen-reader text: "3 fewer seats since 09:00". */
+  label: string;
+  /** Change since the previous scan; the same as sinceOpen when that scan was the window-open one. */
+  n: number;
+}
+
+/**
+ * Badge for a row from the change since the previous scan (`sinceLast`). Null for zero, missing or an unreadable scan time.
+ * The time is the real previous scan time; a scan on the same day as the newest one is just "09:00", else "10 Nov, 21:00".
+ */
+export function scanBadgeFor(sinceLast: number | null | undefined, prevScanAt?: string | null, scanAt?: string | null): ScanBadge | null {
+  if (!usable(sinceLast)) return null;
+  const full = scanTimeText(prevScanAt);
+  if (!full) return null;
+  const day = (iso?: string | null) => /^\d{4}-\d{2}-\d{2}/.exec(iso ?? '')?.[0];
+  const since = scanAt && day(prevScanAt) === day(scanAt) ? full.slice(full.indexOf(',') + 2) : full;
+  const k = Math.abs(sinceLast);
+  return {
+    text: `${deltaText(sinceLast)} since ${since}`,
+    tone: sinceLast > 0 ? 'up' : 'down',
+    label: `${k} ${sinceLast > 0 ? 'more' : 'fewer'} ${k === 1 ? 'seat' : 'seats'} since ${since}`,
+    n: sinceLast,
+  };
+}
+
+/** The badge for a section: only when it was seen live (approx sections have no scan change). */
+export function scanBadge(s: DeltaInput, prevScanAt?: string | null, scanAt?: string | null): ScanBadge | null {
+  const v = s.live;
+  return v && v.source === 'live' ? scanBadgeFor(v.sinceLast, prevScanAt, scanAt) : null;
+}
+
 /** Second line for the last scan's change, '' when it is zero, null or the section is not live. */
 export function lastScanText(s: DeltaInput): string {
   const v = s.live;

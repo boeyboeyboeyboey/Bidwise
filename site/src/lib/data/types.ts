@@ -161,6 +161,10 @@ export interface ForecastMeta {
   samples: number;
   baseline: { samples: number | null; maeCents: number | null; modelMaeCents: number | null } | null;
   generatedAt: string;
+  /** When the current fit was made (not the site build), the results window that triggered it, and that window's new bids. Absent when unknown. */
+  refitAt?: string;
+  afterWindow?: string;
+  newBids?: number;
 }
 
 /** Home page strip. */

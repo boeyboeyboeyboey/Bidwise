@@ -6,6 +6,10 @@
   import { aboutPct, eS, pct } from './fmt';
   import type { RowBid } from './sections';
   import { seatChange, seatLabel } from './seatLabel';
+  import { onMount } from 'svelte';
+  import { readSeatMeta, type SeatMeta } from '../../lib/data/freshness';
+  import { scanBadge } from '../../lib/data/seatDeltas';
+  import SeatDelta from './SeatDelta.svelte';
   import SectionDetail from './SectionDetail.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
   import { chipFor, chipTipLines, type SwapCell } from './swapUi';
@@ -46,12 +50,17 @@
   const examText = $derived(formatExam(section.exam));
   const who = $derived(section.instructor || 'Instructor not listed');
   const seatText = $derived(seatLabel(section));
-  const change = $derived(seatChange(section));
+  // Scan times come from the page (Base.astro), so this is read after mount and the server render matches the first client render.
+  let seatMeta = $state<SeatMeta | null>(null);
+  onMount(() => { seatMeta = readSeatMeta(); });
+  const badge = $derived(scanBadge(section, seatMeta?.prevScanAt, seatMeta?.scanAt));
+  // The since-open text says the same as the badge when nothing moved between the two scans.
+  const change = $derived(badge && badge.n === section.live?.sinceOpen ? '' : seatChange(section));
   const full = $derived(seatsOf(section).left <= 0);
   const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
   const chip = $derived(swap?.kind === 'opt' ? chipFor(swap.opt.label) : null);
   const swapText = $derived(swap?.kind === 'mine' ? 'your section' : chip ? `${chip.text} to swap into` : swap?.kind === 'wait' ? 'swap chance being worked out' : 'no swap chance yet');
-  const label = $derived([section.section, who, when, examText ? `exam ${examText}` : '', seatText, swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
+  const label = $derived([section.section, who, when, examText ? `exam ${examText}` : '', seatText, badge?.label ?? '', swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
 </script>
 
 <li id={section.id}>
@@ -70,7 +79,7 @@
     <b class="sec">{section.section}</b>
     <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge">Lowest bid</span>{/if}</span>
     <span class="time num">{when}{#if examText}<span class="exam">Exam {examText}</span>{/if}</span>
-    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}</span>
+    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}</span>
     <span class="bid num" class:swapcol={!!swap}>
       {#if swap}
         {#if swap.kind === 'mine'}

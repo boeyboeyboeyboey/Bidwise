@@ -8,7 +8,7 @@ const norm = (s: string): string => s.trim().toLowerCase();
  * for every additive group of the degree.
  */
 export function isFullProgramme(candidate: GradView, degree: GradView): boolean {
-  if (candidate.totalCus > 0 && candidate.totalCus === degree.totalCus) return true;
+  if ((candidate.totalCus ?? 0) > 0 && candidate.totalCus === degree.totalCus) return true;
   const additive = degree.groups.filter((g) => g.role === 'additive');
   if (!additive.length) return false;
   const names = new Set(candidate.groups.map((g) => norm(g.name)));

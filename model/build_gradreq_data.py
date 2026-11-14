@@ -11,8 +11,8 @@ Stdlib only.  Run from anywhere:  python3 model/build_gradreq_data.py [--data DI
 
 SCOPE
   Programmes without `superseded_by`; groups with view_status = authoritative only.
-  Degree, major and track views of LKCSB and SCIS (kind degree / major / track), plus second_major views of any
-  offering school whose group home_degree is BBM or a SCIS degree.  A view is kept when it applies to at least one
+  Degree, major and track views of the schools in SCHOOLS (LKCSB, SCIS, SoA, SoE, SoSS, YPHSL; kind degree / major /
+  track), plus second_major views of any offering school whose group home_degree is BBM or a SCIS degree.  A view is kept when it applies to at least one
   intake in AY2022/23..AY2026/27.  The view's intakeFrom / intakeTo are clipped to that window; openEnded is true
   when a group has no end intake (an intake newer than the last handbook inherits the rules).
 
@@ -39,6 +39,15 @@ MEMBERS
   Dedupe is per (group, code), keeping the strongest class: rule > tagged > hint.
   intakes (tagged members only): the intakes named in the BOSS area evidence note, limited to the view's window;
   omitted when the member applies to every intake of the view.
+
+PATHWAYS  An `alternative` group whose rule_expression reads `component_of:<parent> | pathway:<key>` is one route of an
+  either-or choice (BSocSc majors, the two Economics pathways).  Those groups are taken out of the degree view and
+  exported as one extra major view per key (id `<degree view id>-<key>`, kind major in the index, programme id
+  `<degree id>-pathway-<key>`), with the role changed to additive, so the site's Major dropdown picks them like a
+  BBM major.  The parent group stays in the degree view as an empty placeholder and is not flagged missingList.
+
+ALIASES  A blank-code member whose normalised title appears in title_aliases.csv for exactly one course code gets that
+  code (an ambiguous title, with two codes, stays title-only).
 
 missingList: a basket / specific group with CUs that holds no rule or tagged member for any intake of the view
   (parents of components excluded).  missingIntakes lists the intakes lacking one when only some are covered.
@@ -69,6 +78,10 @@ WIN_LO, WIN_HI = 2022, 2026  # intake AY2022/23 .. AY2026/27
 SCHOOLS = {
     "LKCSB": "Lee Kong Chian School of Business",
     "SCIS": "School of Computing and Information Systems",
+    "SoA": "School of Accountancy",
+    "SoE": "School of Economics",
+    "SoSS": "School of Social Sciences",
+    "YPHSL": "Yong Pung How School of Law",
 }
 BBM_ID = "lkcsb-bbm"
 SCIS_DEGREES = {"cs": "scis-cs", "is": "scis-is", "cl": "scis-cl", "se": "scis-se-wsd"}
@@ -79,6 +92,17 @@ RANK = {"required": 7, "listed_option": 6, "unresolved_title": 5, "area_tagged":
 CLS = {"required": "rule", "listed_option": "rule", "unresolved_title": "rule", "area_tagged": "tagged",
        "tagged_candidate": "hint", "published_example": "hint"}
 CLS_ORDER = {"rule": 0, "tagged": 1, "hint": 2}
+# display names of pathway keys (requirement_groups.rule_expression `pathway:<key>`); an unknown key is title-cased
+PATHWAY_NAMES = {
+    "posc": "Political Science",
+    "psych": "Psychology",
+    "soc": "Sociology",
+    "ple": "Politics, Law and Economics (PLE)",
+    "ple-extra-calculus": "Politics, Law and Economics (PLE), not exempt from Calculus",
+    "international-economics": "International Economics",
+    "trade-and-macro": "Trade and Macro",
+}
+PATHWAY_EXPR = re.compile(r"component_of:(\S+)\s*\|\s*pathway:(\S+)")
 SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -149,12 +173,27 @@ def parse_area_intakes(notes: str) -> set:
 
 # ---------------------------------------------------------------- course key resolution
 
+def unique_aliases(rows) -> dict:
+    """title_aliases rows -> {normalised title: code}; a title that names two different codes is left out."""
+    codes = defaultdict(set)
+    for r in rows:
+        code = (r.get("course_code") or "").strip()
+        if code and (r.get("title") or "").strip():
+            codes[norm_title(r["title"])].add(code)
+    return {t: next(iter(c)) for t, c in codes.items() if len(c) == 1}
+
+
 class Resolver:
     """Maps any catalogue / BOSS-form code to the site's course key."""
 
-    def __init__(self, courses, site_keys):
+    def __init__(self, courses, site_keys, aliases=None):
         self.by_code = {c["course_code"]: c for c in courses}
         self.site_keys = set(site_keys)
+        self.aliases = unique_aliases(aliases or [])
+
+    def alias_code(self, title: str):
+        """The one course code title_aliases.csv gives for this title (wording-normalised), else None."""
+        return self.aliases.get(norm_title(title))
 
     def resolve(self, code: str):
         """-> (key, catalogue_row_or_None).  The key is courses.boss_code when present (that is what shared
@@ -197,6 +236,10 @@ def build_members(rows, resolver, view_set, stats=None):
             continue
         cls = CLS[status]
         code = (r.get("course_code") or "").strip()
+        if not code:
+            code = resolver.alias_code(r.get("course_title", "")) or ""
+            if code and stats is not None:
+                stats["alias_coded"] += 1
         if code:
             key, crow = resolver.resolve(code)
             dkey = ("k", key)
@@ -222,7 +265,7 @@ def build_members(rows, resolver, view_set, stats=None):
             continue
         if stats is not None:
             stats["dups"] += 1
-            if code and r["course_code"].strip() != rec["r"]["course_code"].strip():
+            if code and (r["course_code"].strip() or code) != (rec["r"]["course_code"].strip() or code):
                 stats["dups_alias"] += 1
         rec["mandatory"] = rec["mandatory"] or r.get("mandatory") == "true"
         if RANK[status] > rec["rank"]:
@@ -371,8 +414,16 @@ def build_views(data, resolver, stats):
             if g["cu_role"] == "component" and m and m.group(1) in ids:
                 parents[g["group_id"]] = m.group(1)
         parent_ids = set(parents.values())
+        # pathway groups: alternative routes of one either-or choice, exported as extra major views below
+        pathway_of = {}
+        for g in gs:
+            m = PATHWAY_EXPR.fullmatch(g["rule_expression"].strip())
+            if g["cu_role"] == "alternative" and m and m.group(1) in ids:
+                pathway_of[g["group_id"]] = (m.group(1), m.group(2))
+        pathway_parents = {par for par, _ in pathway_of.values()}
 
         groups = []
+        pathways = defaultdict(list)  # key -> [(group dict, group window, group row)]
         for g in gs:
             members, csets = build_members(members_by_group.get(g["group_id"], []), resolver, window, stats)
             gw = group_window(g)
@@ -384,11 +435,14 @@ def build_views(data, resolver, stats):
                 else:
                     covered |= {ay_year(a) for a in m.get("intakes", [])} or gw
             cus = num(g["cus_required"])
-            needs = (g["group_type"] in ("basket", "specific") and g["group_id"] not in parent_ids
-                     and ((cus or 0) > 0 or (g["group_type"] == "basket" and bool(g["basket_rule"].strip()))))
+            gtype = g["group_type"]
+            if gtype == "basket" and g["basket_rule"].strip().startswith("any_course:SMU") and not members:
+                gtype = "free_elective"  # any SMU course: the site counts leftover courses here, no list needed
+            needs = (gtype in ("basket", "specific") and g["group_id"] not in parent_ids | pathway_parents
+                     and ((cus or 0) > 0 or (gtype == "basket" and bool(g["basket_rule"].strip()))))
             missing_all = bool(needs and not (covered & window))
             missing_some = sorted(window - covered) if needs and not missing_all else []
-            out = {"id": public_id(g["group_id"]), "name": public_name(g["group_name"]), "type": g["group_type"], "role": g["cu_role"],
+            out = {"id": public_id(g["group_id"]), "name": public_name(g["group_name"]), "type": gtype, "role": g["cu_role"],
                    "cus": cus, "minCourses": num(g["min_courses"])}
             if g["group_id"] in parents:
                 out["parent"] = public_id(parents[g["group_id"]])
@@ -401,7 +455,10 @@ def build_views(data, resolver, stats):
             if missing_some and not missing_all:
                 out["missingIntakes"] = [ay_label(y) for y in missing_some]
             out["members"] = members
-            groups.append(out)
+            if g["group_id"] in pathway_of:
+                pathways[pathway_of[g["group_id"]][1]].append((out, gw, g))
+            else:
+                groups.append(out)
 
         totals = Counter(num(g["view_total_cus"]) for g in gs if num(g["view_total_cus"]) is not None)
         total = totals.most_common(1)[0][0] if totals else num(p["total_cus"])
@@ -422,12 +479,69 @@ def build_views(data, resolver, stats):
         view["_meta"] = {"programme": p, "kind": kind, "school": school, "window": window, "home": home_id,
                          "variant": home_var, "name": name}
         views.append(view)
+        for key, items in pathways.items():
+            views.append(pathway_view(view, key, items))
     return views
+
+
+def pathway_view(degree_view, key, items):
+    """One route of an either-or choice as a major view: its groups become additive, the total is their sum."""
+    meta = degree_view["_meta"]
+    window = set()
+    for _, gw, _ in items:
+        window |= gw
+    groups = []
+    for out, gw, _ in items:
+        g = {k: v for k, v in out.items() if k != "parent"}
+        g["role"] = "additive"
+        if gw == window:
+            g.pop("intakes", None)  # `out` carries intakes only when narrower than the degree view; here narrower than the pathway
+        groups.append(g)
+    name = PATHWAY_NAMES.get(key) or key.replace("-", " ").title()
+    vid = f"{degree_view['id']}-{key}"
+    if not SAFE_ID.match(vid):
+        raise ValueError(f"unsafe view id {vid!r}")
+    total = sum((g["cus"] or 0) for g in groups)
+    open_ended = any(not g["intake_to"].strip() for _, _, g in items)
+    view = {"id": vid, "label": name, "intakeFrom": ay_label(min(window)), "intakeTo": ay_label(max(window)),
+            "openEnded": open_ended, "totalCus": int(total) if total == int(total) else total,
+            "basis": degree_view["basis"], "groups": groups}
+    base_id = meta["programme"]["base_programme_id"] or meta["programme"]["programme_id"]
+    view["_meta"] = {"programme": meta["programme"], "kind": "major", "school": meta["school"], "window": window,
+                     "home": None, "variant": None, "name": name, "node_id": f"{base_id}-pathway-{key}"}
+    return view
 
 
 # ---------------------------------------------------------------- index
 
+def school_degrees(programmes) -> dict:
+    """school -> ids of its (non-superseded, canonical) degree programmes, e.g. SoA -> ['soa-bacc']."""
+    out = defaultdict(list)
+    for pid, p in programmes.items():
+        if p["kind"] == "degree" and not p["superseded_by"] and not p["base_programme_id"]:
+            out[p["school"]].append(pid)
+    return out
+
+
+def degree_of(p, school, school_degs):
+    """Programme id of the degree node a view hangs under, or None.  LKCSB has the one BBM node, SCIS derives the
+    degree from the programme id; any other school uses its degree programme (the only one, else the one whose id
+    prefixes the programme's base id)."""
+    if school == "LKCSB":
+        return BBM_ID
+    if school == "SCIS":
+        return scis_degree_of(p)
+    cands = school_degs.get(school, [])
+    if len(cands) == 1:
+        return cands[0]
+    pid = p["base_programme_id"] or p["programme_id"]
+    best = [c for c in cands if pid == c or pid.startswith(c + "-")]
+    return max(best, key=len) if best else None
+
+
 def build_index(views, programmes):
+    school_degs = school_degrees(programmes)
+
     def base(p):
         return programmes.get(p["base_programme_id"]) or p
 
@@ -467,10 +581,7 @@ def build_index(views, programmes):
                     entry["variant"] = meta["variant"]
                 sm["views"].setdefault(lab, []).append(entry)
             continue
-        if meta["school"] == "LKCSB":
-            dpid = BBM_ID
-        else:
-            dpid = scis_degree_of(p)
+        dpid = degree_of(p, meta["school"], school_degs)
         if dpid is None:
             orphans.append(view["id"])
             continue
@@ -483,7 +594,7 @@ def build_index(views, programmes):
         bp = base(p)
         nkey = norm_node_name(meta["name"])
         if kind == "major":
-            node = dnode["majors"].setdefault(nkey, {"id": bp["programme_id"], "name": meta["name"], "views": {},
+            node = dnode["majors"].setdefault(nkey, {"id": meta.get("node_id") or bp["programme_id"], "name": meta["name"], "views": {},
                                                      "tracks": {}, "_deg": bp["degree_name"]})
         else:
             parent_major = None
@@ -653,6 +764,7 @@ def load_data(data_dir: Path):
         "courses": read_csv(data_dir / "courses.csv"),
         "requisites": read_csv(data_dir / "requisites.csv"),
         "double_count_rules": read_csv(data_dir / "double_count_rules.csv"),
+        "title_aliases": read_csv(data_dir / "title_aliases.csv"),
     }
 
 
@@ -663,7 +775,7 @@ def load_site_keys(site_dir: Path):
 
 def build(data, site_courses):
     """-> (index, views, requisites, stats).  site_courses: {code: index.json row}."""
-    resolver = Resolver(data["courses"], site_courses)
+    resolver = Resolver(data["courses"], site_courses, data.get("title_aliases", []))
     stats = Counter()
     views = build_views(data, resolver, stats)
     programmes = {p["programme_id"]: p for p in data["programmes"]}
@@ -704,9 +816,12 @@ def summarise(views, stats, resolver_site, conflicts, orphans, data):
     lines = [f"views: {len(views)}"]
     bad_sum = bad_comp = 0
     for v in views:
-        add = sum((g["cus"] or 0) for g in v["groups"] if g["role"] == "additive")
-        if v["totalCus"] is not None and abs(add - v["totalCus"]) > 1e-9:
-            bad_sum += 1
+        for y in sorted(v["_meta"]["window"]):  # a group narrower than the view counts only for its own intakes
+            add = sum((g["cus"] or 0) for g in v["groups"]
+                      if g["role"] == "additive" and ay_label(y) in g.get("intakes", [ay_label(y)]))
+            if v["totalCus"] is not None and abs(add - v["totalCus"]) > 1e-9:
+                bad_sum += 1
+                break
         by_parent = defaultdict(float)
         cus = {g["id"]: g["cus"] or 0 for g in v["groups"]}
         for g in v["groups"]:

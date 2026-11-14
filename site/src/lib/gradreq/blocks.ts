@@ -314,7 +314,7 @@ export function deriveBlocks(rawViews: readonly LoadedView[], intake: string, co
     const sum = (cs: string[]) => cs.reduce((a, c) => a + cusFor(c), 0);
     const sharedCus = sum(sharedCodes);
     const notSharedCus = sum(codes.filter((c) => !taken.has(c)));
-    const total = lv.view.totalCus > 0 ? lv.view.totalCus : own.reduce((a, d) => a + (d.need ?? 0), 0);
+    const total = (lv.view.totalCus ?? 0) > 0 ? (lv.view.totalCus ?? 0) : own.reduce((a, d) => a + (d.need ?? 0), 0);
     const maxNotShared = Math.max(0, total - sharedCus);
     const min = lv.view.minNotShared ?? null;
     return {

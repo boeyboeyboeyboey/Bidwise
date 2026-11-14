@@ -49,7 +49,7 @@ export interface GradView {
   intakeFrom: Intake;
   intakeTo: Intake;
   openEnded: boolean;
-  totalCus: number;
+  totalCus: number | null;
   basis: 'stated' | 'inferred' | 'newer';
   groups: GradGroup[];
   /** Second-major views only. */
@@ -226,7 +226,7 @@ export interface IgnoredGroup { id: string; viewId: string; name: string; reason
 export interface SecondMajorState {
   viewId: string;
   name: string;
-  totalCus: number;
+  totalCus: number | null;
   minNotShared: number | null;
   /** CUs of this second major's completed courses that also fill first-major blocks. */
   sharedCus: number;

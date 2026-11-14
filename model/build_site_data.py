@@ -49,11 +49,17 @@ DEFAULT_CONFIG = ROOT / "model/site_window.json"
 DEFAULT_PARAMS = ROOT / "model/forecast/out/params-2026-27-term-2.json"
 DEFAULT_BACKTEST = ROOT / "model/forecast/out/backtest.json"
 DEFAULT_BACKTEST_CORRECTED = ROOT / "model/forecast/out/backtest-corrected.json"
+DEFAULT_DISTCAL = ROOT / "model/forecast/out/distcal.json"
 # Forecast correction (GBM level rescale of priceLevelCents, model/forecast/correction.py). Off switches, any one:
 # this constant, the env var BIDWISE_CORRECTION=0, or --no-correction. Any failure falls back to the uncorrected fit.
 CORRECTION_ENABLED = True
+# Distribution calibration on top of the correction (fill classifier + spread exponents, model/forecast/distcal.py): ships
+# fillProb / spreadLo / spreadHi per section-window and bidLevels in forecast-meta.json. Needs the correction to be active and a
+# valid out/distcal.json; any failure falls back to the corrected-but-uncalibrated params for ALL sections.
+DIST_CALIBRATION_ENABLED = False
 SIM_PARAM_KEYS = ("demandMean", "demandDispersion", "priceLevelCents", "priceSigma",
                   "anchorSigma", "anchorShare", "anchorCents")
+SIM_CALIBRATION_KEYS = ("fillProb", "spreadLo", "spreadHi")  # shipped only on the section-windows distcal calibrated
 # Same runs, seed and target as the course page (site/src/lib/sim/forecast.ts: FORECAST_RUNS, FORECAST_SEED, 90% target)
 # so a section shows the identical bid on the home lists and on its own page.
 HIGHLIGHT_RUNS = 20000
@@ -607,12 +613,13 @@ CORRECTION_POOL_TIMEOUT = 600  # s for all correction simulations (about 30 s me
 
 
 def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, docs: dict, window: dict,
-                  corrected_path: Path | None, processes: int | None = None) -> tuple[dict, dict, str]:
+                  corrected_path: Path | None, processes: int | None = None, live_out: dict | None = None) -> tuple[dict, dict, str]:
     """Apply the GBM level correction when it is switched on, its corrected backtest matches this fit, and it passes its gate.
 
     Returns (params, backtest, modelVersion). On any problem (missing scikit-learn, no/stale corrected backtest, a training
     error, a failed sanity gate) it warns and returns the inputs unchanged with version "fit": the build never fails here.
     When applied, the returned backtest is the corrected one, so forecast-meta.json and accuracy.json describe the model shown.
+    live_out: optional dict the correction fills with its live-term features and simulated medians (see maybe_calibrate).
     """
     try:
         sys.path.insert(0, str(ROOT / "model"))
@@ -634,7 +641,8 @@ def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, doc
             # a hang must fall back to the plain fit (via the except below), not run into the site stage's 30 min kill
             pool_map = lambda fn, jobs: pool.map_async(_correction_sim, list(jobs), chunksize=40).get(timeout=CORRECTION_POOL_TIMEOUT)  # noqa: E731
         try:
-            new, info = correction.try_apply_correction(params, rows, term, correction_sections(docs), first, pool_map=pool_map)
+            new, info = correction.try_apply_correction(params, rows, term, correction_sections(docs), first, pool_map=pool_map,
+                                                   live_out=live_out)
         finally:
             if pool:
                 pool.terminate()  # after a clean map the workers are idle, so this is the same as close(); after a timeout it frees them
@@ -645,6 +653,63 @@ def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, doc
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: forecast correction skipped, using uncorrected params: {type(e).__name__}: {e}", file=sys.stderr)
         return params, backtest, "fit"
+
+
+def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal_path: Path | None) -> tuple[dict, dict]:
+    """Distribution calibration (fill probability and spread per section-window) on top of the corrected params.
+
+    Call only when DIST_CALIBRATION_ENABLED and the correction is active. `fit_backtest` is the backtest.json the correction
+    was validated against (its config and terms must match distcal.json), `live` what apply_correction left in live_out.
+    Returns (params, meta_fields). Everything is computed before any section changes, and any failure returns `params` untouched
+    (all-or-nothing: never a half-calibrated site) with one warning line. meta_fields is {"distCalibration": {...}} plus
+    "bidLevels" when calibrated. The conditional median of a section-window is the correction's own simulated median of the fitted
+    params times its rescale factor (the median the corrected params aim at), so no second simulation pass runs.
+    """
+    def skip(why):
+        print(f"WARNING: distribution calibration skipped, using corrected params without it: {why}", file=sys.stderr)
+        return params, {"distCalibration": {"enabled": True, "ok": False}}
+    try:
+        sys.path.insert(0, str(ROOT / "model"))
+        try:
+            from forecast import distcal, sim  # noqa: PLC0415
+        finally:
+            sys.path.pop(0)
+        if not live or "tf" not in live:
+            return skip("the correction is not active")
+        if not isinstance(fit_backtest.get("config"), dict):
+            return skip("backtest.json has no config")
+        cfg = distcal.cfg_from_config(fit_backtest["config"])
+        terms = {"test": fit_backtest.get("term"), "heldOut": (fit_backtest.get("heldOut") or {}).get("term")}
+        try:
+            payload = json.loads(Path(distcal_path).read_text(encoding="utf-8")) if distcal_path else None
+        except (OSError, ValueError):
+            payload = None
+        why = distcal.invalid_reason(payload, cfg, terms)
+        if why:
+            return skip(why)
+        p_clf = distcal.live_predict_fill(live)
+        table = payload["exponents"]
+        new = json.loads(json.dumps(params))
+        done = 0
+        for i, (cn, w) in enumerate(live["keys"]):
+            p = p_clf.get((cn, w))
+            d = new["classes"].get(cn, {}).get("windows", {}).get(w)
+            if p is None or d is None:
+                continue
+            base, scale = live["base"][i], live["scales"][i]
+            median = base * (scale if scale is not None else 1.0) if base else None
+            c = distcal.apply(sim.SimParams(**{k: d[k] for k in SIM_PARAM_KEYS}), p, table, median, int(live["tf"].seats.iloc[i]))
+            if c.fillProb is not None:
+                d["fillProb"] = min(0.9999, max(0.0001, round(c.fillProb, 4)))
+            d["spreadLo"], d["spreadHi"] = c.spreadLo, c.spreadHi
+            done += 1
+        if not done:
+            return skip("no section-window could be calibrated")
+        print(f"distribution calibration: {done} of {len(live['keys'])} corrected section-windows (held-out {terms['heldOut']})")
+        return new, {"distCalibration": {"enabled": True, "ok": True, "heldOutTerm": terms["heldOut"], "createdAt": payload.get("createdAt")},
+                     "bidLevels": payload["levels"]}
+    except Exception as e:  # noqa: BLE001 the site build must never fail because of the calibration
+        return skip(f"{type(e).__name__}: {e}")
 
 
 def attach_exams(docs: dict, schedule_dir: Path, term: str) -> int:
@@ -729,7 +794,8 @@ def attach_forecasts(docs: dict, params: dict) -> int:
                 continue
             s["minBidCents"] = c["minBidCents"]
             s["forecast"] = {
-                w: {**{k: v[k] for k in SIM_PARAM_KEYS}, "pooledLevel": v["pooledLevel"], "nObs": v["nObs"]}
+                w: {**{k: v[k] for k in SIM_PARAM_KEYS}, "pooledLevel": v["pooledLevel"], "nObs": v["nObs"],
+                    **{k: v[k] for k in SIM_CALIBRATION_KEYS if k in v}}
                 for w, v in c["windows"].items()
             }
             attached += 1
@@ -906,7 +972,7 @@ def build_highlights(docs: dict, params: dict | None, window: dict, runs: int = 
                 total = live["total"] if live else s["seatsTotal"]
                 if not fc or seats is None or seats <= 0:
                     continue
-                jobs.append((seats, s["minBidCents"], {k: fc[k] for k in SIM_PARAM_KEYS}, runs))
+                jobs.append((seats, s["minBidCents"], {k: fc[k] for k in SIM_PARAM_KEYS + SIM_CALIBRATION_KEYS if k in fc}, runs))
                 rows.append({
                     "code": code, "title": doc["title"], "section": s["section"], "classNumber": s["classNumber"],
                     "instructor": s["instructor"], "seatsLeft": seats, "seatsTotal": total,
@@ -1067,6 +1133,8 @@ def main(argv=None) -> int:
     ap.add_argument("--backtest", type=Path, default=DEFAULT_BACKTEST)
     ap.add_argument("--backtest-corrected", type=Path, default=DEFAULT_BACKTEST_CORRECTED,
                     help="backtest of the corrected model (model/forecast/correction.py backtest); the correction needs it")
+    ap.add_argument("--distcal", type=Path, default=DEFAULT_DISTCAL,
+                    help="distribution calibration (model/forecast/distcal.py, written by the refit); used only when DIST_CALIBRATION_ENABLED")
     ap.add_argument("--no-correction", action="store_true", help="build with the fitted params as they are (model version 'fit')")
     ap.add_argument("--highlight-runs", type=int, default=HIGHLIGHT_RUNS)
     ap.add_argument("--availability", type=Path, default=DEFAULT_AVAILABILITY,
@@ -1116,14 +1184,19 @@ def main(argv=None) -> int:
             params = None
         accuracy_bt = backtest if backtest else (json.loads(args.backtest.read_text(encoding="utf-8")) if args.backtest.exists() else None)
         model_version = "fit"
+        dist_meta, fit_backtest, live_out = {}, backtest, {}
         if params and backtest and CORRECTION_ENABLED and not args.no_correction and os.environ.get("BIDWISE_CORRECTION", "1") != "0":
-            params, backtest, model_version = maybe_correct(params, backtest, rows, term, docs, cfg["window"], args.backtest_corrected)
+            params, backtest, model_version = maybe_correct(params, backtest, rows, term, docs, cfg["window"], args.backtest_corrected,
+                                                            live_out=live_out if DIST_CALIBRATION_ENABLED else None)
             if model_version != "fit":
                 accuracy_bt = backtest
+        if DIST_CALIBRATION_ENABLED and params:
+            params, dist_meta = maybe_calibrate(params, fit_backtest, live_out if model_version != "fit" else None, args.distcal)
         attached = attach_forecasts(docs, params) if params else 0
         fmeta = build_forecast_meta(params, backtest, generated, model_version)
         if params:
             fmeta.update(load_refit_note(args.params.parent / "fit-meta.json"))
+            fmeta.update(dist_meta)
         highlights = build_highlights(docs, params, cfg["window"], runs=args.highlight_runs)
         browse = build_browse(rows, index, args.browse_from_term)
         write_outputs(args.out, meta, index, docs, fmeta, highlights, browse, build_accuracy(accuracy_bt, model_version))

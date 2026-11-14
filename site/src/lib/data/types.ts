@@ -137,6 +137,10 @@ export interface SimParams {
   anchorSigma: number;
   anchorShare: number;
   anchorCents: number;
+  /** Distribution calibration (model/forecast/distcal.py), present only on section-windows the build calibrated. */
+  fillProb?: number | null;
+  spreadLo?: number;
+  spreadHi?: number;
 }
 
 /** Backtest numbers per window, from data/real/forecast-meta.json. */
@@ -165,6 +169,37 @@ export interface ForecastMeta {
   refitAt?: string;
   afterWindow?: string;
   newBids?: number;
+  /** Present only when the build had the distribution calibration switched on. */
+  distCalibration?: DistCalibrationMeta;
+  /** Bid levels (cheap / balanced / safe) measured on the held-out term; present only when the calibration is active. */
+  bidLevels?: BidLevels;
+}
+
+export interface DistCalibrationMeta {
+  enabled: boolean;
+  /** True when the calibration was applied; false when it was switched on but fell back. */
+  ok: boolean;
+  heldOutTerm?: string;
+  createdAt?: string;
+}
+
+/** One bid level of the held-out backtest. Shares are 0..1; meanOverpay is e$ (not cents). */
+export interface BidLevel {
+  /** Unconditional quantile the bid is read at, e.g. 0.975. */
+  level: number;
+  /** Share of sections that filled whose clearing bid was above this bid. */
+  lossFilled: number | null;
+  lossAll: number;
+  winAboveFloor: number | null;
+  meanOverpay: number;
+  /** False when even the highest level tried missed the loss target. */
+  reached: boolean;
+}
+
+export interface BidLevels {
+  cheap: BidLevel;
+  balanced: BidLevel;
+  safe: BidLevel;
 }
 
 /** Home page strip. */

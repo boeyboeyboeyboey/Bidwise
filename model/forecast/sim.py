@@ -25,9 +25,17 @@ class SimParams:
     anchorSigma: float
     anchorShare: float
     anchorCents: float
+    # Optional distribution calibration (see calibrate_filled).  Defaults leave the simulator exactly as it was.
+    fillProb: float | None = None
+    spreadLo: float = 1.0
+    spreadHi: float = 1.0
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if not is_calibrated(self):  # keep params JSON unchanged unless a calibration is actually set
+            for k in ("fillProb", "spreadLo", "spreadHi"):
+                del d[k]
+        return d
 
 
 def _rotl(x: int, k: int) -> int:
@@ -225,21 +233,96 @@ def _pct(sorted_c, q):
     return sorted_c[min(len(sorted_c) - 1, math.floor(q * len(sorted_c)))]
 
 
+def _fill_prob_of(p: SimParams):
+    f = p.fillProb
+    return f if isinstance(f, (int, float)) and not isinstance(f, bool) and 0 < f < 1 else None
+
+
+def _spread_of(v) -> float:
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0 else 1.0
+
+
+def is_calibrated(p: SimParams) -> bool:
+    """True when any calibration parameter departs from its default (fillProb outside (0,1) and spreads <= 0 count as absent)."""
+    return _fill_prob_of(p) is not None or _spread_of(p.spreadLo) != 1 or _spread_of(p.spreadHi) != 1
+
+
+def calibrate_filled(cutoffs, flags, floor: int, p: SimParams, group: int = 1):
+    """Distribution calibration of the replays that filled.  Returns None to use the plain path (no calibration set, or no
+    replay filled), else (p_fill, idx, vals): the fill probability (fillProb, or the simulated share), the run indices of
+    the filled replays and their transformed cutoffs, in run order.  fillProb is a single-bidder chance, so it is ignored
+    when group > 1 (the simulated share is used; both spreads at 1 then leaves nothing to apply, so None).
+    Transform with m the median of the filled cutoffs (_pct convention): c' = max(floor, round(m * (c/m)**s)), s = spreadHi
+    above m, spreadLo below, c' = c at m.  Order and median are preserved.
+    The clearing bid is then a mixture: mass 1 - p_fill at the floor, p_fill spread uniformly over `vals`."""
+    if not is_calibrated(p):
+        return None
+    if group > 1 and _spread_of(p.spreadLo) == 1 and _spread_of(p.spreadHi) == 1:
+        return None
+    idx = [i for i, f in enumerate(flags) if f]
+    if not idx:
+        return None
+    fc = sorted(cutoffs[i] for i in idx)
+    m = _pct(fc, 0.5)
+    lo, hi = _spread_of(p.spreadLo), _spread_of(p.spreadHi)
+    vals = []
+    for i in idx:
+        c = cutoffs[i]
+        s = hi if c > m else lo if c < m else 1.0
+        if s == 1.0 or not m > 0:
+            vals.append(c)
+        else:
+            v = js_round(m * (c / m) ** s)
+            vals.append(floor if v < floor else v)
+    fp = _fill_prob_of(p) if group <= 1 else None
+    return (len(idx) / len(cutoffs) if fp is None else fp), idx, vals
+
+
+def mixture_quantile(sorted_f, p_fill: float, floor: int, a: float):
+    """Unconditional quantile at level a of the mixture: the floor if 1 - p_fill >= a, else the empirical (_pct) quantile of
+    the sorted transformed filled cutoffs at level (a - (1 - p_fill)) / p_fill."""
+    if 1 - p_fill >= a:
+        return floor
+    return _pct(sorted_f, (a - (1 - p_fill)) / p_fill)
+
+
 def simulate(seats: int, group: int, min_bid: int, params: SimParams, runs: int = 30000, seed: int = 12345) -> dict:
     runs = max(1, math.floor(runs))
     tw: list = []
-    cutoffs, filled, _ = sample_cutoffs(seats, group, min_bid, params, runs, seed, tw)
-    tie_sum: dict = {}  # cutoff -> summed chance of winning a bid equal to it (added in run order, as the TS engine does)
-    for c, w in zip(cutoffs, tw):
-        tie_sum[c] = tie_sum.get(c, 0.0) + w
-    s = sorted(cutoffs)
-    pc = {"p50": _pct(s, 0.5), "p80": _pct(s, 0.8), "p90": _pct(s, 0.9), "p95": _pct(s, 0.95), "p99": _pct(s, 0.99)}
+    cutoffs, filled, flags = sample_cutoffs(seats, group, min_bid, params, runs, seed, tw)
+    cal = calibrate_filled(cutoffs, flags, min_bid, params, group)
+    p_fill = filled / runs
+    if cal is None:
+        tie_sum: dict = {}  # cutoff -> summed chance of winning a bid equal to it (added in run order, as the TS engine does)
+        for c, w in zip(cutoffs, tw):
+            tie_sum[c] = tie_sum.get(c, 0.0) + w
+        s = sorted(cutoffs)
+        pc = {"p50": _pct(s, 0.5), "p80": _pct(s, 0.8), "p90": _pct(s, 0.9), "p95": _pct(s, 0.95), "p99": _pct(s, 0.99)}
+        # A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
+        win = lambda b: (bisect.bisect_left(s, b) + tie_sum.get(b, 0.0)) / runs
+    else:
+        p_fill, idx, vals = cal
+        tie_sum = {}
+        for v, i in zip(vals, idx):
+            tie_sum[v] = tie_sum.get(v, 0.0) + tw[i]
+        s = sorted(vals)
+        nf = len(s)
+        pc = {k: mixture_quantile(s, p_fill, min_bid, q) for k, q in (("p50", 0.5), ("p80", 0.8), ("p90", 0.9), ("p95", 0.95), ("p99", 0.99))}
+        # mass 1 - p_fill at the floor (any bid at or above it wins), p_fill spread over the transformed filled replays
+        win = lambda b: (1 - p_fill) + p_fill * ((bisect.bisect_left(s, b) + tie_sum.get(b, 0.0)) / nf)
     hi = max(min_bid + 100, math.ceil(pc["p99"] * 1.15))
     bw = max(1, math.ceil((hi - min_bid) / HIST_BINS))
     counts = [0] * HIST_BINS
-    for c in cutoffs:
-        b = min(HIST_BINS - 1, math.floor((c - min_bid) / bw))
-        counts[0 if b < 0 else b] += 1
+    if cal is None:
+        for c in cutoffs:
+            b = min(HIST_BINS - 1, math.floor((c - min_bid) / bw))
+            counts[0 if b < 0 else b] += 1
+    else:  # weights: the floor mass counts for runs * (1 - p_fill), each filled replay for runs * p_fill / nf
+        counts[0] += runs * (1 - p_fill)
+        wt = runs * p_fill / nf
+        for c in s:
+            b = min(HIST_BINS - 1, math.floor((c - min_bid) / bw))
+            counts[0 if b < 0 else b] += wt
 
     bids, pin = [], []
     step = max(1.0, (hi - min_bid) / (GRID_POINTS - 1))
@@ -249,13 +332,11 @@ def simulate(seats: int, group: int, min_bid: int, params: SimParams, runs: int 
         if b <= prev:
             continue
         prev = b
-        # A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
-        lt = bisect.bisect_left(s, b)
         bids.append(b)
-        pin.append((lt + tie_sum.get(b, 0.0)) / runs)
+        pin.append(win(b))
     return {
         "runs": runs,
-        "pFill": filled / runs,
+        "pFill": p_fill,
         "percentilesCents": pc,
         "histogram": {"startCents": min_bid, "binWidthCents": bw, "counts": counts},
         "curve": {"bidCents": bids, "pIn": pin},

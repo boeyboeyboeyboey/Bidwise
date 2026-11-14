@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { simulate, type SimInput } from './index';
-import { clampGroup, cutoffAt, effectiveWindow, cutoffRange, isLowConfidence, likelyWontFill, marginalPerFriend, pooledText } from './forecast';
+import { clampGroup, cutoffAt, toSimParams, effectiveWindow, cutoffRange, isLowConfidence, likelyWontFill, marginalPerFriend, pooledText } from './forecast';
 
 const input: SimInput = {
   seats: 10, group: 1, minBidCents: 100, runs: 6000, seed: 3,
@@ -67,5 +67,16 @@ describe('paramRows', () => {
     expect(effectiveWindow('Z', 'B', av)).toBe('B');
     expect(effectiveWindow(null, 'Z', av)).toBe('C');
     expect(effectiveWindow(null, 'Z', [])).toBe('');
+  });
+});
+
+describe('toSimParams', () => {
+  const f = { ...input.params, pooledLevel: 'course' as const, nObs: 12 };
+  it('copies the distribution calibration when the section-window has it', () => {
+    expect(toSimParams({ ...f, fillProb: 0.62, spreadLo: 0.8, spreadHi: 1.25 })).toEqual({ ...input.params, fillProb: 0.62, spreadLo: 0.8, spreadHi: 1.25 });
+  });
+  it('leaves the keys out for an uncalibrated one', () => {
+    const r = toSimParams(f);
+    expect(Object.keys(r)).toEqual(Object.keys(input.params));
   });
 });

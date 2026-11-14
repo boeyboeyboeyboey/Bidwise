@@ -1,11 +1,18 @@
 import type { SimParams } from '../data/types';
 import { Rng } from './rng';
 
+/** Optional distribution calibration (see calibrateFilled). Absent / 1 / 1 leaves the simulator exactly as it was. */
+export interface SimCalibration {
+  fillProb?: number | null;
+  spreadLo?: number;
+  spreadHi?: number;
+}
+
 export interface SimInput {
   seats: number;
   group: number;
   minBidCents: number;
-  params: SimParams;
+  params: SimParams & SimCalibration;
   runs?: number;
   seed?: number;
 }
@@ -55,6 +62,61 @@ export function tieWinChance(seats: number, group: number, above: number, tied: 
   return w > 0 ? w : 0;
 }
 
+const fillProbOf = (p: SimCalibration): number | null => {
+  const f = p.fillProb;
+  return typeof f === 'number' && f > 0 && f < 1 ? f : null;
+};
+const spreadOf = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1);
+
+/** True when any calibration parameter departs from its default (fillProb outside (0,1) and spreads <= 0 count as absent). */
+export function isCalibrated(p: SimCalibration): boolean {
+  return fillProbOf(p) !== null || spreadOf(p.spreadLo) !== 1 || spreadOf(p.spreadHi) !== 1;
+}
+
+/** Same as _pct in sim.py: element floor(q * n) of a sorted array, clamped. */
+const pctOf = (sorted: ArrayLike<number>, q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+
+/** Distribution calibration of the replays that filled (same as calibrate_filled in sim.py). Returns null to use the plain
+ *  path (no calibration set, or no replay filled), else the fill probability (fillProb, or the simulated share), the run
+ *  indices of the filled replays and their transformed cutoffs, in run order. fillProb is a single-bidder chance, so it is
+ *  ignored when group > 1 (the simulated share is used; both spreads at 1 then leaves nothing to apply, so null).
+ *  With m the median of the filled cutoffs: c' = max(floor, round(m * (c/m)^s)), s = spreadHi above m, spreadLo below, c' = c
+ *  at m. Order and median are preserved. The clearing bid is then a mixture: mass 1 - pFill at the floor, pFill spread
+ *  uniformly over the transformed filled cutoffs. */
+export function calibrateFilled(
+  cutoffs: ArrayLike<number>,
+  flags: ArrayLike<number>,
+  floor: number,
+  p: SimCalibration,
+  group = 1,
+): { pFill: number; idx: number[]; vals: number[] } | null {
+  if (!isCalibrated(p)) return null;
+  if (group > 1 && spreadOf(p.spreadLo) === 1 && spreadOf(p.spreadHi) === 1) return null;
+  const idx: number[] = [];
+  for (let i = 0; i < cutoffs.length; i++) if (flags[i]) idx.push(i);
+  if (idx.length === 0) return null;
+  const fc = Int32Array.from(idx, (i) => cutoffs[i]).sort();
+  const m = pctOf(fc, 0.5);
+  const lo = spreadOf(p.spreadLo);
+  const hi = spreadOf(p.spreadHi);
+  const vals = idx.map((i) => {
+    const c = cutoffs[i];
+    const s = c > m ? hi : c < m ? lo : 1;
+    if (s === 1 || !(m > 0)) return c;
+    const v = Math.round(m * Math.pow(c / m, s));
+    return v < floor ? floor : v;
+  });
+  const fp = group > 1 ? null : fillProbOf(p);
+  return { pFill: fp === null ? idx.length / cutoffs.length : fp, idx, vals };
+}
+
+/** Unconditional quantile at level a of the mixture: the floor if 1 - pFill >= a, else the empirical quantile of the sorted
+ *  transformed filled cutoffs at level (a - (1 - pFill)) / pFill (same as mixture_quantile in sim.py). */
+export function mixtureQuantile(sortedF: ArrayLike<number>, pFill: number, floor: number, a: number): number {
+  if (1 - pFill >= a) return floor;
+  return pctOf(sortedF, (a - (1 - pFill)) / pFill);
+}
+
 export function simulate(input: SimInput): SimResult {
   const { seats, group, minBidCents: minBid, params: p } = input;
   const runs = Math.max(1, Math.floor(input.runs ?? 30000));
@@ -64,6 +126,7 @@ export function simulate(input: SimInput): SimResult {
   const cutoffs = new Int32Array(runs);
   let filled = 0;
   const tieWin = new Float64Array(runs); // chance a bid equal to this run's cutoff wins (1 when seats were left over)
+  const filledFlag = new Uint8Array(runs);
 
   for (let r = 0; r < runs; r++) {
     const n = rng.negBin(p.demandMean, p.demandDispersion);
@@ -71,10 +134,14 @@ export function simulate(input: SimInput): SimResult {
       // N < k: seats are not contested; k<=0: group alone fills.
       cutoffs[r] = minBid;
       if (n < k && k > 0) tieWin[r] = 1;
-      if (n >= k) filled++;
+      if (n >= k) {
+        filled++;
+        filledFlag[r] = 1;
+      }
       continue;
     }
     filled++;
+    filledFlag[r] = 1;
     if (buf.length < n) buf = new Float64Array(Math.max(n, buf.length * 2));
     const m = p.priceLevelCents * Math.exp(p.anchorSigma * rng.normal());
     const { anchorShare, anchorCents, priceSigma } = p;
@@ -107,26 +174,17 @@ export function simulate(input: SimInput): SimResult {
     }
   }
 
-  const sorted = Int32Array.from(cutoffs).sort();
-  const pct = (q: number) => sorted[Math.min(runs - 1, Math.floor(q * runs))];
-  const percentilesCents = { p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95), p99: pct(0.99) };
-
-  const hi = Math.max(minBid + 100, Math.ceil(percentilesCents.p99 * 1.15));
-  const binWidthCents = Math.max(1, Math.ceil((hi - minBid) / HIST_BINS));
-  const counts = new Array<number>(HIST_BINS).fill(0);
-  for (let i = 0; i < runs; i++) {
-    const b = Math.min(HIST_BINS - 1, Math.floor((cutoffs[i] - minBid) / binWidthCents));
-    counts[b < 0 ? 0 : b]++;
-  }
-
-  // A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
+  const cal = calibrateFilled(cutoffs, filledFlag, minBid, p, group);
+  let pFill = filled / runs;
+  let sorted: Int32Array;
+  let percentilesCents: SimResult['percentilesCents'];
   const tieSum = new Map<number, number>(); // summed in run order, as sim.py does
-  for (let i = 0; i < runs; i++) tieSum.set(cutoffs[i], (tieSum.get(cutoffs[i]) ?? 0) + tieWin[i]);
-
-  // lowerBound(x): count of cutoffs < x
+  // cumulative win chance of a bid b: the share of runs it beats, ties by random draw
+  let win: (b: number) => number;
+  // lowerBound(x): count of sorted values < x
   const lower = (x: number) => {
     let a = 0;
-    let b = runs;
+    let b = sorted.length;
     while (a < b) {
       const mid = (a + b) >> 1;
       if (sorted[mid] < x) a = mid + 1;
@@ -134,6 +192,42 @@ export function simulate(input: SimInput): SimResult {
     }
     return a;
   };
+  if (cal === null) {
+    sorted = Int32Array.from(cutoffs).sort();
+    const pct = (q: number) => sorted[Math.min(runs - 1, Math.floor(q * runs))];
+    percentilesCents = { p50: pct(0.5), p80: pct(0.8), p90: pct(0.9), p95: pct(0.95), p99: pct(0.99) };
+    // A bid above a run's cutoff wins; a bid equal to it wins with that run's tie chance (random draw among equal bids).
+    for (let i = 0; i < runs; i++) tieSum.set(cutoffs[i], (tieSum.get(cutoffs[i]) ?? 0) + tieWin[i]);
+    win = (b) => (lower(b) + (tieSum.get(b) ?? 0)) / runs;
+  } else {
+    pFill = cal.pFill;
+    sorted = Int32Array.from(cal.vals).sort();
+    const nf = sorted.length;
+    const mq = (q: number) => mixtureQuantile(sorted, cal.pFill, minBid, q);
+    percentilesCents = { p50: mq(0.5), p80: mq(0.8), p90: mq(0.9), p95: mq(0.95), p99: mq(0.99) };
+    for (let j = 0; j < nf; j++) tieSum.set(cal.vals[j], (tieSum.get(cal.vals[j]) ?? 0) + tieWin[cal.idx[j]]);
+    // mass 1 - pFill at the floor (any bid at or above it wins), pFill spread over the transformed filled replays
+    win = (b) => 1 - cal.pFill + cal.pFill * ((lower(b) + (tieSum.get(b) ?? 0)) / nf);
+  }
+
+  const hi = Math.max(minBid + 100, Math.ceil(percentilesCents.p99 * 1.15));
+  const binWidthCents = Math.max(1, Math.ceil((hi - minBid) / HIST_BINS));
+  const counts = new Array<number>(HIST_BINS).fill(0);
+  if (cal === null) {
+    for (let i = 0; i < runs; i++) {
+      const b = Math.min(HIST_BINS - 1, Math.floor((cutoffs[i] - minBid) / binWidthCents));
+      counts[b < 0 ? 0 : b]++;
+    }
+  } else {
+    // weights: the floor mass counts for runs * (1 - pFill), each filled replay for runs * pFill / nf
+    counts[0] += runs * (1 - cal.pFill);
+    const wt = (runs * cal.pFill) / sorted.length;
+    for (let j = 0; j < sorted.length; j++) {
+      const b = Math.min(HIST_BINS - 1, Math.floor((sorted[j] - minBid) / binWidthCents));
+      counts[b < 0 ? 0 : b] += wt;
+    }
+  }
+
   const bidCents: number[] = [];
   const pIn: number[] = [];
   const step = Math.max(1, (hi - minBid) / (GRID_POINTS - 1));
@@ -143,10 +237,10 @@ export function simulate(input: SimInput): SimResult {
     if (b <= prev) continue;
     prev = b;
     bidCents.push(b);
-    pIn.push((lower(b) + (tieSum.get(b) ?? 0)) / runs);
+    pIn.push(win(b));
   }
 
-  return { runs, pFill: filled / runs, percentilesCents, histogram: { startCents: minBid, binWidthCents, counts }, curve: { bidCents, pIn } };
+  return { runs, pFill, percentilesCents, histogram: { startCents: minBid, binWidthCents, counts }, curve: { bidCents, pIn } };
 }
 
 export function pInAt(result: SimResult, bidCents: number): number {

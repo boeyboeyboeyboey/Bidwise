@@ -196,7 +196,7 @@ def features_for(df, T: int, tgt=None, cats=None):
     t["lseats"] = np.log(t.seats)
     t["lcap"] = np.log(t.cap.clip(lower=1))
     t["seat_ratio"] = t.seats / t.cap.clip(lower=1)
-    t["round_grp"] = t.widx.map(lambda i: 0 if i == 0 else 1 if i <= 2 else 2 if i <= 4 else 3 if i <= 7 else 4)
+    t["round_grp"] = t.widx.map(lambda i: 0 if i == 0 else 1 if i <= 3 else 2 if i <= 5 else 3 if i <= 8 else 4)
     t["term_type"] = t.ttype.astype(int)
     subj, slot = cats if cats else _cat_maps(df)
     t["subj_c"] = t.subject.map(subj).fillna(-1).astype(int)
@@ -335,12 +335,14 @@ def target_rows(rows: list[dict], term: str, sections: dict, first_window: str, 
 
 
 def apply_correction(params: dict, rows: list[dict], term: str, sections: dict, first_window: str,
-                     pool_map=None, runs: int = SIM_RUNS, log=print):
+                     pool_map=None, runs: int = SIM_RUNS, log=print, live_out: dict | None = None):
     """Rescale priceLevelCents per section/window. Returns (new_params, info). Raises CorrectionError (gate, data, deps).
 
     sections: {class_number: {"seats": offered seats now, "total": section capacity}} (the seats the site shows).
     first_window: earlier windows are over, so they stay as fitted.
     pool_map: optional map(fn, jobs) (e.g. Pool.map) for the simulator step; serial by default.
+    live_out: optional dict the caller wants filled (used by distcal, adds no work): ti, tf (feature table of the target rows),
+    tables (earlier terms), keys, base (simulated conditional p50 of the fitted params, cents or None), scales, f.
     """
     require_deps()
     t0 = time.perf_counter()
@@ -364,6 +366,8 @@ def apply_correction(params: dict, rows: list[dict], term: str, sections: dict, 
     nofill = sum(1 for b in base if not b)
     gate_check(f, scales, skipped, len(jobs) - nofill, outside)
     new = apply_scales(params, keys, scales)
+    if live_out is not None:
+        live_out.update(ti=ti, tf=tf, tables=tables, keys=keys, base=base, scales=scales, f=f)
     used = [s for s in scales if s is not None]
     info = {"modelVersion": MODEL_VERSION, "f": f, "rows": len(jobs), "rescaled": len(used), "skipped": skipped, "noSimulatedFill": nofill, "outsideSoftBounds": outside,
             "scaleMin": min(used), "scaleMax": max(used), **finfo}
@@ -387,9 +391,10 @@ def try_apply_correction(params: dict, *args, log=print, **kw):
 
 
 # ----------------------------------------------------------------------------- backtest of the corrected model
-def backtest_corrected(df, tables, all_obs, target_term: str, cfg, pool=None, runs=None):
+def backtest_corrected(df, tables, all_obs, target_term: str, cfg, pool=None, runs=None, return_rows=False):
     """fit.backtest, but with priceLevelCents rescaled by f * gbm_p50 / simulated cond p50 (one step, same seeds as predict_all).
-    Returns (summary like fit.summarize, info). Rows outside the rescale bounds keep their fitted price (counted in info)."""
+    Returns (summary like fit.summarize, info). Rows outside the rescale bounds keep their fitted price (counted in info).
+    return_rows=True (used by distcal): the summary's `_rows` also carry cls, section, instr, seats, floor and cq (99 conditional percentiles)."""
     require_deps()
     runs = runs or cfg.runs
     ti, tt = fit.term_index(target_term)
@@ -406,12 +411,13 @@ def backtest_corrected(df, tables, all_obs, target_term: str, cfg, pool=None, ru
     sps = [model.params_for(o.course, o.instr, o.window, o.slot, o.floor)[0] for o in targets]
     mapper = pool.map if pool else map
     chunk = {"chunksize": 40} if pool else {}
-    base_jobs = [(o.seats, o.floor, sp.to_dict(), runs, 1000 + i, fit.actual_cutoff(o)) for i, (o, sp) in enumerate(zip(targets, sps))]
+    xtra = (True,) if return_rows else ()  # 7th job element: ask fit._sim_one for the cq grid
+    base_jobs = [(o.seats, o.floor, sp.to_dict(), runs, 1000 + i, fit.actual_cutoff(o)) + xtra for i, (o, sp) in enumerate(zip(targets, sps))]
     base = list(mapper(fit._sim_one, base_jobs, **chunk))
     scales, skipped, outside = rescale_scales(g50, [b["cond_p50"] for b in base], f)
     todo = [i for i, s in enumerate(scales) if s is not None]
     done = list(mapper(fit._sim_one, [(targets[i].seats, targets[i].floor, replace(sps[i], priceLevelCents=sps[i].priceLevelCents * scales[i]).to_dict(),
-                                       runs, 1000 + i, fit.actual_cutoff(targets[i])) for i in todo], **chunk))
+                                       runs, 1000 + i, fit.actual_cutoff(targets[i])) + xtra for i in todo], **chunk))
     preds = list(base)
     for i, r in zip(todo, done):
         preds[i] = r
@@ -421,14 +427,18 @@ def backtest_corrected(df, tables, all_obs, target_term: str, cfg, pool=None, ru
         ws = [o for o in model.train if o.window == w]
         clim[w] = (sum(o.w * o.filled for o in ws) / sum(o.w for o in ws)) if ws else 0.2
     summ = fit.summarize(targets, preds, nbase, clim, target_term)
+    if return_rows:
+        for r, o in zip(summ["_rows"], targets):
+            r.update(cls=o.cls, section=o.section, instr=o.instr, seats=o.seats, floor=o.floor)
     nofill = sum(1 for b in base if not b["cond_p50"])
     return summ, {"f": f, "rows": len(targets) - nofill, "skipped": skipped, "outside": outside, "noSimulatedFill": nofill, **finfo}
 
 
-def build_corrected_backtest(rows, backtest: dict, cfg, pool=None, log=print) -> dict:
+def build_corrected_backtest(rows, backtest: dict, cfg, pool=None, log=print, keep: dict | None = None) -> dict:
     """A backtest.json-shaped dict for the corrected model: the fitted backtest with its test-term and held-out figures replaced.
     Gate fields mirror fit.main's forecasts_ok on the test term. Held-out is the honest figure; the test term was also used
-    to tune the GBM hyperparameters (see MODEL-IMPROVEMENT-2026-11-09.md), so its figures are optimistic."""
+    to tune the GBM hyperparameters (see MODEL-IMPROVEMENT-2026-11-09.md), so its figures are optimistic.
+    keep: optional dict filled for distcal (the returned dict is unchanged): rows {term: per-row results with cq grids}, df, tables, all_obs."""
     require_deps()
     floors = fit.course_floors(rows)
     all_obs = fit.build_obs(rows, floors)
@@ -440,9 +450,12 @@ def build_corrected_backtest(rows, backtest: dict, cfg, pool=None, log=print) ->
     for key, term in (("test", backtest["term"]), ("held", (backtest.get("heldOut") or {}).get("term"))):
         if not term:
             raise CorrectionError("backtest.json has no held-out term")
-        s, info = backtest_corrected(df, tables, all_obs, term, cfg, pool)
+        s, info = backtest_corrected(df, tables, all_obs, term, cfg, pool, return_rows=keep is not None)
         gate_check(info["f"], [1.0], info["skipped"], info["rows"], info["outside"])  # same sanity gate as the live path
-        s.pop("_rows", None)
+        rws = s.pop("_rows", None)
+        if keep is not None:
+            keep.setdefault("rows", {})[term] = rws
+            keep.update(df=df, tables=tables, all_obs=all_obs)
         summ[key], infos[key] = s, info
         log(f"  corrected backtest {term}: f={info['f']:.4f} mae={s['maeCents']} filledCondMae={s['maeFilledCondCents']} cov80={s['coverage80']} "
             f"covFilled={s['coverage80Filled']} skipped={info['skipped']} outsideSoft={info['outside']}/{info['rows']}")
@@ -502,12 +515,24 @@ def main(argv=None) -> int:
         raise SystemExit("calibration.json config differs from backtest.json config; refit first")
     rows = fit.load_rows(a.csv)
     from multiprocessing import Pool
+    keep: dict = {}
     with Pool(a.procs) as pool:
-        corr = build_corrected_backtest(rows, backtest, cfg, pool)
+        corr = build_corrected_backtest(rows, backtest, cfg, pool, keep=keep)
     path = a.out or os.path.join(a.fit_out, CORRECTED_BACKTEST)
     with open(path, "w") as fh:
         json.dump(corr, fh, indent=1)
     print(f"wrote {path}: correctionOk={corr['correctionOk']} gate={corr['correctionGate']}")
+    # distribution calibration from the same per-row results; non-fatal like the correction itself (a stale distcal.json is removed first)
+    out_dir = os.path.dirname(os.path.abspath(path))
+    try:
+        from . import distcal  # noqa: PLC0415 (distcal imports this module)
+        try:
+            os.unlink(os.path.join(out_dir, distcal.DISTCAL_FILE))
+        except FileNotFoundError:
+            pass
+        distcal.build_and_write(keep, backtest, cfg, out_dir)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: distribution calibration skipped: {type(e).__name__}: {e}", file=sys.stderr)
     return 0
 
 

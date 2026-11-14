@@ -17,7 +17,12 @@ export function effectiveWindow(chosen: string | null, open: string, available: 
 
 export function toSimParams(f: ForecastWindow): SimParams {
   const { demandMean, demandDispersion, priceLevelCents, priceSigma, anchorSigma, anchorShare, anchorCents } = f;
-  return { demandMean, demandDispersion, priceLevelCents, priceSigma, anchorSigma, anchorShare, anchorCents };
+  const out: SimParams = { demandMean, demandDispersion, priceLevelCents, priceSigma, anchorSigma, anchorShare, anchorCents };
+  // distribution calibration: copied only when the build set it, so uncalibrated sections simulate exactly as before
+  if (f.fillProb !== undefined) out.fillProb = f.fillProb;
+  if (f.spreadLo !== undefined) out.spreadLo = f.spreadLo;
+  if (f.spreadHi !== undefined) out.spreadHi = f.spreadHi;
+  return out;
 }
 
 /** Group size from a free-text field: whole number, 1..MAX. Anything unreadable becomes 1. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pInAt, recommendBid, simulate, tieWinChance, type SimInput } from './index';
+import { calibrateFilled, isCalibrated, mixtureQuantile, pInAt, recommendBid, simulate, tieWinChance, type SimInput } from './index';
+import parity from '../../../../tests/fixtures/forecast_sim_parity.json';
 
 const proc = (globalThis as unknown as { process: { cpuUsage: (p?: unknown) => { user: number; system: number } } }).process;
 
@@ -103,4 +104,136 @@ describe('simulate', () => {
     console.log(`sim timing: ${ms.toFixed(1)} ms`);
     expect(ms).toBeLessThan(2000);
   }, 60000);
+});
+
+describe('distribution calibration (fillProb, spreadLo, spreadHi)', () => {
+  const lowFloorFree = { demandMean: 30, demandDispersion: 1e9, priceLevelCents: 4000, priceSigma: 0.1, anchorSigma: 0.05, anchorShare: 0, anchorCents: 1000 };
+  const mk = (o: Partial<SimInput['params']>, i: Partial<SimInput> = {}): SimInput => ({ seats: 5, group: 1, minBidCents: 1000, runs: 4000, seed: 9, ...i, params: { ...lowFloorFree, ...o } });
+  const mixed = (o: Partial<SimInput['params']>) => withP({ demandMean: 12, demandDispersion: 3, priceLevelCents: 1500, anchorSigma: 0.3, anchorShare: 0.1, anchorCents: 1100, ...o }, { seats: 8, minBidCents: 1000, runs: 6000, seed: 11 });
+
+  it('with defaults reproduces the stored fixture results exactly (the first four cases predate calibration)', () => {
+    for (const c of parity as Array<{ name: string; seats: number; group: number; minBidCents: number; runs: number; seed: number; params: SimInput['params']; result: unknown }>) {
+      const r = simulate({ seats: c.seats, group: c.group, minBidCents: c.minBidCents, params: c.params, runs: c.runs, seed: c.seed });
+      expect(r, c.name).toEqual(c.result);
+    }
+  });
+
+  it('explicit defaults and out-of-range values count as absent', () => {
+    const want = simulate(mixed({}));
+    for (const extra of [{ fillProb: null, spreadLo: 1, spreadHi: 1 }, { fillProb: 1.5 }, { fillProb: 0 }, { spreadLo: 0, spreadHi: -2 }]) {
+      expect(isCalibrated(extra)).toBe(false);
+      expect(simulate(mixed(extra))).toEqual(want);
+    }
+    expect(isCalibrated({ fillProb: 0.5 })).toBe(true);
+    expect(isCalibrated({ spreadHi: 0.9 })).toBe(true);
+  });
+
+  it('the transform preserves order and the median, respects the floor, and follows the formula', () => {
+    const cutoffs = Int32Array.from([1000, 1000, 1200, 1500, 1500, 1500, 1800, 2400, 3000, 1000]);
+    const flags = Uint8Array.from([0, 1, 1, 1, 1, 1, 1, 1, 1, 0]);
+    const filled = [1000, 1200, 1500, 1500, 1500, 1800, 2400, 3000]; // median (floor(0.5 * 8)-th) = 1500
+    for (const [lo, hi] of [[0.6, 0.6], [1.5, 0.5], [0.5, 2], [5, 1]]) {
+      const cal = calibrateFilled(cutoffs, flags, 1000, { spreadLo: lo, spreadHi: hi })!;
+      expect(cal.idx).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(cal.pFill).toBe(0.8);
+      expect(cal.vals.filter((v, j) => filled[j] === 1500 && v === 1500).length).toBe(3);
+      cal.vals.forEach((v, j) => {
+        const c = filled[j];
+        const s = c > 1500 ? hi : c < 1500 ? lo : 1;
+        expect(v).toBe(s === 1 ? c : Math.max(1000, Math.round(1500 * Math.pow(c / 1500, s))));
+        if (j > 0) expect(v).toBeGreaterThanOrEqual(cal.vals[j - 1]);
+      });
+    }
+  });
+
+  it('the plain path is kept when nothing is calibrated or no replay filled', () => {
+    expect(calibrateFilled(Int32Array.from([1000, 1000]), Uint8Array.from([1, 1]), 1000, {})).toBeNull();
+    expect(calibrateFilled(Int32Array.from([1000, 1000]), Uint8Array.from([0, 0]), 1000, { fillProb: 0.5, spreadHi: 2 })).toBeNull();
+  });
+
+  it('fill probability is fillProb, else the simulated share', () => {
+    expect(simulate(mixed({ fillProb: 0.37 })).pFill).toBe(0.37);
+    const plain = simulate(mixed({}));
+    expect(simulate(mixed({ spreadHi: 0.7 })).pFill).toBe(plain.pFill);
+  });
+
+  it('a group ignores fillProb: the simulated share is used, and with both spreads at 1 the plain path runs', () => {
+    const g = { group: 3 };
+    const plain = simulate({ ...mixed({}), ...g });
+    expect(simulate({ ...mixed({ fillProb: 0.37 }), ...g })).toEqual(plain);
+    const cutoffs = Int32Array.from([1000, 1200, 1500, 1800, 2400]);
+    const flags = Uint8Array.from([0, 1, 1, 1, 1]);
+    expect(calibrateFilled(cutoffs, flags, 1000, { fillProb: 0.37 }, 3)).toBeNull();
+    expect(calibrateFilled(cutoffs, flags, 1000, { fillProb: 0.37 }, 1)!.pFill).toBe(0.37);
+    expect(calibrateFilled(cutoffs, flags, 1000, { fillProb: 0.37, spreadHi: 0.7 }, 3)!.pFill).toBe(0.8);
+    const spreads = { spreadLo: 0.7, spreadHi: 1.3 };
+    const withFp = simulate({ ...mixed({ fillProb: 0.37, ...spreads }), ...g });
+    const noFp = simulate({ ...mixed(spreads), ...g });
+    expect(withFp.pFill).toBe(plain.pFill);
+    expect(withFp).toEqual(noFp);
+  });
+
+  it('quantile formula: floor while 1 - p >= level, else the filled quantile at (a - (1 - p)) / p', () => {
+    expect(mixtureQuantile([10, 11, 12, 13], 0.5, 5, 0.5)).toBe(5);
+    expect(mixtureQuantile([10, 11, 12, 13], 0.5, 5, 0.6)).toBe(10);
+    expect(mixtureQuantile([10, 11, 12, 13], 0.5, 5, 0.9)).toBe(13);
+    expect(mixtureQuantile([2000, 3000], 0.7, 1000, 0.3)).toBe(1000);
+    const r = simulate(mk({}, { runs: 2000 }));
+    const cal = simulate(mk({ fillProb: 0.6 }, { runs: 2000 }));
+    expect(cal.percentilesCents.p50).toBeGreaterThanOrEqual(1000);
+    expect(cal.percentilesCents.p80).toBeLessThanOrEqual(r.percentilesCents.p99); // same filled replays, only a smaller share of them
+  });
+
+  it('a narrower upper spread lowers upper quantiles and nothing goes below the floor', () => {
+    const wide = simulate(mixed({ fillProb: 0.9 }));
+    const narrow = simulate(mixed({ fillProb: 0.9, spreadHi: 0.5 }));
+    for (const k of ['p90', 'p95', 'p99'] as const) expect(narrow.percentilesCents[k]).toBeLessThan(wide.percentilesCents[k]);
+    expect(simulate(mixed({ spreadLo: 5 })).percentilesCents.p50).toBeGreaterThanOrEqual(1000);
+    expect(narrow.curve.bidCents[0]).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('fillProb equal to the simulated share gives the default quantiles, up to one order statistic', () => {
+    const plain = simulate(mixed({}));
+    const cal = simulate(mixed({ fillProb: plain.pFill }));
+    expect(cal.pFill).toBe(plain.pFill);
+    for (const k of ['p50', 'p80', 'p90', 'p95'] as const) expect(Math.abs(cal.percentilesCents[k] - plain.percentilesCents[k])).toBeLessThanOrEqual(8);
+    for (const b of [1000, 1200, 1500, 2000]) expect(Math.abs(pInAt(cal, b) - pInAt(plain, b))).toBeLessThan(0.003);
+  });
+
+  it('no replay filled ignores the calibration', () => {
+    const p = { demandMean: 0.0001, demandDispersion: 1, priceLevelCents: 3000, priceSigma: 0.4, anchorSigma: 0.1, anchorShare: 0, anchorCents: 1000 };
+    const input = { seats: 5, group: 1, minBidCents: 1000, runs: 2000, seed: 3 };
+    const plain = simulate({ ...input, params: p });
+    expect(plain.pFill).toBe(0);
+    expect(simulate({ ...input, params: { ...p, fillProb: 0.5, spreadLo: 2, spreadHi: 0.5 } })).toEqual(plain);
+  });
+
+  it('fillProb with every replay filled still puts 1 - p at the floor', () => {
+    const p = { demandMean: 500, demandDispersion: 1e9, priceLevelCents: 3000, priceSigma: 0.3, anchorSigma: 0.1, anchorShare: 0, anchorCents: 1000 };
+    const input = { seats: 5, group: 1, minBidCents: 1000, runs: 2000, seed: 3 };
+    expect(simulate({ ...input, params: p }).pFill).toBe(1);
+    const cal = simulate({ ...input, params: { ...p, fillProb: 0.7 } });
+    expect(cal.pFill).toBe(0.7);
+    expect(cal.curve.pIn[0]).toBeCloseTo(0.3, 9);
+    expect(cal.percentilesCents.p50).toBeGreaterThan(1000);
+    expect(cal.histogram.counts.reduce((a, b) => a + b, 0)).toBeCloseTo(2000, 6);
+    expect(cal.histogram.counts[0]).toBeCloseTo(600, 6);
+  });
+
+  it('win chance is non-decreasing and equals 1 - p at the floor when no filled replay is there', () => {
+    for (const extra of [{ fillProb: 0.55 }, { fillProb: 0.3, spreadLo: 1.4, spreadHi: 0.6 }, { spreadLo: 0.8, spreadHi: 1.2 }]) {
+      const r = simulate(mk(extra));
+      expect(r.curve.bidCents[0]).toBe(1000);
+      expect(r.curve.pIn[0]).toBeCloseTo(1 - r.pFill, 12);
+      for (let i = 1; i < r.curve.pIn.length; i++) expect(r.curve.pIn[i]).toBeGreaterThanOrEqual(r.curve.pIn[i - 1]);
+      expect(r.curve.pIn[r.curve.pIn.length - 1]).toBeGreaterThan(0.99);
+    }
+  });
+
+  it('recommendBid reads the calibrated curve', () => {
+    const r = simulate(mixed({ fillProb: 0.5 }));
+    expect(recommendBid(r, 0.4)).toBe(1001); // the floor already reaches 40%: odd cent above it
+    expect(recommendBid(r, 0.9) % 2).toBe(1);
+    expect(recommendBid(r, 0.9)).toBeLessThanOrEqual(recommendBid(simulate(mixed({})), 0.9));
+  });
 });

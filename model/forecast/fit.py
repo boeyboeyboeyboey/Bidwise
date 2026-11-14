@@ -18,6 +18,7 @@ Terms: only "Term 1/2" are used (3A/3B are tiny); windows are matched on the exa
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import math
@@ -30,11 +31,11 @@ from dataclasses import asdict, dataclass, field, replace
 from multiprocessing import Pool
 from statistics import NormalDist
 
-from .sim import SimParams, sample_cutoffs
+from .sim import SimParams, calibrate_filled, mixture_quantile, sample_cutoffs
 
 ND = NormalDist()
 WINDOWS = [
-    "Round 1 Window 1", "Round 1A Window 1", "Round 1A Window 3", "Round 1B Window 1", "Round 1B Window 2",
+    "Round 1 Window 1", "Round 1A Window 1", "Round 1A Window 2", "Round 1A Window 3", "Round 1B Window 1", "Round 1B Window 2",
     "Round 2 Window 1", "Round 2 Window 2", "Round 2 Window 3",
     "Round 2A Window 1", "Round 2A Window 2", "Round 2A Window 3",
 ]
@@ -504,20 +505,38 @@ def estimate_slot_effects_by_window(train, pooled_d, pooled_p, min_n=30):
 
 # ----------------------------------------------------------------------------- backtest
 def _sim_one(args):
-    seats, floor, pd, runs, seed, act = args
-    cut, filled, flags = sample_cutoffs(seats, 1, floor, SimParams(**pd), runs, seed)
+    seats, floor, pd, runs, seed, act = args[:6]
+    want_cq = len(args) > 6 and bool(args[6])  # optional 7th job element: also return cq, the conditional quantile grid (plain path only)
+    sp = SimParams(**pd)
+    cut, filled, flags = sample_cutoffs(seats, 1, floor, sp, runs, seed)
+    cal = calibrate_filled(cut, flags, floor, sp, 1)  # None unless the params carry fillProb / spreads (and some replay filled)
+    if cal is not None:
+        p_fill, _, fvals = cal
+        fc = sorted(fvals)
+        nf = len(fc)
+        lt = (1 - p_fill) * (floor < act) + p_fill * bisect.bisect_left(fc, act) / nf
+        le = (1 - p_fill) * (floor <= act) + p_fill * bisect.bisect_right(fc, act) / nf
+        return {
+            "pfill": p_fill, "lt": lt, "le": le, "p10": mixture_quantile(fc, p_fill, floor, 0.1),
+            "p50": mixture_quantile(fc, p_fill, floor, 0.5), "p90": mixture_quantile(fc, p_fill, floor, 0.9),
+            "cond_p10": fc[min(nf - 1, int(0.1 * nf))], "cond_p50": fc[nf // 2], "cond_p90": fc[min(nf - 1, int(0.9 * nf))],
+        }
     s = sorted(cut)
     n = len(s)
     lt = sum(1 for c in cut if c < act) / n
     le = sum(1 for c in cut if c <= act) / n
     q = lambda f: s[min(n - 1, int(f * n))]
     fc = sorted(c for c, fl in zip(cut, flags) if fl)
-    return {
+    res = {
         "pfill": filled / runs, "lt": lt, "le": le, "p10": q(0.1), "p50": q(0.5), "p90": q(0.9),
         "cond_p10": fc[min(len(fc) - 1, int(0.1 * len(fc)))] if fc else None,
         "cond_p50": fc[len(fc) // 2] if fc else None,
         "cond_p90": fc[min(len(fc) - 1, int(0.9 * len(fc)))] if fc else None,
     }
+    if want_cq:
+        res["cq"] = [fc[min(len(fc) - 1, int(k / 100 * len(fc)))] for k in range(1, 100)] if fc else None
+        res["n_fc"] = len(fc)
+    return res
 
 
 def predict_all(model: Model, targets, pool=None, runs=None):

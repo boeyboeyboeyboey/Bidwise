@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byWindow, dayText, defaultHistoryWindow, shortWindow, termWithResults, timeText } from './history';
+import { bandWidth, bandX, labelIndices, useBands, byWindow, dayText, defaultHistoryWindow, shortWindow, termWithResults, timeText, windowTimeline } from './history';
 import type { HistoryRow } from '../../lib/data/types';
 
 describe('timeText', () => {
@@ -131,4 +131,76 @@ describe('defaultHistoryWindow', () => {
     const min = () => row({ window: R1, medianCents: null, minCents: 40 });
     expect(defaultHistoryWindow([min(), min(), min()], R2)).toBe(R1);
   });
+});
+
+describe('bandX / bandWidth', () => {
+  it('splits the plot into equal bands', () => {
+    expect(bandWidth(100, 400, 3)).toBe(100);
+  });
+  it('centres a lone window in its band', () => {
+    expect(bandX(0, 3, 0, 1, 100, 400)).toBeCloseTo(150);
+    expect(bandX(2, 3, 0, 1, 100, 400)).toBeCloseTo(350);
+  });
+  it('spreads slots inside the padded band, in slot order, symmetric about the band centre', () => {
+    // band 0 is 100..200, 15% padding leaves 115..185, four slots of 17.5 wide
+    const xs = [0, 1, 2, 3].map((s) => bandX(0, 3, s, 4, 100, 400));
+    expect(xs[0]).toBeCloseTo(123.75);
+    expect(xs[3]).toBeCloseTo(176.25);
+    expect(xs[1]).toBeLessThan(xs[2]);
+    expect((xs[0] + xs[3]) / 2).toBeCloseTo(150);
+  });
+  it('gives the same slot the same offset in every term, even when other slots are empty', () => {
+    const off = (t: number) => bandX(t, 3, 2, 4, 100, 400) - (100 + t * 100);
+    expect(off(1)).toBeCloseTo(off(0));
+    expect(off(2)).toBeCloseTo(off(0));
+  });
+});
+
+describe('windowTimeline', () => {
+  const T1 = '2025-26 Term 1', T2 = '2025-26 Term 2';
+  it('uses one slot list for every term and leaves missing windows empty', () => {
+    const rows = [
+      row({ term: T2, window: 'Round 2 Window 1' }),
+      row({ term: T1, window: 'Round 1 Window 1' }),
+      row({ term: T1, window: 'Round 2 Window 1' }),
+      row({ term: T2, window: 'Round 1 Window 1' }),
+      row({ term: T2, window: 'Round 3 Window 1' }),
+    ];
+    const t = windowTimeline(rows);
+    expect(t.terms).toEqual([T1, T2]);
+    expect(t.slots).toEqual(['Round 1 Window 1', 'Round 2 Window 1', 'Round 3 Window 1']);
+    expect(t.cells.map((c) => [c.termIdx, c.slotIdx])).toEqual([[0, 0], [0, 1], [1, 0], [1, 1], [1, 2]]);
+  });
+  it('averages sections within a (term, window)', () => {
+    const t = windowTimeline([row({ medianCents: 100 }), row({ section: 'G2', medianCents: 300 })]);
+    expect(t.cells).toHaveLength(1);
+    expect(t.cells[0].median).toBe(200);
+  });
+});
+
+describe('useBands', () => {
+  it('is off for one window', () => expect(useBands(1000, 4, 1)).toBe(false));
+  it('is on when each slot is wide enough', () => {
+    // band 250, 70% usable = 175, 5 slots of 35 px
+    expect(useBands(1000, 4, 5)).toBe(true);
+  });
+  it('is off when slots would be narrower than a dot pair', () => {
+    expect(useBands(1000, 4, 17)).toBe(true); // 10.3 px
+    expect(useBands(1000, 12, 17)).toBe(false);
+    expect(useBands(250, 4, 17)).toBe(false);
+  });
+  it('switches exactly at 8 px per slot', () => {
+    expect(useBands(800, 2, 35)).toBe(true); // 400*0.7/35 = 8
+    expect(useBands(800, 2, 36)).toBe(false);
+  });
+});
+
+describe('labelIndices', () => {
+  it('shows every label when they fit', () => expect(labelIndices(4, 100)).toEqual([0, 1, 2, 3]));
+  it('shows every k-th label counted back from the last, so the last is always shown', () => {
+    expect(labelIndices(5, 40)).toEqual([0, 2, 4]); // 60 / 40 -> k = 2
+    expect(labelIndices(6, 40)).toEqual([1, 3, 5]);
+    expect(labelIndices(12, 20)).toEqual([2, 5, 8, 11]); // k = 3
+  });
+  it('keeps a lone term', () => expect(labelIndices(1, 0)).toEqual([0]));
 });

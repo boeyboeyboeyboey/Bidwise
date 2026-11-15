@@ -1,8 +1,9 @@
 <svelte:options css="injected" />
 <script lang="ts">
   import type { HistoryRow } from '../../lib/data/types';
+  import type { TimelineCell } from './history';
   import { sameInstructor } from '../../lib/data/format';
-  import { byTerm } from './history';
+  import { bandWidth, bandX, byTerm, labelIndices, useBands, windowTimeline } from './history';
   import { eS } from './fmt';
 
   let { rows, instructor = null }: { rows: HistoryRow[]; instructor?: string | null } = $props();
@@ -19,12 +20,20 @@
   });
   const ticks = $derived([0, top / 2, top]);
   const sx = (i: number) => (pts.length < 2 ? (L + W - R) / 2 : L + (i / (pts.length - 1)) * (W - L - R));
+  const tl = $derived(windowTimeline(rows));
+  // With several windows, if their slots are wide enough, each term is a band and its windows sit in fixed slots; otherwise a term is a single point.
+  const banded = $derived(useBands(W - L - R, pts.length, tl.slots.length));
+  const bw = $derived(bandWidth(L, W - R, pts.length));
+  const cx = (i: number) => (banded ? L + (i + 0.5) * bw : sx(i));
+  const cellX = (c: { termIdx: number; slotIdx: number }) =>
+    banded ? bandX(c.termIdx, pts.length, c.slotIdx, tl.slots.length, L, W - R) : sx(c.termIdx);
+  const shown = $derived(new Set(labelIndices(pts.length, banded ? bw : pts.length < 2 ? W : (W - L - R) / (pts.length - 1))));
   const sy = (c: number) => T + (1 - c / top) * (H - T - B);
   const line = (k: 'median' | 'min') => {
     let d = '';
-    pts.forEach((p, i) => {
-      const v = p[k];
-      if (v !== null) d += `${d ? 'L' : 'M'}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`;
+    (banded ? tl.cells : pts).forEach((c, i) => {
+      const v = c[k];
+      if (v !== null) d += `${d ? 'L' : 'M'}${(banded ? cellX(c as TimelineCell) : sx(i)).toFixed(1)},${sy(v).toFixed(1)}`;
     });
     return d;
   };
@@ -40,16 +49,23 @@
       <line x1={L} x2={W - R} y1={sy(t)} y2={sy(t)} class="grid" />
       <text x={L - 6} y={sy(t) + 4} text-anchor="end" class="ax num">{eS(t)}</text>
     {/each}
+    {#if banded}
+      {#each pts.slice(1) as _, i}<line x1={L + (i + 1) * bw} x2={L + (i + 1) * bw} y1={T} y2={H - B} class="sep" />{/each}
+    {/if}
     <path d={line('min')} class="min" />
     <path d={line('median')} class="med" />
-    {#each pts as p, i}
-      {#each p.rows as r}
-        {#if r.minCents !== null}<circle cx={sx(i)} cy={sy(r.minCents)} r="3.5" class="mdot" class:mine={mine(r)}><title>{tip(r, 'Lowest winning bid', r.minCents)}</title></circle>{/if}
-        {#if r.medianCents !== null}<circle cx={sx(i)} cy={sy(r.medianCents)} r="3.5" class="dot" class:mine={mine(r)}><title>{tip(r, 'Median bid', r.medianCents)}</title></circle>{/if}
+    {#each tl.cells as c}
+      {#each c.rows as r}
+        {#if r.minCents !== null}<circle cx={cellX(c)} cy={sy(r.minCents)} r="3.5" class="mdot" class:mine={mine(r)}><title>{tip(r, 'Lowest winning bid', r.minCents)}</title></circle>{/if}
+        {#if r.medianCents !== null}<circle cx={cellX(c)} cy={sy(r.medianCents)} r="3.5" class="dot" class:mine={mine(r)}><title>{tip(r, 'Median bid', r.medianCents)}</title></circle>{/if}
       {/each}
-      {#if p.median === null}<text x={sx(i)} y={sy(0) - 6} text-anchor="middle" class="ax none">No bids</text>{/if}
-      <text x={sx(i)} y={H - 24} text-anchor="middle" class="ax num">{yr(p.term)}</text>
-      <text x={sx(i)} y={H - 10} text-anchor="middle" class="ax num">{tm(p.term)}</text>
+    {/each}
+    {#each pts as p, i}
+      {#if shown.has(i)}
+      {#if p.median === null}<text x={cx(i)} y={sy(0) - 6} text-anchor="middle" class="ax none">No bids</text>{/if}
+      <text x={cx(i)} y={H - 24} text-anchor="middle" class="ax num">{yr(p.term)}</text>
+      <text x={cx(i)} y={H - 10} text-anchor="middle" class="ax num">{tm(p.term)}</text>
+      {/if}
     {/each}
   </svg>
   <ul class="legend">
@@ -62,7 +78,7 @@
 <style>
   .wrap { min-width: 0; }
   svg { display: block; max-width: 100%; }
-  .grid { stroke: var(--rule); stroke-width: 1; }
+  .grid, .sep { stroke: var(--rule); stroke-width: 1; }
   .ax { fill: var(--muted); font-size: 13px; font-family: var(--font); }
   .none { font-size: 13px; }
   .med { fill: none; stroke: var(--text); stroke-width: 2; }

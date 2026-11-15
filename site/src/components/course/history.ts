@@ -52,6 +52,72 @@ export function byTerm(rows: HistoryRow[]): TermPoint[] {
   });
 }
 
+/** Share of a term band left empty on each side, so neighbouring terms' windows never touch. */
+export const BAND_PAD = 0.15;
+
+/** Width of one term band when `termCount` bands share the plot from `x0` to `x1`. */
+export const bandWidth = (x0: number, x1: number, termCount: number): number => (x1 - x0) / Math.max(termCount, 1);
+
+/**
+ * X of window slot `slotIdx` inside term band `termIdx`. The band is split into `slotCount` equal slots after `pad` is cut off
+ * each side, and the point sits at the slot's centre, so one slot sits at the band's centre.
+ */
+export function bandX(termIdx: number, termCount: number, slotIdx: number, slotCount: number, x0: number, x1: number, pad = BAND_PAD): number {
+  const bw = bandWidth(x0, x1, termCount);
+  const slotW = (bw * (1 - 2 * pad)) / Math.max(slotCount, 1);
+  return x0 + termIdx * bw + bw * pad + (slotIdx + 0.5) * slotW;
+}
+
+/** Narrowest slot, in px, at which the dots of neighbouring windows still read as separate points. */
+export const MIN_SLOT_PX = 8;
+
+/** Whether a term can be drawn as a band of window slots: several slots, each at least MIN_SLOT_PX wide. Otherwise one point per term. */
+export function useBands(plotWidth: number, termCount: number, slotCount: number): boolean {
+  if (slotCount < 2 || termCount < 1) return false;
+  return (bandWidth(0, plotWidth, termCount) * (1 - 2 * BAND_PAD)) / slotCount >= MIN_SLOT_PX;
+}
+
+/**
+ * Indices of the term labels to draw when neighbouring label centres are `spacing` px apart: every k-th term for the smallest k
+ * that leaves `gap` px between labels `labelWidth` px wide, counted back from the last term so it is always shown.
+ */
+export function labelIndices(count: number, spacing: number, labelWidth = 52, gap = 8): number[] {
+  const k = spacing > 0 ? Math.max(1, Math.ceil((labelWidth + gap) / spacing)) : count;
+  const out: number[] = [];
+  for (let i = count - 1; i >= 0; i -= k) out.unshift(i);
+  return out;
+}
+
+export interface TimelineCell {
+  term: string;
+  termIdx: number;
+  window: string;
+  slotIdx: number;
+  rows: HistoryRow[];
+  /** Mean of the rows' medians / lowest winning bids, as for a term point; null when nobody won. */
+  median: number | null;
+  min: number | null;
+}
+
+/**
+ * Every (term, window) with rows, in time order: term order, then slot order. `slots` is every window present in `rows` in
+ * `sortWindows` order, so a window has the same slot in every term and a missing one leaves its slot empty.
+ */
+export function windowTimeline(rows: HistoryRow[]): { terms: string[]; slots: string[]; cells: TimelineCell[] } {
+  const terms = sortTerms(rows.map((r) => r.term));
+  const slots = sortWindows(rows.map((r) => r.window));
+  const cells: TimelineCell[] = [];
+  terms.forEach((term, termIdx) => {
+    slots.forEach((window, slotIdx) => {
+      const rs = rows.filter((r) => r.term === term && r.window === window);
+      if (!rs.length) return;
+      const { median, min } = byTerm(rs)[0];
+      cells.push({ term, termIdx, window, slotIdx, rows: rs, median, min });
+    });
+  });
+  return { terms, slots, cells };
+}
+
 /** "Mon" / "MON; THU" -> "Mon, Thu". Still used by the planner for single meeting days. */
 export const dayText = (d: string): string =>
   d.split(/[\s;,]+/).filter(Boolean).map((x) => x.charAt(0) + x.slice(1).toLowerCase()).join(', ');

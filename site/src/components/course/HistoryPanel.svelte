@@ -3,16 +3,16 @@
   import type { HistoryRow } from '../../lib/data/types';
   import { sameInstructor } from '../../lib/data/format';
   import HistoryChart from './HistoryChart.svelte';
-  import { sortWindows, timeText } from './history';
+  import { defaultHistoryWindow, sortWindows, timeText } from './history';
   import { bidOrNone } from './fmt';
 
-  let { history, instructor = null, preferred = [], hideTitle = false }: {
+  let { history, instructor = null, currentWindow = '', hideTitle = false }: {
     hideTitle?: boolean;
     history: HistoryRow[];
     /** Instructor of the section being viewed; null on a course with no sections this term. */
     instructor?: string | null;
-    /** Windows to open on, best first (the current window, then the latest with results). */
-    preferred?: string[];
+    /** The site's current window; the Window menu opens on the latest one at or before it with bids. */
+    currentWindow?: string;
   } = $props();
 
   const CAP = 40;
@@ -23,11 +23,8 @@
   // Initial choices are read once: the panel is re-created when the section changes.
   const firstMine = () => !!instructor && history.some(mine);
   let scope = $state<'instructor' | 'course'>(firstMine() ? 'instructor' : 'course');
-  const pickWindow = () => {
-    const pool = scope === 'instructor' ? history.filter(mine) : history;
-    return preferred.find((w) => pool.some((r) => r.window === w)) ?? sortWindows(pool.map((r) => r.window))[0] ?? '';
-  };
-  let win = $state(pickWindow());
+  // Read once as well: a window the user picks stays put when they switch between Same instructor and Whole course.
+  let win = $state(defaultHistoryWindow(scope === 'instructor' ? history.filter(mine) : history, currentWindow));
   let all = $state(false);
 
   const rows = $derived(

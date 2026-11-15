@@ -8,6 +8,25 @@ export function sortWindows(ws: Iterable<string>): string[] {
   return [...new Set(ws)].sort((a, b) => key(a) - key(b) || a.localeCompare(b, undefined, { numeric: true }));
 }
 
+/** A history row where somebody won a seat: a lowest or median bid is present. */
+export const hasBids = (r: HistoryRow): boolean => r.medianCents !== null || r.minCents !== null;
+
+/** A window needs at least this many past results with bids before the past-results page opens on it. */
+export const MIN_WINDOW_RESULTS = 3;
+
+/**
+ * The window the past-results page opens on: the latest window, at or before the current one in window order, where at least
+ * MIN_WINDOW_RESULTS of `rows` (already filtered to the series on screen) have bids, so the page never opens on a chart with
+ * one lonely point. '' means all windows, when no single window qualifies.
+ */
+export function defaultHistoryWindow(rows: HistoryRow[], currentWindow: string): string {
+  const count = new Map<string, number>();
+  for (const r of rows) if (hasBids(r)) count.set(r.window, (count.get(r.window) ?? 0) + 1);
+  const order = sortWindows([...count.keys(), currentWindow]);
+  const upTo = order.slice(0, order.indexOf(currentWindow) + 1);
+  return upTo.reverse().find((w) => (count.get(w) ?? 0) >= MIN_WINDOW_RESULTS) ?? '';
+}
+
 export function sortTerms(ts: Iterable<string>): string[] {
   return [...new Set(ts)].sort();
 }

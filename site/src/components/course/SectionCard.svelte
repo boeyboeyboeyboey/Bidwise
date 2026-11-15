@@ -104,7 +104,7 @@
   {/if}
   {#if open}
     <div class="panel detail" id={panelId}>
-      <SectionDetail {section} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swap} />
+      <SectionDetail {section} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swap} showClassNumber={!swap} />
     </div>
   {/if}
 </li>

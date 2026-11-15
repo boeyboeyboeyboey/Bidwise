@@ -388,7 +388,7 @@
       <div class="panel">
         <h2>{current.section} <span>{current.instructor || 'Instructor not listed'}</span></h2>
         {#key current.id}
-          <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} />
+          <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} showClassNumber={!swapping} />
         {/key}
       </div>
     </aside>
@@ -412,8 +412,8 @@
   .modebar { margin: 0 0 var(--s2); }
   .modebar .seg > button { min-height: 44px; min-width: 88px; }
   .mine { display: grid; gap: var(--s1); margin: 0 0 var(--s2); font-size: var(--fs-xs); color: var(--muted); }
-  .mine select { width: 100%; min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); }
-  .disc { margin: 0 0 var(--s2); padding: var(--s2) var(--s3); font-size: var(--fs-xs); color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); }
+  .mine select { width: 100%; }
+  .disc { margin: 0 0 var(--s2); font-size: var(--fs-xs); color: var(--muted); }
   .acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
 
   /* Wide list (a desktop column, or a tablet): one line per row with labelled column headers. SectionCard reads the same --cols. */

@@ -1,7 +1,7 @@
 ---
 import Base from '../../../layouts/Base.astro';
 import HistoryView from '../../../components/course/HistoryView.svelte';
-import { dataMeta, getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
+import { getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
 import { getCourse } from '../../../lib/data/server';
 
 export function getStaticPaths() {
@@ -17,7 +17,7 @@ const instructor = course.sectionsNow[0]?.instructor ?? null;
     <h1>Past results</h1>
     <p>{course.code} {course.title}</p>
   </header>
-  <HistoryView client:load code={course.code} windowName={windowLabel(getWindow())} latestWindow={dataMeta.latestResultsWindow} {instructor} />
+  <HistoryView client:load code={course.code} windowName={windowLabel(getWindow())} {instructor} />
 </Base>
 
 <style>

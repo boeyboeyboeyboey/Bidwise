@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byWindow, dayText, shortWindow, termWithResults, timeText } from './history';
+import { byWindow, dayText, defaultHistoryWindow, shortWindow, termWithResults, timeText } from './history';
 import type { HistoryRow } from '../../lib/data/types';
 
 describe('timeText', () => {
@@ -98,5 +98,37 @@ describe('shortWindow', () => {
     expect(shortWindow('Round 2 Window 2')).toBe('Rnd 2 W2');
     expect(shortWindow('Incoming Exchange Rnd 1C Win 2')).toBe('IE 1C W2');
     expect(shortWindow('Something else')).toBe('Something else');
+  });
+});
+
+describe('defaultHistoryWindow', () => {
+  const R1 = 'Round 1 Window 1', R1B = 'Round 1B Window 2', R2 = 'Round 2 Window 1', R2A = 'Round 2A Window 1';
+  const one = (window: string) => row({ window, medianCents: 100, minCents: 50 });
+  const won = (window: string) => [one(window), one(window), one(window)];
+  const lost = (window: string) => row({ window, medianCents: null, minCents: null });
+
+  it('opens on the current window when it has three results with bids', () => {
+    expect(defaultHistoryWindow([...won(R1), ...won(R2)], R2)).toBe(R2);
+  });
+  it('falls back to the previous window when the current one has no bids', () => {
+    expect(defaultHistoryWindow([...won(R1), ...won(R1B), lost(R2)], R2)).toBe(R1B);
+  });
+  it('falls back when the current window has only one or two results with bids', () => {
+    expect(defaultHistoryWindow([...won(R1B), one(R2), one(R2), lost(R2)], R2)).toBe(R1B);
+  });
+  it('skips earlier windows without enough bids and uses the latest one that has them', () => {
+    expect(defaultHistoryWindow([...won(R1), lost(R1B), one(R1B), lost(R2)], R2)).toBe(R1);
+  });
+  it('uses all windows when no window has three results with bids, or there are no rows', () => {
+    expect(defaultHistoryWindow([lost(R1), one(R1), one(R2), one(R2)], R2)).toBe('');
+    expect(defaultHistoryWindow([], R2)).toBe('');
+  });
+  it('never picks a window after the current one', () => {
+    expect(defaultHistoryWindow(won(R2A), R2)).toBe('');
+    expect(defaultHistoryWindow([...won(R1), ...won(R2A)], R2)).toBe(R1);
+  });
+  it('counts a lowest bid without a median as bids', () => {
+    const min = () => row({ window: R1, medianCents: null, minCents: 40 });
+    expect(defaultHistoryWindow([min(), min(), min()], R2)).toBe(R1);
   });
 });

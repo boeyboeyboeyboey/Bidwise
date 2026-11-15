@@ -5,10 +5,9 @@
   import { fetchCourse } from '../../lib/data/client';
   import HistoryPanel from './HistoryPanel.svelte';
 
-  let { code, windowName, latestWindow, instructor: fallback = null }: {
+  let { code, windowName, instructor: fallback = null }: {
     code: string;
     windowName: string;
-    latestWindow: string;
     /** Instructor of the lowest-bid section this term, used when the link names none. */
     instructor?: string | null;
   } = $props();
@@ -31,7 +30,7 @@
   <div class="skel" aria-busy="true" aria-label="Loading"></div>
 {:else}
   {#key instructor}
-    <HistoryPanel {history} {instructor} preferred={[windowName, latestWindow]} hideTitle />
+    <HistoryPanel {history} {instructor} currentWindow={windowName} hideTitle />
   {/key}
 {/if}
 

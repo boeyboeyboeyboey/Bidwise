@@ -8,10 +8,12 @@
   import SeatTrend from './SeatTrend.svelte';
   import Snipe from './Snipe.svelte';
 
-  let { section, history, failed = false, code, currentTerm, openScanAt = null, forecastCard = true }: {
+  let { section, history, failed = false, code, currentTerm, openScanAt = null, forecastCard = true, showClassNumber = true }: {
     openScanAt?: string | null;
     /** false hides the forecast card (Swap mode); history and seat parts stay. */
     forecastCard?: boolean;
+    /** false hides the class number line (Swap mode: BOSS's internal number means nothing there). */
+    showClassNumber?: boolean;
     section: Section;
     history: HistoryRow[] | null;
     failed?: boolean;
@@ -35,7 +37,7 @@
     <SeatTrend {section} {openScanAt} />
     <HistorySummary {history} {code} {currentTerm} instructor={section.instructor} />
   {/if}
-  <p class="cn num">Class number <b>{section.classNumber}</b></p>
+  {#if showClassNumber}<p class="cn num">Class number <b>{section.classNumber}</b></p>{/if}
 </div>
 
 <style>

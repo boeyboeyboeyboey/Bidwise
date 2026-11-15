@@ -21,3 +21,8 @@ export const sameInstructor = (a: string, b: string): boolean => {
   const n = (s: string) => s.toUpperCase().replace(/[^A-Z]+/g, ' ').trim();
   return !!a && n(a) === n(b);
 };
+
+/** BOSS stores instructor names in capitals: "LEE KOK THONG, TAN AH-MENG" becomes "Lee Kok Thong, Tan Ah-Meng". */
+export function titleName(raw: string | null | undefined): string {
+  return (raw ?? '').trim().toLowerCase().replace(/(^|[\s\-'’/,.(\[])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase());
+}

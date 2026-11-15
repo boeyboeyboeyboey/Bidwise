@@ -10,6 +10,7 @@ import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
 import { dayText } from '../course/history';
 import { formatSlot } from '../../lib/format/slot';
 import { eS } from '../course/fmt';
+import { titleName } from '../../lib/data/format';
 import { GROUP_LETTERS, isSlot, slotOf, startText, type PlanRowState } from './types';
 
 /** Same runs and seed as the course page, so a section shows the same bid and chance on both pages. */
@@ -152,10 +153,10 @@ export function sectionLabel(section: Section): string {
   return [section.section, meetingText(section), section.instructor || 'Instructor TBA', seatsLeftNow(section) > 0 ? `${seatsOf(section).source === 'approx' ? '≈' : ''}${seatsLeftNow(section)} left` : `(${isLikelyFull(section) ? 'likely full, est.' : 'full'})`].join(' · ');
 }
 
-/** Picker text: section, day and time ("G1 · Mon 15:30–18:45"), and "(full)". The instructor is shown on its own line under the picker. */
+/** Picker text: section, day and time, instructor and "(full)", e.g. "G1 · Mon 15:30–18:45 · Lee Kok Thong · (full)". */
 export function sectionOption(section: Section): string {
   const full = seatsLeftNow(section) > 0 ? '' : `(${isLikelyFull(section) ? 'likely full, est.' : 'full'})`;
-  return [section.section, formatSlot(section.meetings) || 'Time not set', full].filter(Boolean).join(' · ');
+  return [section.section, formatSlot(section.meetings) || 'Time not set', titleName(section.instructor), full].filter(Boolean).join(' · ');
 }
 
 /**

@@ -17,6 +17,7 @@
   --focus: #2d6a5a;
   --up: #17794a;
   --down: #b3261e;
+  --warn: #b7791f;
   --danger: #a33a2a;
 
   --fs-xs: 13px;
@@ -67,6 +68,7 @@
     --focus: #7fc3ad;
     --up: #6fcf97;
     --down: #ff8a80;
+    --warn: #d9a441;
     --danger: #ff8a80;
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239ba0a8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3l5 5-5 5'/%3E%3C/svg%3E");
     --chev-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239ba0a8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6l5 5 5-5'/%3E%3C/svg%3E");

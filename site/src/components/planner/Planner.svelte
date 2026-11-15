@@ -38,7 +38,6 @@
   // Open now, or the next to open between windows: the default window and the one "no choice" means.
   const liveWin = liveWindow();
   const currentWindow = liveWin ? `Round ${liveWin.round} Window ${liveWin.window}` : builtWindow;
-  const upcoming = liveWin?.status === 'upcoming';
   let rows = $state<PlanRowState[]>([]);
   const fallbackWindow = windows.includes(currentWindow) ? currentWindow : (windows[0] ?? '');
   let win = $state(fallbackWindow);
@@ -623,13 +622,10 @@
           {/each}
         </div>
       </div>
-      </div>
-      {#if upcoming && win === currentWindow}
-        <span class="tag">Upcoming window</span>
-      {/if}
       {#if windowTagged}
         <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(windowLate ? ['lateWindow'] : [], windowHard)} /></span>
       {/if}
+      </div>
       {#if rows.length}
         <div class="tools">
         <button type="button" class="btn clear" aria-expanded={avoidOpen} aria-controls="avoid-grid" onclick={() => (avoidOpen = !avoidOpen)}>
@@ -704,11 +700,13 @@
           {@const more = [...new Set(g.idxs.map((i) => rows[i].course))].filter(moreSections)}
           <li class="grp">
             <div class="pick" role="group" aria-label="Need one of these">
-              <span class="pickh">Need one of these</span>
-              {#if gp !== null}
-                <span class="gchance"><span class="lab">Chance of getting one</span> <span class="lab">{aboutPctParts(gp)[0]}</span><b class="num tint" style="background: {chanceTint(gp)}">{aboutPctParts(gp)[1]}</b></span>
-              {/if}
-              {#if new Set(g.idxs.map((i) => rows[i].course)).size < 2}<span class="solo">Only one course here so far</span>{/if}
+              <div class="pickl">
+                <span class="pickh">Need one of these</span>
+                {#if gp !== null}
+                  <span class="gchance"><span class="lab">Chance of getting one</span> <span class="lab">{aboutPctParts(gp)[0]}</span><b class="num tint" style="background: {chanceTint(gp)}">{aboutPctParts(gp)[1]}</b></span>
+                {/if}
+                {#if new Set(g.idxs.map((i) => rows[i].course)).size < 2}<span class="solo">Only one course here so far</span>{/if}
+              </div>
               {#if joinable.length || more.length}
                 <button type="button" class="btn addbtn" aria-expanded={addOpen === letter} onclick={() => (addOpen = addOpen === letter ? '' : letter)}>+ Add a course to this group</button>
               {/if}
@@ -738,7 +736,7 @@
     {/if}
 
     {#if rows.length}
-      <CourseAdd onadd={onAdd} inPlan={rows.map((r) => r.course)} dropUp={wide} />
+      <CourseAdd onadd={onAdd} inPlan={rows.map((r) => r.course)} dropUp={wide} prominent />
     {:else}
       <section class="start" aria-label="Start">
         <CourseAdd onadd={onAdd} inPlan={[]} label="Add a course" placeholder="Course code or title" />
@@ -796,10 +794,11 @@
         <section class="split num" class:dim={pending}>
           <p class="tot">Bids total <b>{eS(sum.bidCents)}</b> of {eS(balanceCents)} · <b>{eS(Math.max(0, sum.leftCents))}</b> left</p>
           <div class="stack" role="img" aria-label="Expected spend {eS(sum.likelyCents)}, bids total {eS(sum.bidCents)}, left {eS(Math.max(0, sum.leftCents))}">
-            <span class="sg likely" style="flex: {sum.share.likely} 1 0"><span class="sl">Expected spend {eS(sum.likelyCents)}</span></span>
+            <span class="sg likely" style="flex: {sum.share.likely} 1 0"></span>
             <span class="sg rest" style="flex: {sum.share.rest} 1 0"></span>
             <span class="sg left" style="flex: {sum.share.left} 1 0"></span>
           </div>
+          <p class="key"><span class="sw" aria-hidden="true"></span>Expected spend <b>{eS(sum.likelyCents)}</b></p>
         </section>
       {/if}
       <div class="report" role="group" aria-label="Bid report">
@@ -837,15 +836,17 @@
   .main, .side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); min-width: 0; align-content: start; }
   .lab { font-size: 14px; color: var(--muted); }
   /* Not "top": Base.astro styles a global .top as the sticky header. */
-  .setup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); }
+  .setup { display: grid; gap: var(--s3); min-width: 0; }
   .ctl { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2) var(--s4); min-width: 0; max-width: 100%; }
   .budget, .aimbox { display: grid; gap: var(--s1); min-width: 0; }
-  .budget .inp { width: 140px; }
+  .budget .inp { width: 116px; }
+  /* phone: balance and bid style share one line (116 + 12 + 211 fits 343) */
+  @media (max-width: 767px) { .ctl { column-gap: var(--s3); } }
   .aimhead { display: flex; align-items: center; gap: var(--s2); }
   .aimbox .aim { display: flex; }
   .aimbox .aim > button { flex: 1 1 0; min-height: 44px; padding: 0 var(--s3); font-size: 15px; }
-  @media (min-width: 768px) { .budget .inp { width: 170px; } .setup { align-items: flex-end; } }
-  .lowc { display: inline-flex; align-items: center; gap: var(--s2); }
+  @media (min-width: 768px) { .budget .inp { width: 170px; } }
+  .lowc { display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; }
   .tag { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--s2); font-size: 13px; font-weight: 600; background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 2px; }
   .err, .warn { margin: 0; font-size: 14px; }
   .err { color: var(--danger); }
@@ -858,19 +859,22 @@
   .tot b { font-weight: 600; }
   .stack { display: flex; height: 32px; border-radius: var(--r-md); overflow: hidden; gap: 2px; }
   .sg { display: flex; align-items: center; min-width: 0; overflow: hidden; }
-  .sg.likely { background: color-mix(in srgb, var(--text) 80%, var(--surface)); color: #fff; }
+  .sg.likely { background: color-mix(in srgb, var(--text) 80%, var(--surface)); }
   .sg.rest { background: color-mix(in srgb, var(--text) 32%, var(--surface)); }
   .sg.left { background: var(--rule); }
-  .sl { padding: 0 var(--s2); font-size: 13px; white-space: nowrap; }
+  .key { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: 13px; color: var(--muted); }
+  .key b { font-weight: 600; color: var(--text); }
+  .sw { flex: none; width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--text) 80%, var(--surface)); }
   .notice { display: grid; gap: var(--s3); padding: var(--s1) 0 var(--s1) var(--s3); border-left: 3px solid var(--danger); color: var(--text); font-size: 15px; }
   .notice p { margin: 0; }
   .notice b { font-weight: 700; }
   .acts { display: flex; flex-wrap: wrap; gap: var(--s2); }
   .chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
   .chip { min-height: 44px; padding: 0 var(--s3); font-size: 14px; }
-  .tools { display: flex; flex-wrap: wrap; gap: var(--s2); margin-left: auto; max-width: 100%; }
-  @media (max-width: 767px) { .tools { width: 100%; margin-left: 0; } .tools .clear { padding: 0 var(--s2); } }
-  .clear { gap: var(--s2); min-height: 44px; padding: 0 var(--s3); font-size: 14px; white-space: nowrap; flex: none; }
+  .tools { display: flex; flex-wrap: wrap; gap: var(--s2); min-width: 0; max-width: 100%; }
+  .tools .danger { margin-left: auto; }
+  @media (max-width: 767px) { .tools .clear { padding: 0 var(--s2); } }
+  .clear { gap: var(--s2); height: 44px; min-height: 44px; padding: 0 var(--s3); font-size: 14px; white-space: nowrap; flex: none; }
   .clear.danger { color: var(--danger); border-color: var(--danger); }
   .shareurl { display: flex; gap: var(--s2); align-items: center; }
   .shareurl .field { flex: 1 1 auto; min-width: 0; }
@@ -894,15 +898,17 @@
   .cur { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 16px; }
   .budget input { padding-left: 40px; font-weight: 600; }
   .rows { display: grid; border-top: 1px solid var(--rule); }
-  .grp { position: relative; margin: var(--s2) 0; padding: 0 var(--s3); border: 1px solid var(--accent); border-left-width: 4px; border-radius: var(--r-md); background: var(--accent-soft); }
+  .grp { position: relative; margin: var(--s2) 0; padding: 0 0 0 var(--s3); border-left: 4px solid var(--accent); }
   .grp ul { display: grid; }
   @media (min-width: 768px) {
-    /* the framed groups and Nice to have rows sit outside the column so every control lines up with plain rows */
-    .grp { margin-left: calc(-1 * (var(--s3) + 4px)); margin-right: calc(-1 * (var(--s3) + 1px)); }
+    /* the group bar and Nice to have rows sit outside the column so rows inside a group line up with plain rows */
+    .grp { margin-left: calc(-1 * (var(--s3) + 4px)); }
     .rows > :global(.row.bonus) { margin-left: calc(-1 * (var(--s2) + 1px)); margin-right: calc(-1 * (var(--s2) + 1px)); }
   }
   .grp :global(.row) + :global(.row) { border-top: 1px solid var(--rule); }
-  .pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--accent); }
+  .pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+  /* wide enough: title and chance left, button right; otherwise the button drops to its own line, left-aligned */
+  .pickl { flex: 1 1 280px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); min-width: 0; }
   .addpick { min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); cursor: pointer; }
   .addpick:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .avoid { width: 100%; display: grid; grid-template-columns: 44px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
@@ -912,7 +918,7 @@
   .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--accent-ink); background: var(--accent); border-radius: 999px; }
   .avoidbox { display: grid; gap: var(--s2); width: 100%; max-width: 300px; }
   .avoidh { margin: 0; font-size: 15px; font-weight: 600; }
-  .pickh { font-size: 15px; }
+  .pickh { font-size: 15px; font-weight: 600; }
   .gchance { font-size: 15px; }
   .gchance .lab { font-size: 13px; color: var(--muted); }
   .gchance b { font-weight: 600; }
@@ -920,7 +926,7 @@
   .solo, .limitnote { font-size: 13px; color: var(--muted); }
   .limitnote { margin: var(--s2) 0 0; }
   .where { margin-left: var(--s1); font-size: 13px; color: var(--muted); }
-  .addbtn { min-height: 44px; padding: 0 var(--s3); font-size: 14px; margin-left: auto; }
+  .addbtn { flex: none; min-height: 44px; padding: 0 var(--s3); font-size: 14px; }
   .addlist { display: flex; flex-wrap: wrap; gap: var(--s2); padding: 0 0 var(--s2); }
   .addlist .btn { font-size: 14px; }
   .result { display: grid; gap: var(--s3); min-width: 0; scroll-margin-top: calc(var(--topbar-h) + var(--s3)); }

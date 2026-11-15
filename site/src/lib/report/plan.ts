@@ -65,7 +65,7 @@ export const FEW_RESULTS = 3;
 export function bidReason(i: ReasonInput): string {
   if (i.bid === null || i.bid <= 0 || !i.curve) return '';
   const n = i.nObs;
-  const few = n === undefined || n >= FEW_RESULTS ? '' : n <= 0 ? 'No past results' : `Only ${n} past ${n === 1 ? 'result' : 'results'}`;
+  const few = n === undefined || n >= FEW_RESULTS ? '' : n <= 0 ? 'No past results, so this is a rough guide' : `Only ${n} past ${n === 1 ? 'result' : 'results'}, so this is a rough guide`;
   // A bid above the minimum next to "minimum likely enough" would contradict itself: say what the extra buys instead.
   const style = styleName(i.target);
   const above = i.minBidCents !== undefined && i.bid > i.minBidCents + 1;

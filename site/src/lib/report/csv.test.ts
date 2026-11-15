@@ -210,10 +210,10 @@ describe('bidReason', () => {
     expect(bidReason({ ...base, bid: 6001, curve: { ...curve, pFill: 0.1 } })).toBe('Rarely fills · minimum e$10.00 likely enough');
   });
   it('notes few past results', () => {
-    expect(bidReason({ ...base, nObs: 2 })).toBe('Usually clears around e$27 · up to e$41 · Only 2 past results');
-    expect(bidReason({ ...base, nObs: 1 })).toMatch(/ · Only 1 past result$/);
+    expect(bidReason({ ...base, nObs: 2 })).toBe('Usually clears around e$27 · up to e$41 · Only 2 past results, so this is a rough guide');
+    expect(bidReason({ ...base, nObs: 1 })).toMatch(/ · Only 1 past result, so this is a rough guide$/);
     expect(bidReason({ ...base, nObs: 3 })).not.toContain('past result');
-    expect(bidReason({ ...base, nObs: 0 })).toMatch(/ · No past results$/);
+    expect(bidReason({ ...base, nObs: 0 })).toMatch(/ · No past results, so this is a rough guide$/);
   });
   it('is empty when the row is not bid on or has no forecast', () => {
     expect(bidReason({ ...base, bid: 0 })).toBe('');

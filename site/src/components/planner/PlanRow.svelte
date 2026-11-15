@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CourseData } from '../../lib/data/types';
-  import { isLikelyFull, seatsLeftNow, seatsPhrase } from '../../lib/data/seats';
+  import { isLikelyFull, seatsLeftNow, seatsOf, seatsPhrase } from '../../lib/data/seats';
   import { MAX_FRIENDS_GROUP } from '../../lib/sim/forecast';
   import type { Role } from '../../lib/sim/planner';
   import { styleName } from '../../lib/sim/presets';
@@ -9,6 +9,7 @@
   import { aboutPctParts, eS } from '../course/fmt';
   import { orderSections } from '../course/sections';
   import { seatLabel } from '../course/seatLabel';
+  import SeatRing from '../course/SeatRing.svelte';
   import { ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
   import InfoTip from '../ui/InfoTip.svelte';
@@ -80,7 +81,7 @@
         {/each}
       </select>
       {#if sec}
-        <span class="meta" title="{sec.instructor || 'Instructor TBA'} · {seatLabel(sec)}"><span class="prof">{sec.instructor || 'Instructor TBA'}</span><span class="seats num"> · {seatLabel(sec)}</span></span>
+        <span class="meta" title={seatLabel(sec)}><SeatRing left={seatsLeftNow(sec)} group={row.group} approx={seatsOf(sec).source === 'approx'} /><span class="seats num">{seatLabel(sec)}</span></span>
       {/if}
     </div>
     <div class="seg role" role="radiogroup" aria-label="How much you need {row.course}">
@@ -93,11 +94,13 @@
     </button>
     <div class="l2">
     <div class="step" role="group" aria-label="{row.course} group size">
-      <span class="lab stl">Group<span class="gsize"> size</span></span>
-      <button type="button" class="btn btn-icon" aria-label="Fewer people for {row.course}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
-      <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
-      <button type="button" class="btn btn-icon" aria-label="More people for {row.course}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
-      {#if limitNote}<span class="lab left" id="lim-{row.id}">{limitNote}</span>{/if}
+      <span class="stl"><span class="lab">Bidding group size</span><InfoTip label="About bidding group size" lines={['Friends bidding for the same section together.', 'Everyone needs a seat, so a bigger group needs a higher bid.']} /></span>
+      <div class="ctl">
+        <button type="button" class="btn btn-icon" aria-label="Fewer people for {row.course}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
+        <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
+        <button type="button" class="btn btn-icon" aria-label="More people for {row.course}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
+        {#if limitNote}<span class="lab left" id="lim-{row.id}">{limitNote}</span>{/if}
+      </div>
     </div>
     <div class="res num" aria-live="polite" aria-busy={busy}>
       {#if issue}<span class="cant">{ISSUE_TEXT[issue]}</span>
@@ -144,15 +147,18 @@
   .chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 var(--s2); font-size: 13px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 999px; white-space: nowrap; }
   .secwrap { grid-area: sec; display: grid; gap: 2px; min-width: 0; }
   .sec { min-height: 44px; padding-top: 0; padding-bottom: 0; }
-  .meta { display: flex; min-width: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
-  .prof { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .seats { flex: none; white-space: pre; }
+  .meta { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+  .seats { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .rm { grid-area: rm; }
   .l2 { display: contents; }
   .role { grid-area: role; display: inline-flex; width: max-content; max-width: 100%; justify-self: start; }
   .role > button { flex: 0 1 auto; min-width: 0; padding: 0 8px; min-height: 44px; white-space: nowrap; }
-  .step { grid-area: step; min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s1); justify-self: start; }
-  .stl { margin-right: var(--s1); white-space: nowrap; }
+  .step { grid-area: step; display: grid; justify-self: start; min-width: 0; }
+  /* The tip's 44px tap box sits inside this row (its default negative margins would overlap the role control and the + button). */
+  .stl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); min-height: 44px; }
+  .stl :global(.q) { margin: 0; }
+  .stl .lab { font-size: 13px; white-space: nowrap; }
+  .ctl { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s1); }
   .left { margin-left: var(--s1); }
   .step .btn-icon { flex: none; width: 44px; height: 44px; min-height: 44px; }
   .step output { min-width: 22px; text-align: center; font-size: 17px; font-weight: 600; }
@@ -177,9 +183,8 @@
   /* Disabled stepper: muted text on the page colour (at least 4.5:1), not faded by opacity. */
   .step .btn-icon:disabled { color: var(--muted); opacity: 1; }
 
-  /* Mid width (the planner column beside the summary): Must get / Pick one / Nice to have and the group size share one row. */
+  /* Mid width (the planner column beside the summary): Must get / Pick one / Nice to have and the group size block share one row. */
   @container (min-width: 430px) and (max-width: 619.98px) {
-    .gsize { display: none; }
     .line {
       grid-template-columns: max-content minmax(0, 1fr) 44px;
       grid-template-areas: 'id id rm' 'sec sec sec' 'role step step' 'res res res';

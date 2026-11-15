@@ -3,11 +3,13 @@
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { fetchIndex } from '../../lib/data/client';
 
-  let { onadd, inPlan = [], label = 'Add course', placeholder = 'Add course', dropUp = false }: {
+  let { onadd, inPlan = [], label = 'Add course', placeholder = 'Add course', dropUp = false, prominent = false }: {
     /** byKey: picked with Enter, so the caller keeps the cursor in the box. */
     onadd: (code: string, byKey?: boolean) => void; inPlan?: string[]; label?: string; placeholder?: string;
     /** Open the list above the box (when the box sits at the bottom of a scrolling column). */
     dropUp?: boolean;
+    /** The page's main action: accent border, icon and placeholder, "Add a course" wording. */
+    prominent?: boolean;
   } = $props();
   let index = $state<CourseIndexEntry[]>([]);
   let failed = $state(false);
@@ -32,13 +34,13 @@
   }
 </script>
 
-<div class="add">
+<div class="add" class:prominent>
   <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z" /></svg>
   <input
     class="field"
     type="search"
     aria-label={label}
-    placeholder={failed ? 'Course list failed to load' : placeholder}
+    placeholder={failed ? 'Course list failed to load' : prominent ? 'Add a course' : placeholder}
     autocomplete="off"
     autocapitalize="off"
     spellcheck="false"
@@ -59,6 +61,9 @@
   .add { position: relative; color: var(--muted); }
   .add > svg { position: absolute; left: 14px; top: 14px; pointer-events: none; }
   input { padding-left: 42px; }
+  .prominent { color: var(--accent); }
+  .prominent input { border-color: var(--accent); }
+  .prominent input::placeholder { color: var(--accent); font-weight: 600; }
   .list { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); overflow: hidden; }
   .list.up { top: auto; bottom: calc(100% + 4px); }
   .list li + li { border-top: 1px solid var(--rule); }

@@ -110,9 +110,11 @@ describe('sections', () => {
   it('labels and slots', () => {
     expect(sectionLabel(sec())).toBe('G1 · Mon 08:15–11:30 · A B · 12 left');
     expect(sectionLabel(sec({ seatsLeft: 0 }))).toContain('(full)');
-    expect(sectionOption(sec())).toBe('G1 · Mon 08:15–11:30');
-    expect(sectionOption(sec({ meetings: [] }))).toBe('G1 · Time not set');
-    expect(sectionOption(sec({ seatsLeft: 0 }))).toContain('(full)');
+    expect(sectionOption(sec({ instructor: '' }))).toBe('G1 · Mon 08:15–11:30');
+    expect(sectionOption(sec({ instructor: '', meetings: [] }))).toBe('G1 · Time not set');
+    expect(sectionOption(sec({ instructor: '', seatsLeft: 0 }))).toContain('(full)');
+    expect(sectionOption(sec())).toBe('G1 · Mon 08:15–11:30 · A B');
+    expect(sectionOption(sec({ instructor: 'LEE KOK THONG', seatsLeft: 0 }))).toBe('G1 · Mon 08:15–11:30 · Lee Kok Thong · (full)');
     expect(slotsOf(sec())).toEqual(['Mon-08:15']);
     expect(slotsOf(sec({ meetings: [] }))).toEqual([]);
   });

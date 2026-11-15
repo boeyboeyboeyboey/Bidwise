@@ -75,9 +75,13 @@
 </script>
 
 <script lang="ts" module>
+  import { bidCalibrated } from '../../lib/sim/presets';
+  // The bid styles (Cheap / Balanced / Safe) are not "a chance you picked", so the calibrated text names the style instead.
   const DEFAULT_LINES = [
     'We replay this window thousands of times with random bidders, using what people bid on this course and instructor (where available) in past terms.',
-    'The bid shown is the lowest one that reaches the chance you picked. It is an estimate, not a guarantee.',
+    bidCalibrated()
+      ? 'The bid shown is the one for the bid style you picked. It is an estimate, not a guarantee.'
+      : 'The bid shown is the lowest one that reaches the chance you picked. It is an estimate, not a guarantee.',
   ];
 </script>
 

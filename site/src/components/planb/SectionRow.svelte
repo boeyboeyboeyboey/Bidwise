@@ -8,7 +8,7 @@
   import { scanBadgeFor } from '../../lib/data/seatDeltas';
   import SeatDelta from '../course/SeatDelta.svelte';
 
-  let { row, chance }: { row: PlanRow; /** The chance the bid is for, as text: "80%". */ chance: string } = $props();
+  let { row, bidLabel }: { row: PlanRow; /** What the bid is for, as the row label: "Safe bid" or "Bid for 80%". */ bidLabel: string } = $props();
   const s = $derived(row.section);
   // Scan times come from the page (Base.astro), read after mount so the server render matches the first client render.
   let seatMeta = $state<SeatMeta | null>(null);
@@ -20,7 +20,7 @@
 <a class="row-link" href={`/course/${row.code}`}>
   <span class="l1"><b>{row.code}</b> <span class="title">{row.title}</span> <span class="sec">{s.section}</span></span>
   <span class="stats num">
-    <span><i>Bid for {chance}</i> {eS(s.bidCents as number)}</span>
+    <span><i>{bidLabel}</i> {eS(s.bidCents as number)}</span>
     <span><i>Seats</i> {seatText(s)}{#if badge}<span class="chg"> · <SeatDelta {badge} /></span>{/if}</span>
   </span>
   <span class="l3">{s.instructor || 'Instructor not listed'} · <span class="num">{s.times || 'Time not set'}</span></span>

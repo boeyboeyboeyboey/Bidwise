@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Section } from '../data/types';
 import {
   NO_BIDS, REPORT_CREDIT, REPORT_DISCLAIMER, buildReportCsv, courseNote, csvCell, reportFileName, scheduleText, sectionFacts, seatsText, sgtStamp,
   type ReportRow,
 } from './csv';
 import { bidReason, planNote, planReportRow, planTotals } from './plan';
+
+// These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
+vi.mock('../data/bidLevels', () => ({ bidLevels: () => null }));
+
 
 const section = (over: Partial<Section> = {}): Section =>
   ({
@@ -201,6 +205,9 @@ describe('bidReason', () => {
   });
   it('says the minimum bid is enough for a section that rarely fills', () => {
     expect(bidReason({ ...base, bid: 1000, curve: { ...curve, pFill: 0.1 } })).toBe('Rarely fills · minimum e$10.00 likely enough');
+  });
+  it('not calibrated: a rarely-filling section above the minimum keeps the minimum wording (no style to name)', () => {
+    expect(bidReason({ ...base, bid: 6001, curve: { ...curve, pFill: 0.1 } })).toBe('Rarely fills · minimum e$10.00 likely enough');
   });
   it('notes few past results', () => {
     expect(bidReason({ ...base, nObs: 2 })).toBe('Usually clears around e$27 · up to e$41 · Only 2 past results');

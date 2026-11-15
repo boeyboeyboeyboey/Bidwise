@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Section } from '../../lib/data/types';
 import { orderSections } from '../course/sections';
 import { pInAt, recommendBid, simulate } from '../../lib/sim';
@@ -9,6 +9,10 @@ import {
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, pickGroupFor, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
 } from './plan';
+
+// These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
+vi.mock('../../lib/data/bidLevels', () => ({ bidLevels: () => null }));
+
 
 const W = 'Round 1A Window 3';
 const params = { demandMean: 20, demandDispersion: 5, priceLevelCents: 2000, priceSigma: 0.4, anchorSigma: 0.2, anchorShare: 0.2, anchorCents: 1000 };

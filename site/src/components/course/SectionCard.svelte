@@ -57,7 +57,8 @@
   // The since-open text says the same as the badge when nothing moved between the two scans.
   const change = $derived(badge && badge.n === section.live?.sinceOpen ? '' : seatChange(section));
   const full = $derived(seatsOf(section).left <= 0);
-  const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
+  const low = $derived(typeof bid === 'object' && !swap && !!bid.low);
+  const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat${bid.low ? ', low confidence' : ''}` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
   const chip = $derived(swap?.kind === 'opt' ? chipFor(swap.opt.label) : null);
   const swapText = $derived(swap?.kind === 'mine' ? 'your section' : chip ? `${chip.text} to swap into` : swap?.kind === 'wait' ? 'swap chance being worked out' : 'no swap chance yet');
   const label = $derived([section.section, who, when, examText ? `exam ${examText}` : '', seatText, badge?.label ?? '', swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
@@ -79,7 +80,7 @@
     <b class="sec">{section.section}</b>
     <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge">Lowest bid</span>{/if}</span>
     <span class="time num">{when}{#if examText}<span class="exam">Exam {examText}</span>{/if}</span>
-    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}</span>
+    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}{#if low}<span class="lc">Low confidence</span>{/if}</span>
     <span class="bid num" class:swapcol={!!swap}>
       {#if swap}
         {#if swap.kind === 'mine'}
@@ -144,6 +145,7 @@
   .no { color: var(--muted); font-size: var(--fs-xs); white-space: normal; }
   .chg { font-size: var(--fs-xs); }
   .chg::before { content: ' · '; }
+  .lc { display: inline-block; margin-left: var(--s2); padding: 0 6px; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted); border: 1px solid var(--rule-strong); border-radius: 4px; white-space: nowrap; }
   .badge { display: inline-block; margin-left: var(--s2); padding: 0 6px; font-size: var(--fs-xs); font-weight: 600; line-height: 1.5; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 4px; vertical-align: 1px; }
   .head.selected .badge, .head.open .badge { background: var(--surface); }
   .detail { margin: var(--s2) 0 var(--s4); }

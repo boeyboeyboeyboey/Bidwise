@@ -56,7 +56,7 @@ CORRECTION_ENABLED = True
 # Distribution calibration on top of the correction (fill classifier + spread exponents, model/forecast/distcal.py): ships
 # fillProb / spreadLo / spreadHi per section-window and bidLevels in forecast-meta.json. Needs the correction to be active and a
 # valid out/distcal.json; any failure falls back to the corrected-but-uncalibrated params for ALL sections.
-DIST_CALIBRATION_ENABLED = False
+DIST_CALIBRATION_ENABLED = True
 SIM_PARAM_KEYS = ("demandMean", "demandDispersion", "priceLevelCents", "priceSigma",
                   "anchorSigma", "anchorShare", "anchorCents")
 SIM_CALIBRATION_KEYS = ("fillProb", "spreadLo", "spreadHi")  # shipped only on the section-windows distcal calibrated

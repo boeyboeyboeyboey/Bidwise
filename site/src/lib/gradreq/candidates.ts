@@ -5,8 +5,8 @@ import { toPlanSimInput, rowIssue, type RowIssue } from '../../components/planne
 import type { CourseData, Meeting, Section } from '../data/types';
 import { seatsLeftNow, seatsOf, type SeatSource } from '../data/seats';
 import { formatSlot } from '../format/slot';
-import { pInAt, recommendBid, simulate, type SimInput, type SimResult } from '../sim';
-import { TARGETS, effectiveWindow } from '../sim/forecast';
+import { pInAt, simulate, type SimInput, type SimResult } from '../sim';
+import { TARGETS, effectiveWindow, suggestBid } from '../sim/forecast';
 import { canonicalJson } from '../sim/cache';
 import { eligibility } from './eligibility';
 import type { Block, Requisites } from './types';
@@ -114,7 +114,7 @@ function sectionOption(s: Section, o: CandidateOptions, bid: number, target: num
   if (!input) return base;
   const r = runSim(o.runs ? { ...input, runs: o.runs } : input, o.simulate ?? simulate);
   const minBid = s.minBidCents as number;
-  return { ...base, window: win, bidCents: recommendBid(r, target), chance: bid < minBid ? 0 : pInAt(r, bid), pFill: r.pFill };
+  return { ...base, window: win, bidCents: suggestBid(r, target), chance: bid < minBid ? 0 : pInAt(r, bid), pFill: r.pFill };
 }
 
 const clsRank = (c: Candidate) => (c.cls === 'rule' ? 0 : 1);

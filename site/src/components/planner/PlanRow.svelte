@@ -3,10 +3,13 @@
   import { isLikelyFull, seatsLeftNow, seatsPhrase } from '../../lib/data/seats';
   import { MAX_FRIENDS_GROUP } from '../../lib/sim/forecast';
   import type { Role } from '../../lib/sim/planner';
+  import { styleName } from '../../lib/sim/presets';
+  import { lowConfidenceLines } from '../course/bidStyle';
+  import { rowLowConfidence } from '../../lib/sim/presets';
   import { aboutPctParts, eS } from '../course/fmt';
   import { orderSections } from '../course/sections';
   import { seatLabel } from '../course/seatLabel';
-  import { ISSUE_TEXT, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
+  import { ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
   import InfoTip from '../ui/InfoTip.svelte';
 
@@ -23,19 +26,34 @@
     fullBid = null,
     capMode = false,
     target = 0.9,
+    win = '',
+    windowFlagged = false,
     canPick = true,
     onremove,
     grouped = false,
     onrole,
     reason = '',
     clashes = [],
-  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; canPick?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
+  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
 
   const sec = $derived(course?.sectionsNow.find((x) => x.id === row.sectionId));
   /** Most people the group can be: capped by the seats left. */
   const maxGroup = $derived(Math.max(1, Math.min(MAX_FRIENDS_GROUP, sec ? seatsLeftNow(sec) : MAX_FRIENDS_GROUP)));
   const limitNote = $derived(sec ? groupLimitNote(seatsLeftNow(sec), row.group, seatsPhrase(sec)) : '');
   const skip = $derived(bid === 0);
+  /** "Below Safe" when the balance cut this bid under the style's bid (calibrated only). */
+  const below = $derived(issue || none ? '' : belowStyle(target, bid, fullBid, capMode));
+  /** The row's "?" text: the default one explains a chance level, which a named style is not. */
+  const tipLines = $derived.by(() => {
+    const style = styleName(target);
+    if (!style) return undefined;
+    return [
+      'We replay this window thousands of times with random bidders, using what people bid on this course and instructor (where available) in past terms.',
+      below ? `This bid is below the ${style} bid because your balance does not stretch. The chance shown is for this bid. It is an estimate, not a guarantee.` : `This is the ${style} bid. It is an estimate, not a guarantee.`,
+    ];
+  });
+  /** Why this forecast deserves less trust (one seat only, a late window), as on the course page; only for a row that is bid on. */
+  const reasons = $derived(!issue && !none && sec && bid !== null && bid > 0 && seatsLeftNow(sec) > 0 ? rowLowConfidence(seatsLeftNow(sec), win, windowFlagged) : []);
   const hidden = $derived(hiddenSections(course?.sectionsNow ?? [], row.sectionId, avoid));
   const sections = $derived(
     orderSections((course?.sectionsNow ?? []).filter((s) => s.id === row.sectionId || !slotsOf(s).some((x) => avoid.includes(x)))),
@@ -92,13 +110,19 @@
         <span class="lab">Bid</span> <b class:busy>{eS(bid)}</b>{#if row.group > 1} <span class="lab">each</span>{/if} <span class="arrow" aria-hidden="true">→</span>
         <span class="lab">{aboutPctParts(p ?? 0)[0]}</span><b class="tint" class:busy style="background: {chanceTint(p ?? 0)}">{aboutPctParts(p ?? 0)[1]}</b>
         <span class="lab">{row.group > 1 ? `chance all ${row.group}` : 'chance'}</span>
-        <InfoTip />
+        <InfoTip lines={tipLines} />
       {/if}
     </div>
     </div>
   </div>
-  {#if reason || clashes.length}
+  {#if below || reasons.length || reason || clashes.length}
     <div class="notes">
+      {#if below || reasons.length}
+        <p class="tags">
+          {#if below}<span class="tag">{below}</span>{/if}
+          {#if reasons.length}<span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons)} /></span>{/if}
+        </p>
+      {/if}
       {#if reason}<p class="why">{reason}</p>{/if}
       {#each clashes as c (c)}<p class="clash">{c}</p>{/each}
     </div>
@@ -144,6 +168,9 @@
   .notes { display: grid; gap: var(--s1); padding-top: var(--s1); min-width: 0; }
   .notes p { margin: 0; font-size: 14px; }
   .why { color: var(--muted); }
+  .tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); }
+  .lowc { display: inline-flex; align-items: center; gap: var(--s2); }
+  .tag { display: inline-flex; align-items: center; min-height: 26px; padding: 0 var(--s2); white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 4px; }
   .clash { padding-left: var(--s3); border-left: 3px solid var(--danger); color: var(--text); font-weight: 600; }
   .calc { color: var(--muted); }
   /* Disabled stepper: muted text on the page colour (at least 4.5:1), not faded by opacity. */

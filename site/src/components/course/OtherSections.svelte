@@ -2,7 +2,7 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import type { Section } from '../../lib/data/types';
-  import { recommendBid } from '../../lib/sim';
+  import { bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import type { ForecastCtx } from './forecast-ctx';
   import SeatDelta from './SeatDelta.svelte';
   import { APPROX_NOTE, fullText, SEATS_HELP_HREF, seatsLeftNow, seatsOf } from '../../lib/data/seats';
@@ -15,7 +15,7 @@
   const SHOWN = 7;
 
   type Key = 'section' | 'instructor' | 'time' | 'seats' | 'chance' | 'bid';
-  type Row = { s: Section; time: string; chance: number | null; bid: number | null };
+  type Row = { s: Section; time: string; chance: number | null; bid: number | null; low: boolean };
   let sims = $state.raw<Map<string, { pFill: number; bid: number } | null> | null>(null);
   let all = $state(false);
   let key = $state<Key>('bid');
@@ -34,7 +34,7 @@
     const jobs = list.map((s) => simSection(s, w, g));
     Promise.all(jobs.map((j) => j ?? Promise.resolve(null))).then((rs) => {
       if (my !== token) return;
-      sims = new Map(list.map((s, i) => [s.classNumber, rs[i] ? { pFill: rs[i]!.pFill, bid: recommendBid(rs[i]!, t) } : null]));
+      sims = new Map(list.map((s, i) => [s.classNumber, rs[i] ? { pFill: rs[i]!.pFill, bid: suggestBid(rs[i]!, t) } : null]));
     });
   });
 
@@ -47,6 +47,7 @@
       time: formatSlot(s.meetings) || 'Time not set',
       chance: m.get(s.classNumber)?.pFill ?? null,
       bid: m.get(s.classNumber)?.bid ?? null,
+      low: rowLowConfidence(seatsLeftNow(s), win, true).length > 0,
     }));
     const val = (r: Row): number | string | null =>
       key === 'section' ? r.s.section : key === 'instructor' ? r.s.instructor || 'TBA' : key === 'time' ? r.time : key === 'seats' ? seatsLeftNow(r.s) : key === 'chance' ? r.chance : r.bid;
@@ -60,6 +61,8 @@
       return dir * c || natural(a.s.section, b.s.section);
     });
   });
+  const style = $derived(bidCalibrated() ? presetFor(target) : null);
+  const bidHead = $derived(style ? `${style.label} bid` : `Bid for ${pct(target)}`);
   const shown = $derived(all ? rows : rows.slice(0, SHOWN));
 
   function sortBy(k: Key) {
@@ -92,7 +95,7 @@
         <div class="tr th" role="row">
           {#each cols as c (c.k)}
             <span role="columnheader" class={c.cls} aria-sort={aria(c.k)}>
-              <button type="button" class="sort" class:on={key === c.k} onclick={() => sortBy(c.k)}>{c.k === 'bid' ? `Bid for ${pct(target)}` : c.l}{#if key === c.k}<i aria-hidden="true">{dir === 1 ? '▲' : '▼'}</i>{/if}</button>
+              <button type="button" class="sort" class:on={key === c.k} onclick={() => sortBy(c.k)}>{c.k === 'bid' ? bidHead : c.l}{#if key === c.k}<i aria-hidden="true">{dir === 1 ? '▲' : '▼'}</i>{/if}</button>
             </span>
           {/each}
         </div>
@@ -103,7 +106,7 @@
             <span role="cell" class="tm num">{r.time}</span>
             <span role="cell" class="r num">{#if seatsLeftNow(r.s) <= 0}<b class="badge">{fullText(r.s)}</b>{:else}{#if seatsOf(r.s).source === 'approx'}<a class="approx" href={SEATS_HELP_HREF} title={APPROX_NOTE} aria-label={APPROX_NOTE}>≈</a>{/if}{seatsLeftNow(r.s)}{/if}<SeatDelta section={r.s} /></span>
             <span role="cell" class="r num">{r.chance === null ? '—' : pct(r.chance)}</span>
-            <span role="cell" class="r num">{#if r.bid === null}—{:else}<b>{eS(r.bid)}</b>{/if}</span>
+            <span role="cell" class="r num">{#if r.bid === null}—{:else}<b>{eS(r.bid)}</b>{#if r.low}<span class="lc">Low confidence</span>{/if}{/if}</span>
           </div>
         {/each}
       </div>
@@ -134,6 +137,7 @@
   .sel { min-height: 32px; padding: 0 var(--s2); font-size: 14px; font-weight: 600; }
   .approx { color: var(--muted); margin-right: 2px; text-decoration: none; cursor: help; }
   .badge { display: inline-block; padding: 1px 6px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 4px; }
+  .lc { display: block; font-size: 13px; line-height: 1.2; color: var(--muted); white-space: nowrap; }
   .more { justify-self: start; min-height: 36px; padding: 0 var(--s3); font-size: 14px; }
   @media (max-width: 640px) {
     .tr { grid-template-columns: 52px minmax(0, 1fr) 70px 90px; }

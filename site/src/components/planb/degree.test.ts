@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { groupBlocks, isTrackBlock, leftText, parseSaved, secondOptions, splitSecond, toSelection } from './degree';
 import { group, loaded, view } from '../../lib/gradreq/fixtures';
 import type { Block, GradIndex } from '../../lib/gradreq';
+
+// These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
+vi.mock('../../lib/data/bidLevels', () => ({ bidLevels: () => null }));
+
 
 const INTAKE = 'AY2025/26';
 const index: GradIndex = {

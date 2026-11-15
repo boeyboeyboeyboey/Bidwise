@@ -2,10 +2,13 @@
 // Only the figures the planner and the course page already show: no history rows, no scan internals.
 import type { Meeting, Section } from '../data/types';
 import { fullText, seatsOf, type SeatSource } from '../data/seats';
+import { bidCalibrated, bidPresets } from '../sim/presets';
 
 export const REPORT_CREDIT = 'Data: SMU BOSS public bidding results and seat availability, compiled by Bidwise';
 export const REPORT_DISCLAIMER = 'Forecasts are estimates, not guarantees. Check BOSS before you bid.';
-export const BID_TARGETS = [0.8, 0.9, 0.95] as const;
+
+/** Bid columns follow the presets: 80 / 90 / 95% chance, or Cheap / Balanced / Safe when calibrated. */
+export const BID_TARGETS = bidPresets().map((p) => p.level);
 
 export interface ReportRow {
   course: string;
@@ -18,8 +21,8 @@ export interface ReportRow {
   window: string;
   seats: number;
   seatsBasis: SeatSource;
-  /** Bid in cents for a 80 / 90 / 95% chance of a seat, per person; null when there is no forecast. */
-  bids: Record<(typeof BID_TARGETS)[number], number | null>;
+  /** Bid in cents per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe), per person; null when there is no forecast. */
+  bids: Record<number, number | null>;
   note: string;
   /** Planner only. */
   priority?: string;
@@ -90,9 +93,7 @@ const COLUMNS: { head: string; plan: boolean; get: (r: ReportRow) => Cell }[] = 
   { head: 'Seats basis', plan: false, get: (r) => BASIS_TEXT[r.seatsBasis] },
   { head: 'Priority', plan: true, get: (r) => r.priority ?? '' },
   { head: 'Group size', plan: true, get: (r) => r.group },
-  { head: 'Bid for 80% chance (e$)', plan: false, get: (r) => cents(r.bids[0.8]) },
-  { head: 'Bid for 90% chance (e$)', plan: false, get: (r) => cents(r.bids[0.9]) },
-  { head: 'Bid for 95% chance (e$)', plan: false, get: (r) => cents(r.bids[0.95]) },
+  ...bidPresets().map((p) => ({ head: bidCalibrated() ? `${p.label} bid (e$)` : `Bid for ${p.label} chance (e$)`, plan: false, get: (r: ReportRow) => cents(r.bids[p.level]) })),
   { head: 'Plan bid (e$)', plan: true, get: (r) => cents(r.planBidCents) },
   { head: 'Chance at plan bid', plan: true, get: (r) => r.planChance ?? '' },
   { head: 'Why this bid', plan: true, get: (r) => r.reason ?? '' },
@@ -164,7 +165,7 @@ export function sectionFacts(code: string, title: string, s: Section): Pick<Repo
   };
 }
 
-export const NO_BIDS: ReportRow['bids'] = { 0.8: null, 0.9: null, 0.95: null };
+export const NO_BIDS: ReportRow['bids'] = Object.fromEntries(BID_TARGETS.map((t) => [t, null]));
 
 /** Note for a section on the course page: why it has no bid figures, or '' when it has them. */
 export function courseNote(s: Section, hasForecast: boolean): string {

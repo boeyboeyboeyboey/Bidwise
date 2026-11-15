@@ -6,12 +6,14 @@
   import { fetchCourse } from '../../lib/data/client';
   import { orderSections, type RowBid } from './sections';
   import { anyApprox, APPROX_NOTE, latestScan, scanTimeText, seatsLeftNow } from '../../lib/data/seats';
-  import { pInAt, recommendBid, type SimResult } from '../../lib/sim';
+  import { pInAt, type SimResult } from '../../lib/sim';
+  import { DEFAULT_TARGET, TARGETS, bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
+  import { styleMeaning } from './bidStyle';
   import { effectiveWindow } from '../../lib/sim/forecast';
   import { liveWindow } from '../../lib/data/window';
   import { getChosenWindow, onWindowChange, setChosenWindow } from '../../lib/state';
   import { eS, pct } from './fmt';
-  import { BID_TARGETS, NO_BIDS, buildReportCsv, courseNote, reportFileName, sectionFacts, sgtStamp, type ReportRow } from '../../lib/report/csv';
+  import { NO_BIDS, buildReportCsv, courseNote, reportFileName, sectionFacts, sgtStamp, type ReportRow } from '../../lib/report/csv';
   import { downloadCsv } from '../../lib/report/download';
   import { simSection } from './sectionSim';
   import SectionCard from './SectionCard.svelte';
@@ -39,7 +41,7 @@
   // The bidding window chosen on this site; null = the open window.
   let chosen = $state<string | null>(null);
   // The chance the suggested bids aim for. Shared by every row and the detail.
-  let target = $state(0.9);
+  let target = $state<number>(DEFAULT_TARGET);
   // This term's results for each class, from the latest window with results.
   const latestBy = $derived.by(() => {
     const m = new Map<string, HistoryRow>();
@@ -103,12 +105,15 @@
     if (acc.size) sims = new Map(acc);
   });
 
+  // Rows are tagged for the 1-seat reason only: a late window is already said by the forecast panel's headline tag.
   const bids = $derived.by(() => {
     const out = new Map<string, RowBid>();
     for (const [cn, r] of sims) {
       if (!r) continue;
-      const cents = recommendBid(r, target);
-      out.set(cn, { cents, p: pInAt(r, cents) });
+      const cents = suggestBid(r, target);
+      const s = withForecast?.get(cn);
+      const win = s ? effectiveWindow(chosen, currentName, forecastMeta.windows.filter((w) => !!s.forecast?.[w])) : '';
+      out.set(cn, { cents, p: pInAt(r, cents), low: !!s && rowLowConfidence(seatsLeftNow(s), win, true).length > 0 });
     }
     return out;
   });
@@ -125,6 +130,8 @@
     }
     return id;
   });
+  // The selected style's name, when the bids come from the named presets (null otherwise).
+  const style = $derived(bidCalibrated() ? presetFor(target) : null);
   const bestSection = $derived(ordered.find((s) => s.id === bestId));
   const bestBid = $derived(bestSection ? (bids.get(bestSection.classNumber) ?? null) : null);
   const openSections = $derived(ordered.filter((s) => seatsLeftNow(s) > 0));
@@ -274,7 +281,7 @@
           const win = effectiveWindow(chosen, currentName, wins);
           const job = seatsLeftNow(s) > 0 ? simSection(s, win, 1) : null;
           const r = job ? await job : null;
-          const bids = r ? (Object.fromEntries(BID_TARGETS.map((t) => [t, recommendBid(r, t)])) as ReportRow['bids']) : NO_BIDS;
+          const bids = r ? (Object.fromEntries(TARGETS.map((t) => [t, suggestBid(r, t)])) as ReportRow['bids']) : NO_BIDS;
           return { ...sectionFacts(code, title, s), window: wins.length ? win : '', bids, note: courseNote(s, wins.length > 0) };
         }),
       );
@@ -335,7 +342,7 @@
       </label>
       <p class="disc" role="note">{SWAP_DISCLAIMER}</p>
     {/if}
-    <p class="sortnote">{#if scanText}<span>Seats as of {scanText}</span>{/if}{#if !swapping}<InfoTip label="About these bids and seat counts" lines={[`Open sections first. Bids are for 1 person, aiming for about a ${pct(target)} chance of a seat.`, ...(approxAny ? [`Seat counts marked “about” are estimates. ${APPROX_NOTE}`] : [])]} />{/if}</p>
+    <p class="sortnote">{#if scanText}<span>Seats as of {scanText}</span>{/if}{#if !swapping}<InfoTip label="About these bids and seat counts" lines={[style ? `Open sections first. ${styleMeaning(style)}` : `Open sections first. Bids are for 1 person, aiming for about a ${pct(target)} chance of a seat.`, ...(approxAny ? [`Seat counts marked “about” are estimates. ${APPROX_NOTE}`] : [])]} />{/if}</p>
     {#if approxAny}<p class="sortnote">Seats marked ≈ are estimates.</p>{/if}
     {#if !swapping && bestSection && bestBid}
       <button type="button" class="btn best" aria-label={`Show ${bestSection.section}, lowest bid ${eS(bestBid.cents)}, ${pct(bestBid.p)} chance`} onclick={() => choose(bestSection.id, true)}>
@@ -348,7 +355,7 @@
       <span>Professor</span>
       <span>Day and time</span>
       <span>Seats</span>
-      <span class="r">{swapping ? 'Swap chance' : 'Bid → chance'}</span>
+      <span class="r">{swapping ? 'Swap chance' : style ? `${style.label} bid → chance` : 'Bid → chance'}</span>
     </div>
     <ul bind:this={listEl} class:more-below={moreBelow} onscroll={measure}>
       {#each rows as s (s.id)}

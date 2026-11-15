@@ -1,0 +1,110 @@
+// Named bid presets and the bid helpers every screen shares (no DOM, no worker), so they can be unit tested.
+// With the distribution calibration active the three presets are Cheap / Balanced / Safe at the levels measured on the
+// held-out term; without it they are today's 80 / 90 / 95% chances, and every helper behaves exactly as before.
+import forecastMeta from '../../data/real/forecast-meta.json';
+import { bidLevels } from '../data/bidLevels';
+import type { ForecastMeta } from '../data/types';
+import { pInAt, recommendBid, type SimResult } from './index';
+
+export interface BidPreset {
+  key: string;
+  label: string;
+  /** Chance level the bid is read at, 0..1. */
+  level: number;
+  /** Share of sections that filled where a bid at this level still lost (calibrated presets only). */
+  lossFilled?: number | null;
+}
+
+const levels = bidLevels(forecastMeta as unknown as ForecastMeta);
+
+const PRESETS: readonly BidPreset[] = levels
+  ? [
+      { key: 'cheap', label: 'Cheap', level: levels.cheap.level, lossFilled: levels.cheap.lossFilled },
+      { key: 'balanced', label: 'Balanced', level: levels.balanced.level, lossFilled: levels.balanced.lossFilled },
+      { key: 'safe', label: 'Safe', level: levels.safe.level, lossFilled: levels.safe.lossFilled },
+    ]
+  : [
+      { key: 't80', label: '80%', level: 0.8 },
+      { key: 't90', label: '90%', level: 0.9 },
+      { key: 't95', label: '95%', level: 0.95 },
+    ];
+
+/** True when the presets come from the calibrated backtest levels. */
+export const bidCalibrated = (): boolean => levels !== null;
+
+/** The three presets, lowest chance first. */
+export const bidPresets = (): readonly BidPreset[] => PRESETS;
+
+/** The preset levels; the chance choices every screen offers. */
+export const TARGETS: readonly number[] = PRESETS.map((p) => p.level);
+
+/** Default chance: Safe when calibrated, else 90%. */
+export const DEFAULT_TARGET: number = levels ? PRESETS[2].level : 0.9;
+
+export const presetFor = (level: number): BidPreset | null => PRESETS.find((p) => p.level === level) ?? null;
+
+/** The style name ("Safe") for a chance level; null when the presets are not calibrated (they are plain percentages then). */
+export const styleName = (level: number): string | null => (levels ? (presetFor(level)?.label ?? null) : null);
+
+/** True when a cheaper style than `level` exists (calibrated only): the advice "try a cheaper style" has somewhere to go. */
+export const hasCheaperStyle = (level: number): boolean => !!levels && PRESETS.findIndex((p) => p.level === level) > 0;
+
+/** A stored chance if it is one of the current levels, else the default (old saves hold 0.8 / 0.9 / 0.95). */
+export const normaliseTarget = (stored: unknown): number =>
+  typeof stored === 'number' && TARGETS.includes(stored) ? stored : DEFAULT_TARGET;
+
+/**
+ * What to store for a chosen chance level. Calibrated: the preset key ('cheap' | 'balanced' | 'safe'), because Cheap's level (0.90)
+ * equals an old saved "90%" and a number could not tell the two apart. Not calibrated: the number, as before.
+ */
+export const targetToStored = (target: number): number | string => (levels ? (presetFor(target) ?? PRESETS[2]).key : target);
+
+/**
+ * The chance level for a stored value. Calibrated: only a preset key counts; any number is a legacy save and gives `fallback`
+ * (the default preset unless the caller names another). Not calibrated: a current level is kept, anything else gives `fallback`.
+ */
+export function targetFromStored(stored: unknown, fallback: number = DEFAULT_TARGET): number {
+  if (levels) return (typeof stored === 'string' ? PRESETS.find((p) => p.key === stored)?.level : undefined) ?? fallback;
+  return typeof stored === 'number' && TARGETS.includes(stored) ? stored : fallback;
+}
+
+/**
+ * The bid every screen suggests for `target`. Calibrated: a bid above the minimum goes up to the next whole e$ plus one
+ * cent, since about 30% of real clearing bids are whole e$ amounts. Not calibrated: exactly recommendBid.
+ */
+export function suggestBid(result: SimResult, target: number): number {
+  const bid = recommendBid(result, target);
+  if (!levels) return bid;
+  const min = result.histogram.startCents;
+  if (bid <= (min % 2 === 0 ? min + 1 : min)) return bid;
+  return Math.ceil((bid - 1) / 100) * 100 + 1;
+}
+
+/** Chance the bid wins given the section fills; null when it almost never fills (the number would mean nothing). */
+export function chanceIfFills(result: SimResult, bidCents: number): number | null {
+  const f = result.pFill;
+  if (!(f >= 0.02)) return null;
+  // rounded so float noise (7e-17) at the lowest bids reads as exactly 0
+  return Math.min(1, Math.max(0, Math.round(((pInAt(result, bidCents) - (1 - f)) / f) * 1e9) / 1e9));
+}
+
+export type LowConfidenceReason = 'oneSeat' | 'lateWindow';
+
+/** The late windows: few seats and few bids, so prices are harder to predict. */
+export const isLateWindow = (windowLabel: string): boolean => windowLabel === 'Round 2 Window 3' || windowLabel.startsWith('Round 2A');
+
+/** Why a forecast deserves less trust: one seat only, or a window the backtests found least reliable. */
+export function lowConfidence(seats: number, windowLabel: string): LowConfidenceReason[] {
+  const out: LowConfidenceReason[] = [];
+  if (seats === 1) out.push('oneSeat');
+  if (isLateWindow(windowLabel)) out.push('lateWindow');
+  return out;
+}
+
+/**
+ * Why a row's forecast deserves less trust. A window whose own tag already says it is low confidence (`windowTagged`) is not
+ * repeated on every row: only the 1-seat reason stays there.
+ */
+export function rowLowConfidence(seats: number, windowLabel: string, windowTagged: boolean): LowConfidenceReason[] {
+  return lowConfidence(seats, windowLabel).filter((r) => !(windowTagged && r === 'lateWindow'));
+}

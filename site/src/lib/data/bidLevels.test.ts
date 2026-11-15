@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { bidLevels } from './bidLevels';
 import type { BidLevel } from './types';
+
+// This file tests the real loader, so it opts out of the forced-calibrated setup mock (src/test-setup.ts).
+vi.unmock('./bidLevels');
 
 const lv = (level: number, lossFilled: number | null, reached = true): BidLevel => ({ level, lossFilled, lossAll: 0.05, winAboveFloor: 0.8, meanOverpay: 3.2, reached });
 const meta = {

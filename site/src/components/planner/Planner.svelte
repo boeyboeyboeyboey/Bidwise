@@ -4,8 +4,9 @@
   import { fetchCourse } from '../../lib/data/client';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
-  import { recommendBid } from '../../lib/sim';
-  import { TARGETS } from '../../lib/sim/forecast';
+  import { TARGETS, bidCalibrated, bidPresets, suggestBid, targetToStored } from '../../lib/sim/forecast';
+  import { lowConfidenceLines, styleTipLines } from '../course/bidStyle';
+  import { isLateWindow } from '../../lib/sim/presets';
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
   import { liveWindow } from '../../lib/data/window';
   import { BALANCE_KEY, getBalanceText, getChosenWindow, getPlan, onPlanChange, onWindowChange, savePlan, setBalanceText, setChosenWindow } from '../../lib/state';
@@ -45,7 +46,14 @@
   /** The student's balance in cents, or null while empty: then bids are shown uncut, with no fit-to-balance logic. */
   const balanceCents = $derived(bal.cents);
   const balanceBad = $derived(bal.bad);
-  /** Chance you want, as on the course page: 80, 90 or 95%. */
+  /** Chance level you want, as on the course page: Cheap / Balanced / Safe (calibrated) or 80, 90 or 95%. */
+  const calibrated = bidCalibrated();
+  const presets = bidPresets();
+  // One tag for the window: late round and/or flagged in the backtests. Rows then keep only their own 1-seat reason.
+  const windowHard = $derived(lowConfidence.includes(win));
+  const windowLate = $derived(isLateWindow(win));
+  const windowTagged = $derived(windowHard || windowLate);
+  const styleTip = styleTipLines(presets);
   let target = $state<number>(DEFAULT_TARGET);
   let avoid = $state<string[]>([]);
   let ready = $state(false);
@@ -180,7 +188,7 @@
   const pending = $derived(okRows.length > 0 && (!allSimmed || (needsFit && fitting)));
   const fullBidOf = (row: PlanRowState) => {
     const c = curves[simKey(row)];
-    return c ? recommendBid(c, target) : null;
+    return c ? suggestBid(c, target) : null;
   };
   const over = $derived(hasRequired && balanceCents !== null && overBalance(reqNeedCents, balanceCents));
   const hopeless = $derived(!!result && !pending && result.pAll < 0.05);
@@ -266,7 +274,7 @@
 
   const snap = (): StoredPlan => ({
     b: balanceCents,
-    s: target,
+    s: targetToStored(target),
     w: win === currentWindow ? '' : win,
     a: avoid,
     r: rows.filter((r) => r.sectionId).map((r) => ({ c: r.course, i: r.sectionId, g: r.group, o: r.role, l: r.oneOf })),
@@ -528,7 +536,7 @@
         target,
         reason: reasonOf(r, i),
         clashes: clashLines(clashPairs, r.id),
-        bids: { 0.8: c ? recommendBid(c, 0.8) : null, 0.9: c ? recommendBid(c, 0.9) : null, 0.95: c ? recommendBid(c, 0.95) : null },
+        bids: Object.fromEntries(TARGETS.map((t) => [t, c ? suggestBid(c, t) : null])),
       });
     });
     const shown = !!result && !overBudget;
@@ -612,10 +620,10 @@
         </span>
       </label>
       <div class="aimbox" role="group" aria-labelledby="aim-h">
-        <span class="lab" id="aim-h">Chance you want</span>
+        <span class="aimhead"><span class="lab" id="aim-h">{calibrated ? 'Bid style' : 'Chance you want'}</span>{#if calibrated && styleTip.length}<InfoTip label="About the bid styles" lines={styleTip} />{/if}</span>
         <div class="seg aim">
-          {#each TARGETS as t}
-            <button type="button" class="num" aria-pressed={target === t} onclick={() => (target = t)}>{pct(t)}</button>
+          {#each presets as pr (pr.key)}
+            <button type="button" class:num={!calibrated} aria-pressed={target === pr.level} onclick={() => (target = pr.level)}>{calibrated ? pr.label : pct(pr.level)}</button>
           {/each}
         </div>
       </div>
@@ -623,8 +631,8 @@
       {#if upcoming && win === currentWindow}
         <span class="tag">Upcoming window</span>
       {/if}
-      {#if lowConfidence.includes(win)}
-        <span class="tag" title="The backtest for this window was less reliable: fewer sections filled, or the ranges missed too often.">Low confidence</span>
+      {#if windowTagged}
+        <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(windowLate ? ['lateWindow'] : [], windowHard)} /></span>
       {/if}
       {#if rows.length}
         <div class="tools">
@@ -680,6 +688,8 @@
               fullBid={fullBidOf(row)}
               capMode={needsFit}
               {target}
+              {win}
+              windowFlagged={windowTagged}
               canPick={rows.length >= 2}
               covered={coveredBy(row)}
               reason={reasonOf(row, i)}
@@ -823,9 +833,11 @@
   .ctl { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2) var(--s4); min-width: 0; max-width: 100%; }
   .budget, .aimbox { display: grid; gap: var(--s1); min-width: 0; }
   .budget .inp { width: 140px; }
+  .aimhead { display: flex; align-items: center; gap: var(--s2); }
   .aimbox .aim { display: flex; }
   .aimbox .aim > button { flex: 1 1 0; min-height: 44px; padding: 0 var(--s3); font-size: 15px; }
   @media (min-width: 768px) { .budget .inp { width: 170px; } .setup { align-items: flex-end; } }
+  .lowc { display: inline-flex; align-items: center; gap: var(--s2); }
   .tag { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--s2); font-size: 13px; font-weight: 600; background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 2px; }
   .err, .warn { margin: 0; font-size: 14px; }
   .err { color: var(--danger); }

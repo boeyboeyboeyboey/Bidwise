@@ -1,7 +1,7 @@
 // Pure helpers for Plan B's "Match my degree" part: option lists for the selects, grouping and wording of requirement
 // blocks, and the saved-on-this-device record. No DOM, no fetch.
 import { findDegree } from '../../lib/gradreq';
-import { TARGETS } from '../../lib/sim/forecast';
+import { TARGETS, targetFromStored } from '../../lib/sim/forecast';
 import type { Block, GradIndex, IndexDegree, IndexTrack, Intake, LoadedView, Selection } from '../../lib/gradreq';
 
 export interface Option { value: string; label: string }
@@ -164,6 +164,6 @@ export function parseSaved(raw: string | null): Saved {
   if (Array.isArray(r.completed)) out.completed = [...new Set(r.completed.filter((c): c is string => typeof c === 'string' && c.length < 20))].slice(0, 300);
   if (typeof r.left === 'string' && r.left.length < 12) out.left = r.left;
   if (r.courses === 2 || r.courses === 3) out.courses = r.courses;
-  if ((TARGETS as readonly number[]).includes(r.target as number)) out.target = r.target as number;
+  out.target = targetFromStored(r.target, TARGETS[0]);
   return out;
 }

@@ -1,10 +1,13 @@
 // Pure helpers for the section forecast panel (no DOM, no worker), so they can be unit tested.
 import type { ForecastWindow, ForecastWindowMeta, SimParams } from '../data/types';
-import { recommendBid, type SimResult } from './index';
+import type { SimResult } from './index';
+import { suggestBid } from './presets';
+
+export { TARGETS, DEFAULT_TARGET, bidPresets, bidCalibrated, presetFor, normaliseTarget, targetToStored, targetFromStored, suggestBid, chanceIfFills, lowConfidence } from './presets';
+export type { BidPreset, LowConfidenceReason } from './presets';
 
 export const MAX_FRIENDS_GROUP = 6;
 export const WONT_FILL_BELOW = 0.3;
-export const TARGETS = [0.8, 0.9, 0.95] as const;
 /** Simulated bidding windows and random seed behind the section forecast. */
 export const FORECAST_RUNS = 20000;
 export const FORECAST_SEED = 12345;
@@ -53,7 +56,7 @@ export function cutoffRange(result: SimResult): { lo: number; p50: number; hi: n
 
 /** Extra e$ (cents) the recommended bid grows by when one more friend joins the group. Never negative. */
 export function marginalPerFriend(atG: SimResult, atGPlusOne: SimResult, targetP: number): number {
-  return Math.max(0, recommendBid(atGPlusOne, targetP) - recommendBid(atG, targetP));
+  return Math.max(0, suggestBid(atGPlusOne, targetP) - suggestBid(atG, targetP));
 }
 
 export const isLowConfidence = (m: ForecastWindowMeta | undefined): boolean => !m || m.confidence === 'low';

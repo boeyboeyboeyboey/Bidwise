@@ -13,8 +13,12 @@
     LEGACY_STORE_KEY, STORE_KEY, groupBlocks, intakesFor, isTrackBlock, leftText as blockLeftText, majorOptions, parseSaved, secondOptions,
     toSelection, trackOptions,
   } from './degree';
+  import { bidCalibrated, bidPresets, targetToStored } from '../../lib/sim/forecast';
+  import { hasCheaperStyle, styleName } from '../../lib/sim/presets';
+  import { styleTipLines } from '../course/bidStyle';
+  import InfoTip from '../ui/InfoTip.svelte';
   import {
-    ALL_TAB, MIN_BID_CENTS, OTHER_TAB, TARGETS, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
+    ALL_TAB, MIN_BID_CENTS, OTHER_TAB, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
     moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, reserveCap, resolveTab, tabKeyTarget, withNotes,
     type CoursesNeeded, type PlanRow,
   } from './logic';
@@ -47,7 +51,7 @@
   let completed = $state<string[]>(saved.completed);
 
   $effect(() => {
-    const text = JSON.stringify({ school, degree, intake, major, track, second, completed: [...completed], left: leftText, courses, target });
+    const text = JSON.stringify({ school, degree, intake, major, track, second, completed: [...completed], left: leftText, courses, target: targetToStored(target) });
     try {
       localStorage.setItem(STORE_KEY, text);
     } catch {
@@ -286,14 +290,21 @@
 
   /** Each course once, in the first block (in display order) that has it. */
   const deduped = $derived(dedupeBlocks(groups.flatMap((g) => g.blocks).map((b) => ({ key: keyOf(b), rows: blockRows[keyOf(b)] ?? [] }))));
-  const chanceText = $derived(pct(target));
+  const calibrated = bidCalibrated();
+  const presets = bidPresets();
+  const styleTip = styleTipLines(presets);
+  const style = $derived(styleName(target));
+  /** The row label and the sentences below name the style when calibrated, else the chance ("Bid for 80%"). */
+  const bidLabel = $derived(style ? `${style} bid` : `Bid for ${pct(target)}`);
+  const atText = $derived(style ? `a ${style} bid` : pct(target));
   const otherList = $derived(allRows && derived ? otherRows(allRows, blockCodes(listBlocks)) : []);
   const noneText = $derived(
     leftCents === null || capCents === null
-      ? `No open sections at ${chanceText}.`
-      : `Nothing fits ${eText(leftCents)} left for ${courses} ${courses === 1 ? 'course' : 'courses'} (up to ${eText(capCents)} each) at ${chanceText}.`,
+      ? `No open sections at ${atText}.`
+      : `Nothing fits ${eText(leftCents)} left for ${courses} ${courses === 1 ? 'course' : 'courses'} (up to ${eText(capCents)} each) at ${atText}.`,
   );
-  const noneAdvice = $derived((capCents === null ? '' : ' Try a lower chance or fewer courses.') + (noFinal ? ' Or untick the final exam filter.' : ''));
+  const lowerAdvice = $derived(style ? (hasCheaperStyle(target) ? 'a cheaper bid style' : null) : 'a lower chance');
+  const noneAdvice = $derived((capCents === null ? '' : ` Try ${lowerAdvice ? `${lowerAdvice} or fewer courses` : 'fewer courses'}.`) + (noFinal ? ' Or untick the final exam filter.' : ''));
 
   // Requirement tabs: only with a degree. A block tab lists every section of that block (no dedupe), cheapest first.
   const tabBlocks = $derived(groups.flatMap((g) => g.blocks.map((b) => ({ b, heading: g.label }))).filter((x) => listBlocks.includes(x.b)));
@@ -347,11 +358,12 @@
         </div>
       </div>
 
-      <div class="aimrow" role="group" aria-label="Chance you want">
-        <span class="lbl aimlab" aria-hidden="true">Chance you want:</span>
+      <div class="aimrow" role="group" aria-label={calibrated ? 'Bid style' : 'Chance you want'}>
+        <span class="lbl aimlab" aria-hidden="true">{calibrated ? 'Bid style' : 'Chance you want:'}</span>
+        {#if calibrated && styleTip.length}<InfoTip label="About the bid styles" lines={styleTip} />{/if}
         <div class="seg aim">
-          {#each TARGETS as t (t)}
-            <button type="button" class="num" aria-pressed={target === t} onclick={() => (target = t)}>{pct(t)}</button>
+          {#each presets as pr (pr.key)}
+            <button type="button" class:num={!calibrated} aria-pressed={target === pr.level} onclick={() => (target = pr.level)}>{calibrated ? pr.label : pct(pr.level)}</button>
           {/each}
         </div>
       </div>
@@ -457,7 +469,7 @@
             <h3>Courses you can afford</h3>
             <ul class="cands">
               {#each expanded.all ? allRows : allRows.slice(0, TOP_LIST) as r (r.section.classNumber)}
-                <li><SectionRow row={r} chance={chanceText} /></li>
+                <li><SectionRow row={r} bidLabel={bidLabel} /></li>
               {/each}
             </ul>
             {#if allRows.length > TOP_LIST}
@@ -504,7 +516,7 @@
                         {#if rows.length > 0}
                           <ul class="cands">
                             {#each expanded[k] ? rows : rows.slice(0, TOP_PER_BLOCK) as r (r.section.classNumber)}
-                              <li><SectionRow row={r} chance={chanceText} /></li>
+                              <li><SectionRow row={r} bidLabel={bidLabel} /></li>
                             {/each}
                           </ul>
                           {#if rows.length > TOP_PER_BLOCK}
@@ -523,7 +535,7 @@
                   <h3>Other courses (free electives)</h3>
                   <ul class="cands">
                     {#each expanded.other ? otherList : otherList.slice(0, TOP_LIST) as r (r.section.classNumber)}
-                      <li><SectionRow row={r} chance={chanceText} /></li>
+                      <li><SectionRow row={r} bidLabel={bidLabel} /></li>
                     {/each}
                   </ul>
                   {#if otherList.length > TOP_LIST}
@@ -549,7 +561,7 @@
             {:else if tab === OTHER_TAB}
               <ul class="cands">
                 {#each otherList as r (r.section.classNumber)}
-                  <li><SectionRow row={r} chance={chanceText} /></li>
+                  <li><SectionRow row={r} bidLabel={bidLabel} /></li>
                 {/each}
               </ul>
             {:else if tabBlock}
@@ -561,7 +573,7 @@
                 {:else}
                   <ul class="cands">
                     {#each rows as r (r.section.classNumber)}
-                      <li><SectionRow row={r} chance={chanceText} /></li>
+                      <li><SectionRow row={r} bidLabel={bidLabel} /></li>
                     {/each}
                   </ul>
                 {/if}

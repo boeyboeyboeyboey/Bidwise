@@ -12,4 +12,6 @@ export function orderSections<T extends Pick<Section, 'seatsLeft' | 'section' | 
 export interface RowBid {
   cents: number;
   p: number;
+  /** The forecast deserves less trust (one seat, or a late window); the row says so. */
+  low?: boolean;
 }

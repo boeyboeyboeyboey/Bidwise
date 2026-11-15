@@ -3,8 +3,9 @@
 import type { Meeting, Section } from '../../lib/data/types';
 import { isLikelyFull, seatsLeftNow, seatsOf } from '../../lib/data/seats';
 import type { SimInput } from '../../lib/sim';
-import { pInAt, recommendBid } from '../../lib/sim';
+import { pInAt } from '../../lib/sim';
 import { FORECAST_RUNS, FORECAST_SEED, MAX_FRIENDS_GROUP, TARGETS, clampGroup, toSimParams } from '../../lib/sim/forecast';
+import { DEFAULT_TARGET, bidCalibrated, styleName, suggestBid, targetFromStored, targetToStored } from '../../lib/sim/presets';
 import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
 import { dayText } from '../course/history';
 import { formatSlot } from '../../lib/format/slot';
@@ -180,8 +181,8 @@ export function defaultSection(sections: Section[], taken: string[], avoid: stri
 export interface StoredPlan {
   /** balance, cents; null = none set */
   b: number | null;
-  /** certainty 0..1 */
-  s: number;
+  /** chance you want: 0..1 (not calibrated), or a preset key 'cheap' | 'balanced' | 'safe' (calibrated; an old number there reads as the default) */
+  s: number | string;
   /** window label ('' = current) */
   w: string;
   /** avoided slots ("Mon-08:15"); old "Mon-morning" entries are dropped on decode */
@@ -190,12 +191,18 @@ export interface StoredPlan {
   r: { c: string; i: string; g: number; o: Role; l: string }[];
 }
 
+/** The stored chance: a preset key when calibrated (a number is an old save: default), else a number 0..1. */
+function decodeTarget(v: unknown): number | string {
+  if (bidCalibrated()) return typeof v === 'string' && targetFromStored(v, -1) !== -1 ? v : targetToStored(DEFAULT_TARGET);
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DEFAULT_TARGET;
+}
+
 /** Validates anything read from the URL hash or localStorage; null when it is not a plan. */
 export function decodePlan(raw: unknown): StoredPlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const st = raw as Record<string, unknown>;
   const b = typeof st.b === 'number' && Number.isFinite(st.b) ? Math.min(MAX_BALANCE_CENTS, Math.max(0, Math.round(st.b))) : null;
-  const s = typeof st.s === 'number' && Number.isFinite(st.s) ? Math.min(1, Math.max(0, st.s)) : DEFAULT_TARGET;
+  const s = decodeTarget(st.s);
   const w = typeof st.w === 'string' ? st.w : '';
   const a = Array.isArray(st.a) ? st.a.filter((x): x is string => typeof x === 'string' && isSlot(x)) : [];
   const r: StoredPlan['r'] = [];
@@ -231,10 +238,12 @@ export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'o
 }
 
 /** Chance the student wants, same choices and default as the course page. */
-export const DEFAULT_TARGET: number = 0.9;
+export { DEFAULT_TARGET };
 
-/** The chance option a stored value (0..1) belongs to: the closest of 80/90/95%. Old plans stored other numbers. */
-export function snapTarget(s: number): number {
+/** The chance option a stored value belongs to: the closest of 80/90/95%. Old plans stored other numbers. With calibrated presets only a preset key counts; any number (an old save) becomes the default. */
+export function snapTarget(s: unknown): number {
+  if (bidCalibrated()) return targetFromStored(s);
+  if (typeof s !== 'number' || !Number.isFinite(s)) return DEFAULT_TARGET;
   let best: number = TARGETS[0];
   for (const t of TARGETS) if (Math.abs(t - s) < Math.abs(best - s)) best = t;
   return best;
@@ -271,7 +280,7 @@ function resultOf(items: PlanItem[], bids: number[], ps: number[], balanceCents:
 
 /** Every row bids exactly the course page's recommended bid for the chance `target`. */
 export function bidsAtTarget(items: PlanItem[], target: number, balanceCents: number): PlanResult {
-  const bids = items.map((it) => recommendBid(it.curve, target));
+  const bids = items.map((it) => suggestBid(it.curve, target));
   return resultOf(items, bids, bids.map((b, i) => pInAt(items[i].curve, b)), balanceCents);
 }
 
@@ -283,7 +292,7 @@ export function clampToRecommended(items: PlanItem[], fit: PlanResult, target: n
   const bids: number[] = [];
   const ps: number[] = [];
   for (const it of items) {
-    const full = recommendBid(it.curve, target);
+    const full = suggestBid(it.curve, target);
     const b = fit.bids[it.key] ?? 0;
     if (b > full) {
       bids.push(full);
@@ -327,6 +336,15 @@ export function isCapped(bid: number | null, fullBid: number | null, capMode: bo
 }
 
 /**
+ * "Below Safe": a row whose bid the balance cut under the bid of the style picked. '' when the presets are plain percentages
+ * (the row shows its real chance instead) or the row is not cut. A student who picked Safe must not read a cut bid as Safe.
+ */
+export function belowStyle(target: number, bid: number | null, fullBid: number | null, capMode: boolean): string {
+  const name = styleName(target);
+  return name && isCapped(bid, fullBid, capMode) ? `Below ${name}` : '';
+}
+
+/**
  * BOSS lets a student bid on one section of a course per window, so rows of the same course are alternatives, not
  * extra chances. Of each course only the row with the cheapest recommended bid for `target` is kept (the first on a
  * tie); the others are returned as skipped and must bid e$0 and add no chance.
@@ -337,7 +355,7 @@ export function oneBidPerCourse(items: PlanItem[], target: number): { kept: Plan
   const best = new Map<string, PlanItem>();
   for (const it of items) {
     const cur = best.get(it.courseCode);
-    if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && recommendBid(it.curve, target) < recommendBid(cur.curve, target))) {
+    if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && suggestBid(it.curve, target) < suggestBid(cur.curve, target))) {
       best.set(it.courseCode, it);
     }
   }
@@ -364,7 +382,7 @@ export function biddableItems<T extends { role: Role }>(items: T[], over: boolea
 
 /** Same plan (ignoring row ids and key order)? Used to tell a shared link from the saved plan. */
 export function samePlan(a: StoredPlan, b: StoredPlan): boolean {
-  return JSON.stringify([a.b, Math.round(a.s * 100), a.w, a.a, a.r]) === JSON.stringify([b.b, Math.round(b.s * 100), b.w, b.a, b.r]);
+  return JSON.stringify([a.b, typeof a.s === 'number' ? Math.round(a.s * 100) : a.s, a.w, a.a, a.r]) === JSON.stringify([b.b, typeof b.s === 'number' ? Math.round(b.s * 100) : b.s, b.w, b.a, b.r]);
 }
 
 /**

@@ -3,8 +3,9 @@ import type { Section } from '../data/types';
 import type { Role } from '../sim/planner';
 import type { SimResult } from '../sim';
 import { ISSUE_TEXT, isCapped, type RowIssue } from '../../components/planner/plan';
+import { styleName } from '../sim/presets';
 import { eS, pct } from '../../components/course/fmt';
-import { sectionFacts, type ReportRow, type ReportTotal } from './csv';
+import { NO_BIDS, sectionFacts, type ReportRow, type ReportTotal } from './csv';
 
 export const ROLE_TEXT: Record<Role, string> = { required: 'Must get', oneOf: 'Pick one', optional: 'Nice to have' };
 
@@ -29,9 +30,9 @@ export interface PlanReportInput {
   none: boolean;
   /** The recommended bids add up to more than the balance. */
   capMode: boolean;
-  /** Bid for 80 / 90 / 95% chance at this group size. */
+  /** Bid per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe) at this group size. */
   bids: ReportRow['bids'];
-  /** The chance wanted (0.8, 0.9 or 0.95). */
+  /** The chance level wanted: a preset level (0.8 / 0.9 / 0.95, or Cheap / Balanced / Safe when calibrated). */
   target: number;
   /** Why the plan bids this much (bidReason); '' when there is nothing to say. */
   reason: string;
@@ -59,14 +60,20 @@ export const FEW_RESULTS = 3;
 /**
  * A short line on why this bid, from the row's own forecast: where the cutoff usually lands and how high it can go (whole e$),
  * with a note when few past results back it. '' when the row is not bid on. A section that rarely fills says the minimum bid is
- * enough. (How much the balance cut a bid is shown by the row and the report's note, not here.)
+ * enough, or (calibrated, bid above the minimum) that the style's bid also covers a surprise fill. (How much the balance cut a bid is shown by the row and the report's note, not here.)
  */
 export function bidReason(i: ReasonInput): string {
   if (i.bid === null || i.bid <= 0 || !i.curve) return '';
   const n = i.nObs;
   const few = n === undefined || n >= FEW_RESULTS ? '' : n <= 0 ? 'No past results' : `Only ${n} past ${n === 1 ? 'result' : 'results'}`;
+  // A bid above the minimum next to "minimum likely enough" would contradict itself: say what the extra buys instead.
+  const style = styleName(i.target);
+  const above = i.minBidCents !== undefined && i.bid > i.minBidCents + 1;
+  const covers = style && (i.fullBid === null || i.bid >= i.fullBid) ? style : 'this bid';
   const main = i.curve.pFill < RARELY_FILLS && i.minBidCents !== undefined
-    ? `Rarely fills · minimum ${eS(i.minBidCents)} likely enough`
+    ? above && style
+      ? `Rarely fills · ${covers} also covers a surprise fill`
+      : `Rarely fills · minimum ${eS(i.minBidCents)} likely enough`
     : `Usually clears around ${eD(i.curve.percentilesCents.p50)} · up to ${eD(i.curve.percentilesCents.p90)}`;
   return few ? `${main} · ${few}` : main;
 }
@@ -84,7 +91,10 @@ export function planNote(i: Pick<PlanReportInput, 'issue' | 'bid' | 'p' | 'fullB
     if (i.covered) return `Not bid · ${i.covered} covers it`;
     return i.capMode && need ? need : "Can't win a seat";
   }
-  return isCapped(i.bid, i.fullBid, i.capMode) ? `Cut to fit your balance · a bid for ${pct(i.target)} would be ${eS(i.fullBid as number)} (wanted ${pct(i.target)})` : '';
+  if (!isCapped(i.bid, i.fullBid, i.capMode)) return '';
+  const style = styleName(i.target);
+  if (style) return `Cut to fit your balance · Below ${style} · a ${style} bid would be ${eS(i.fullBid as number)}`;
+  return `Cut to fit your balance · a bid for ${pct(i.target)} would be ${eS(i.fullBid as number)} (wanted ${pct(i.target)})`;
 }
 
 export function planReportRow(i: PlanReportInput): ReportRow {
@@ -92,7 +102,7 @@ export function planReportRow(i: PlanReportInput): ReportRow {
   return {
     ...sectionFacts(i.code, i.title, i.section),
     window: i.window,
-    bids: i.issue ? { 0.8: null, 0.9: null, 0.95: null } : i.bids,
+    bids: i.issue ? NO_BIDS : i.bids,
     note: [planNote(i), ...i.clashes].filter(Boolean).join(' · '),
     priority: i.role === 'oneOf' && i.pickOf ? `${ROLE_TEXT.oneOf} of ${i.pickOf}` : ROLE_TEXT[i.role],
     group: i.group,

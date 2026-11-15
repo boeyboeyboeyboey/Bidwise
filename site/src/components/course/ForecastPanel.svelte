@@ -3,8 +3,10 @@
   import DropChance from './DropChance.svelte';
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
-  import { recommendBid, type SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, clampGroup, effectiveWindow, isLowConfidence } from '../../lib/sim/forecast';
+  import type { SimResult } from '../../lib/sim';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
+  import { pInAt } from '../../lib/sim';
+  import { lowConfidenceLines, styleTipLines } from './bidStyle';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
   import type { ForecastCtx } from './forecast-ctx';
   import OtherSections from './OtherSections.svelte';
@@ -77,8 +79,17 @@
   const sim = $derived(res?.r ?? null);
   // After a window or group change the previous result stays (dimmed, under its own window label) until the new one arrives.
   const stale = $derived(!!res && (res.win !== win || res.group !== group));
-  const rec = $derived(sim ? recommendBid(sim, target) : 0);
+  const rec = $derived(sim ? suggestBid(sim, target) : 0);
   const lowRel = $derived(!soldOut && isLowConfidence(ctx.meta.byWindow[win]));
+  // Calibrated: the chips are the named bid styles, and the headline carries two chances plus the fill chance.
+  const calibrated = bidCalibrated();
+  const presets = bidPresets();
+  const styleTip = styleTipLines(presets);
+  const pNow = $derived(sim ? pInAt(sim, rec) : 0);
+  const ifFills = $derived(sim ? chanceIfFills(sim, rec) : null);
+  // Only a bid above the minimum has an "if it fills" chance worth showing (at the minimum it is certain).
+  const aboveMin = $derived(minBid !== null && rec > minBid + 1);
+  const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win) : []);
 
   // null until the saved plan has been read in the browser, so the server-rendered button does not flip.
   let inPlan = $state<boolean | null>(null);
@@ -91,7 +102,7 @@
   });
 
   // The three aim bids are the same: the minimum bid already gets the seat.
-  const allSame = $derived(!!sim && TARGETS.every((t) => recommendBid(sim!, t) === recommendBid(sim!, TARGETS[0])));
+  const allSame = $derived(!!sim && TARGETS.every((t) => suggestBid(sim!, t) === suggestBid(sim!, TARGETS[0])));
 
   function setGroup(g: number) {
     const c = clampGroup(g);
@@ -112,11 +123,12 @@
 </script>
 
 {#snippet aim()}
-  <div class="aimrow" role="group" aria-label="Chance you want">
-    <span class="lab aimlab" aria-hidden="true">Chance you want:</span>
+  <div class="aimrow" role="group" aria-label={calibrated ? 'Bid style' : 'Chance you want'}>
+    <span class="lab aimlab" aria-hidden="true">{calibrated ? 'Bid style' : 'Chance you want:'}</span>
+    {#if calibrated && styleTip.length}<InfoTip label="About the bid styles" lines={styleTip} />{/if}
     <div class="seg aim">
-      {#each TARGETS as t}
-        <button type="button" class="num" aria-pressed={target === t} onclick={() => ctx.setTarget(t)}>{pct(t)}</button>
+      {#each presets as p (p.key)}
+        <button type="button" class:num={!calibrated} aria-pressed={target === p.level} onclick={() => ctx.setTarget(p.level)}>{calibrated ? p.label : pct(p.level)}</button>
       {/each}
     </div>
   </div>
@@ -156,12 +168,21 @@
   {:else if live && res}
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
-      <p class="headline num" aria-live="polite">
-        Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
+      <div class="bidrow">
+        <p class="headline num" aria-live="polite">
+          Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
+        </p>
+        {#if reasons.length || lowRel}
+          <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons, lowRel)} /></span>
+        {/if}
+      </div>
+      <p class="chances num">
+        <span><b>{pct(pNow)}</b> chance</span>
+        {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if it fills</span>{/if}
+        {#if ifFills !== null}<span class="fills">Fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
       </p>
       <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
       {#if note}<p class="disc">{note}</p>{/if}
-      {#if lowRel}<span class="tag">Low reliability</span>{/if}
       {#if allSame}
         <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>
       {:else}
@@ -271,13 +292,21 @@
   .figs dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
   .answer { display: grid; min-width: 0; gap: var(--s2); padding: var(--s3) var(--s4); background: var(--accent-soft); border-radius: var(--r-md); }
   .answer.wait { min-height: 120px; }
+  .bidrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); }
+  .lowc { display: inline-flex; align-items: center; gap: var(--s3); }
+  .chances { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s4); margin: 0; font-size: var(--fs-sm); }
+  .chances b { font-size: var(--fs-md); font-weight: 600; }
+  .fills { display: inline-flex; align-items: center; gap: var(--s1); color: var(--muted); }
+  .fills b { color: var(--text); }
+  .fbar { flex: none; display: block; width: 48px; height: 4px; margin-left: var(--s1); border-radius: 2px; background: var(--rule-strong); overflow: hidden; }
+  .fbar > span { display: block; height: 100%; background: var(--text); }
   .headline { margin: 0; font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
   .headline b { font-size: var(--fs-xl); font-weight: 700; }
   .disc { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
   .upc { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .last { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .win { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
-  .stale .headline b, .stale .aimrow, .stale .sub { opacity: 0.5; }
+  .stale .headline b, .stale .aimrow, .stale .sub, .stale .chances { opacity: 0.5; }
   .upd { font-weight: 600; color: var(--text); }
   .tabs { display: flex; gap: var(--s1); border-bottom: 1px solid var(--rule-strong); overflow-x: auto; max-width: 100%; min-width: 0; }
   .tabs button {

@@ -132,6 +132,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Seats on offer, and each bidding window</li>
         <li>Little history on a professor: it leans on the course, then the subject, then all courses</li>
         <li>Recent terms count more</li>
+        <li>This term’s earlier rounds: prices are moved up or down to match how the term is going</li>
       </ul>
     </div>
     <div class="card" id="replay">
@@ -140,6 +141,11 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>It estimates how many students bid, and how much each bids</li>
         <li>The window is replayed {FORECAST_RUNS.toLocaleString('en-US')} times; the highest bids get the seats</li>
+        <li>If fewer students bid than there are seats, the minimum bid gets one; otherwise the lowest bid that got a seat is the bid needed</li>
+        <li>You pay what you bid</li>
+        <li>The chance a section fills is estimated separately, from past terms and this term’s earlier rounds</li>
+        <li>The range is then narrowed or widened to match past results, by how high the forecast is and whether one seat or more is left</li>
+        <li>Both steps are tested again at every update and left out if they make the forecast worse</li>
         <li>Each style takes a higher bid from the replays: Cheap the lowest, Safe the highest</li>
         <li>The chance shown is how often that bid won a seat in the replays</li>
         <li>In {styleTerm}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' won' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
@@ -152,6 +158,8 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>It estimates how many students bid, and how much each bids</li>
         <li>The window is replayed {FORECAST_RUNS.toLocaleString('en-US')} times; the highest bids get the seats</li>
+        <li>If fewer students bid than there are seats, the minimum bid gets one; otherwise the lowest bid that got a seat is the bid needed</li>
+        <li>You pay what you bid</li>
         <li>e$X won a seat in about 90 of 100 replays</li>
         <li>Groups: every member needs a seat</li>
       </ul>

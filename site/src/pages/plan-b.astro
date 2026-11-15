@@ -5,7 +5,7 @@ import { getWindow, windowLabel } from '../lib/data';
 
 const builtWindow = windowLabel(getWindow());
 ---
-<Base title="Plan B · Bidwise" active="planb" width="text">
+<Base title="Plan B · Bidwise" description="Missed a bid? Pick your degree to see other courses that count toward your requirements and the bid each needs." active="planb" width="text">
   <h1>Plan B <span class="beta">Beta</span></h1>
   <PlanB client:only="svelte" builtWindow={builtWindow}>
     <p slot="fallback" class="loading">Loading…</p>

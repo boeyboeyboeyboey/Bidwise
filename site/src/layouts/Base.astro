@@ -7,13 +7,25 @@ import { GITHUB_URL, LINKEDIN_URL, GITHUB_ICON, LINKEDIN_ICON } from '../lib/lin
 
 interface Props {
   title?: string;
+  /** Meta and social description; defaults to the site-wide one. */
+  description?: string;
+  /** Extra schema.org objects, each emitted as its own JSON-LD script after the site-wide WebSite one. */
+  jsonLd?: object[];
   active?: 'search' | 'explore' | 'planner' | 'planb' | 'swap' | 'schedule' | 'method';
   /** The header's bidding-window select; off on pages that don't use it. */
   windowPicker?: boolean;
   /** 'text': centred reading column (about 1000 px of content); 'wide' (default): full width. Both keep the same side padding. */
   width?: 'text' | 'wide';
 }
-const { title = 'Bidwise', active, windowPicker = true, width = 'wide' } = Astro.props;
+const DEFAULT_DESCRIPTION = 'Plan SMU BOSS bids with past results by window, live seat counts and a forecast of the bid each section needs. Free and independent, not affiliated with SMU.';
+const { title = 'Bidwise', description = DEFAULT_DESCRIPTION, jsonLd = [], active, windowPicker = true, width = 'wide' } = Astro.props;
+const SITE = 'https://bidwise.pages.dev';
+const path = Astro.url.pathname.endsWith('/') ? Astro.url.pathname : `${Astro.url.pathname}/`;
+const canonical = new URL(path, Astro.site ?? SITE).href;
+const ogImage = `${SITE}/og.png`;
+const ogAlt = 'Bidwise: plan your SMU BOSS bids with past results and forecasts';
+const siteJsonLd = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Bidwise', url: `${SITE}/`, description: DEFAULT_DESCRIPTION }).replace(/</g, '\\u003c');
+const extraJsonLd = jsonLd.map((o) => JSON.stringify(o).replace(/</g, '\\u003c'));
 const openLabel = windowLabel(getWindow());
 const openStatus = getWindow().status;
 // Read in the browser by lib/data/window.ts, which re-picks the window against the clock.
@@ -40,9 +52,22 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
-    <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Bidwise" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={ogAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json" set:html={siteJsonLd}></script>
+    {extraJsonLd.map((j) => <script type="application/ld+json" set:html={j}></script>)}
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>

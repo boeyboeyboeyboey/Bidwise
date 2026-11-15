@@ -5,6 +5,7 @@ import RecordView from '../../components/RecordView.svelte';
 import ResultsNotice from '../../components/ResultsNotice.svelte';
 import { dataMeta, getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
+import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
 
 export function getStaticPaths() {
   return getCourseIndex().map((c) => ({ params: { code: c.code } }));
@@ -12,10 +13,13 @@ export function getStaticPaths() {
 
 const windowName = windowLabel(getWindow());
 const course = getCourse(Astro.params.code!)!;
+const facts = courseFacts(course.history);
+const description = courseDescription(course.code, course.title, facts, 'course', course.sectionsNow.length);
+const pageUrl = new URL(`/course/${course.code}/`, Astro.site).href;
 // Only this term's sections go into the page, without forecast parameters; history and parameters are fetched by the island.
 const sections = course.sectionsNow.map(({ forecast: _f, ...s }) => s);
 ---
-<Base title={`${course.code} · Bidwise`} active="search">
+<Base title={`${course.code} · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
   <header>
     <h1>{course.code}</h1>
     <p>{course.title}</p>

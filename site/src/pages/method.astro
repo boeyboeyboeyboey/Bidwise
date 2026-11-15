@@ -72,7 +72,7 @@ const { sourceRows: results, sourceTerms: terms } = dataMeta as { sourceRows?: n
 const note = refitNote(fm);
 const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
 ---
-<Base title="How the forecast works · Bidwise" active="method" width="text">
+<Base title="How the forecast works · Bidwise" description="How Bidwise forecasts the bid each section needs from past BOSS results, and how to read the chance of a seat." active="method" width="text">
   <header class="head">
     <h1>How the forecast works</h1>
     {results && terms && <p class="src">{terms} terms, {results.toLocaleString('en-US')} results, BOSS Overall Results, Nov 2026</p>}

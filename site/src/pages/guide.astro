@@ -1,0 +1,225 @@
+---
+import Base from '../layouts/Base.astro';
+
+// Content of the guide. Inline links are written [text](url); the FAQPage JSON-LD reads the same data with links reduced to their text.
+type Block = { t: 'p'; text: string } | { t: 'ul' | 'ol'; items: string[] };
+const guide: { title: string; intro: string; sections: { q: string; blocks: Block[] }[] } = {
+  "title": "How BOSS bidding works",
+  "intro": "BOSS is where SMU students bid e$ for seats in course sections. This page covers the rules that set what a bid needs to be, and how to choose one.",
+  "sections": [
+    {
+      "q": "What is BOSS bidding?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "You spend e$ to bid for a seat in a specific section. The highest bids win, up to the number of seats available. In one window you can bid on only one section of a given course."
+        }
+      ]
+    },
+    {
+      "q": "How much e$ do I get?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Every student gets e$115 per term, plus e$10 for completing the end-of-term instructor survey, so plan on e$125. The amount is the same for everyone, and e$ cannot be transferred between students."
+        }
+      ]
+    },
+    {
+      "q": "What is the minimum bid?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Usually e$10, in steps of e$0.01. Some courses set a higher minimum; SMU's own FAQ gives e$11.10 as an example."
+        }
+      ]
+    },
+    {
+      "q": "What are rounds and windows, and why does timing matter?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Each window is its own contest for seats."
+        },
+        {
+          "t": "ul",
+          "items": [
+            "Rounds 1, 1A and 1B are open to all students, apart from protected windows. Freshmen have protected windows where they bid for reserved seats against other freshmen only.",
+            "Rounds 2 and 2A are open to all.",
+            "Later windows offer only seats that were newly freed or released, so there are far fewer seats."
+          ]
+        },
+        {
+          "t": "p",
+          "text": "The same section can clear at very different prices in different windows, so a past price is only useful if it comes from the same window. The [Schedule](/schedule/) page lists opening and closing times."
+        }
+      ]
+    },
+    {
+      "q": "How is the winning bid decided?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Bidding is blind. While a window is open, nobody can see how many people have bid or how much. Results appear only after it closes."
+        },
+        {
+          "t": "p",
+          "text": "Each successful bidder pays their own bid, not a single clearing price. Ties at the cutoff are settled randomly."
+        },
+        {
+          "t": "ul",
+          "items": [
+            "If a section fills, the lowest winning bid is the clearing bid, the amount you needed to reach.",
+            "If fewer students bid than there are seats, every bid at or above the minimum gets in."
+          ]
+        }
+      ]
+    },
+    {
+      "q": "How do I read past results?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "For each section, BOSS publishes the seats on offer, how many were left over, and the median and minimum of the successful bids. Both figures count winning bids only."
+        },
+        {
+          "t": "ul",
+          "items": [
+            "On a section that filled, the minimum is the lowest winning bid.",
+            "On a section that did not fill, the minimum is just the lowest bidder. It is not a cutoff."
+          ]
+        }
+      ]
+    },
+    {
+      "q": "Why does the professor matter?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Students often anchor on the previous median for the same professor, then add e$1 to 2. How much the professor matters differs by course: in some, the syllabus changes a lot between professors. Class timing also moves prices, through both demand and supply. A new professor has no history, so any forecast for that section is shakier."
+        }
+      ]
+    },
+    {
+      "q": "What happens to seats during a window?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "When a window opens, you can see how many seats each section offers. If a student drops a class mid-window, that seat opens up and someone else can take it in the same window. A section that looked full can therefore have room."
+        }
+      ]
+    },
+    {
+      "q": "Can I bid with friends for the same section?",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "BOSS has no official group-bidding feature. Friends can bid the same amount, but each bid is judged on its own. Ties at the cutoff are broken randomly, so not everyone in the group is guaranteed a seat."
+        }
+      ]
+    },
+    {
+      "q": "How do I pick a bid?",
+      "blocks": [
+        {
+          "t": "ol",
+          "items": [
+            "Find past results for the same course, window and professor. If the professor is new, look at other sections of the course.",
+            "Start from the lowest winning bid and the median, then decide how much risk you accept.",
+            "Treat any forecast as an estimate, not a promise."
+          ]
+        },
+        {
+          "t": "p",
+          "text": "Bidwise offers three bid styles. Each is a bid taken from many replays of the window: Cheap is the lowest, Safe the highest, Balanced between them. The chance shown is how often that bid won a seat in the replays."
+        }
+      ]
+    },
+    {
+      "q": "What are common mistakes?",
+      "blocks": [
+        {
+          "t": "ul",
+          "items": [
+            "Using a price from a different window.",
+            "Reading the minimum of an unfilled section as the price to beat.",
+            "Ignoring the professor or class time when comparing past terms.",
+            "Treating a seat count marked with an approximation sign as exact. Those are estimated from the previous window's results and can be wrong.",
+            "Trusting a late-window forecast as much as an early one. There is less past data there, so Bidwise marks many of them Low confidence.",
+            "Assuming friends who bid the same amount will all get in."
+          ]
+        }
+      ]
+    },
+    {
+      "q": "How does Bidwise help?",
+      "blocks": [
+        {
+          "t": "ul",
+          "items": [
+            "[Browse](/explore/): chart past bid results by window and term.",
+            "[Bid planner](/planner): set your e$ budget and see the forecast bid and chance of a seat for several courses.",
+            "[Plan B](/plan-b/): after a missed bid, find other courses that count toward your requirements and the bid each needs.",
+            "[Swap a section](/swap/): see your chances of swapping into another section of a course.",
+            "[How the forecast works](/method): what the forecast learns from, adjusts for and cannot know."
+          ]
+        },
+        {
+          "t": "p",
+          "text": "Bidwise is independent and not affiliated with SMU; check BOSS itself for official rules."
+        }
+      ]
+    }
+  ]
+};
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (s: string) => esc(s).replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+const plain = (s: string) => s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+const answerText = (blocks: Block[]) => blocks.map((b) => (b.t === 'p' ? plain(b.text) : b.items.map((i) => plain(i)).join(' '))).join(' ');
+
+const faq = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: guide.sections.map((s) => ({ '@type': 'Question', name: s.q, acceptedAnswer: { '@type': 'Answer', text: answerText(s.blocks) } })),
+};
+---
+<Base
+  title="How BOSS bidding works · Bidwise"
+  description="How SMU BOSS bidding works: e$, rounds and windows, how the winning bid is decided, and how to pick a bid."
+  width="text"
+  windowPicker={false}
+  jsonLd={[faq]}
+>
+  <header class="head">
+    <h1>{guide.title}</h1>
+    <p class="src">{guide.intro}</p>
+  </header>
+
+  <div class="stack">
+    {guide.sections.map((s) => (
+      <section class="card">
+        <h2>{s.q}</h2>
+        {s.blocks.map((b) => (
+          b.t === 'p' ? <p set:html={inline(b.text)} />
+          : b.t === 'ul' ? <ul class="bul">{b.items.map((i) => <li set:html={inline(i)} />)}</ul>
+          : <ol class="bul num">{b.items.map((i) => <li set:html={inline(i)} />)}</ol>
+        ))}
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  h1 { font-size: 30px; font-weight: 600; }
+  .head { display: grid; justify-items: center; gap: var(--s2); text-align: center; margin: var(--s4) 0 var(--s6); }
+  .src { margin: 0; color: var(--muted); font-size: var(--fs-sm); max-width: 60ch; }
+  .stack { display: grid; gap: var(--s4); margin-bottom: var(--s6); }
+  .card { background: var(--surface); border-radius: var(--r-lg); padding: var(--s5) var(--s4); display: grid; gap: var(--s3); align-content: start; min-width: 0; }
+  .card h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .card li, .card p { margin: 0; line-height: 1.45; font-size: var(--fs-sm); }
+  .bul { margin: 0; padding: 0 0 0 1.2em; display: grid; gap: var(--s2); list-style: disc; }
+  .bul.num { list-style: decimal; }
+  .bul li { display: list-item; }
+  .card a { color: var(--accent); }
+</style>

@@ -1,0 +1,16 @@
+# Bidwise
+
+Bidwise helps students plan SMU BOSS bids. It shows past bid results by window and term, seat counts, and a forecast of the bid each section needs. It is free and independent, and not affiliated with SMU.
+
+## Key pages
+
+- [Home](https://bidwise.pages.dev/): course search
+- [Browse](https://bidwise.pages.dev/explore/): past bids by window and term
+- [Bid planner](https://bidwise.pages.dev/planner/): plan bids for several courses at once
+- [Plan B](https://bidwise.pages.dev/plan-b/): other courses that count toward your degree requirements
+- [Swap](https://bidwise.pages.dev/swap/): chances of swapping into another section
+- [Schedule](https://bidwise.pages.dev/schedule/): bidding rounds and windows
+- [How BOSS bidding works](https://bidwise.pages.dev/guide/): e$, rounds and windows, how the winning bid is decided, how to pick a bid
+- [How the forecast works](https://bidwise.pages.dev/method/): method behind the forecast
+- Course page: https://bidwise.pages.dev/course/<CODE>/ (forecast and sections), for example ACCT001
+- Course history: https://bidwise.pages.dev/course/<CODE>/history/ (past clearing bids for every window and term)

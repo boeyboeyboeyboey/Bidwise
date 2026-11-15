@@ -3,15 +3,19 @@ import Base from '../../../layouts/Base.astro';
 import HistoryView from '../../../components/course/HistoryView.svelte';
 import { getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
 import { getCourse } from '../../../lib/data/server';
+import { courseDataset, courseDescription, courseFacts } from '../../../lib/courseFacts';
 
 export function getStaticPaths() {
   return getCourseIndex().map((c) => ({ params: { code: c.code } }));
 }
 
 const course = getCourse(Astro.params.code!)!;
+const facts = courseFacts(course.history);
+const description = courseDescription(course.code, course.title, facts, 'history');
+const pageUrl = new URL(`/course/${course.code}/history/`, Astro.site).href;
 const instructor = course.sectionsNow[0]?.instructor ?? null;
 ---
-<Base title={`${course.code} past results · Bidwise`} active="search">
+<Base title={`${course.code} past results · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
   <a class="back" href={`/course/${course.code}`}>‹ {course.code}</a>
   <header>
     <h1>Past results</h1>

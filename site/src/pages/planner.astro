@@ -14,7 +14,7 @@ const startTimes = startTimesOf(
   getCourseIndex().filter((c) => c.offeredNow).flatMap((c) => getCourse(c.code)?.sectionsNow ?? []),
 );
 ---
-<Base title="Bid planner · Bidwise" active="planner">
+<Base title="Bid planner · Bidwise" description="Plan bids for several courses at once: set your e$ balance and see the forecast bid for each." active="planner">
   <h1>Bid planner</h1>
   <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot} startTimes={startTimes}>
     <p slot="fallback" class="loading">Loading…</p>

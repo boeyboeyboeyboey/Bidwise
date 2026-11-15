@@ -898,15 +898,15 @@
   .cur { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 16px; }
   .budget input { padding-left: 40px; font-weight: 600; }
   .rows { display: grid; border-top: 1px solid var(--rule); }
-  .grp { position: relative; margin: var(--s2) 0; padding: 0 0 0 var(--s3); border-left: 4px solid var(--accent); }
+  .grp { position: relative; margin: var(--s2) 0; padding: 0 var(--s3); border: 1px solid var(--accent); border-left-width: 4px; border-radius: var(--r-md); background: var(--accent-soft); }
   .grp ul { display: grid; }
   @media (min-width: 768px) {
-    /* the group bar and Nice to have rows sit outside the column so rows inside a group line up with plain rows */
-    .grp { margin-left: calc(-1 * (var(--s3) + 4px)); }
+    /* the framed groups and Nice to have rows sit outside the column so every control lines up with plain rows */
+    .grp { margin-left: calc(-1 * (var(--s3) + 4px)); margin-right: calc(-1 * (var(--s3) + 1px)); }
     .rows > :global(.row.bonus) { margin-left: calc(-1 * (var(--s2) + 1px)); margin-right: calc(-1 * (var(--s2) + 1px)); }
   }
   .grp :global(.row) + :global(.row) { border-top: 1px solid var(--rule); }
-  .pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+  .pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--accent); }
   /* wide enough: title and chance left, button right; otherwise the button drops to its own line, left-aligned */
   .pickl { flex: 1 1 280px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); min-width: 0; }
   .addpick { min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); cursor: pointer; }

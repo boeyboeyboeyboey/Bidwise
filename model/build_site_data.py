@@ -230,6 +230,38 @@ def _parse_when(value: str) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=SGT)
 
 
+def round_to_hour(iso: str | None) -> str | None:
+    """ISO 8601 timestamp -> the nearest whole hour, as ISO to the second with the input's own offset (naive stays naive).
+
+    The site must never show when scans happen, so every scan, capture, build and refit time in the site data goes through this
+    on output; calculations keep the exact times. 30 minutes and above round up (across midnight, month and year too).
+    None, empty, non-text, date-only or unparseable input is returned unchanged.
+    """
+    if not isinstance(iso, str) or ":" not in iso:
+        return iso
+    try:
+        dt = datetime.fromisoformat(iso.strip())
+    except ValueError:
+        return iso
+    base = dt.replace(minute=0, second=0, microsecond=0)
+    if dt - base >= timedelta(minutes=30):
+        base += timedelta(hours=1)
+    return base.isoformat(timespec="seconds")
+
+
+def round_scan_times(docs: dict) -> None:
+    """Round, in place, the times written with each section's live seats: `live.capturedAt` and the `at` of every history point.
+    Order and values are untouched, so two neighbouring points may end up with the same `at`. Call after the deltas are attached."""
+    for doc in docs.values():
+        for s in doc["sectionsNow"]:
+            live = s.get("live")
+            if not live:
+                continue
+            live["capturedAt"] = round_to_hour(live.get("capturedAt"))
+            for pt in live.get("history") or []:
+                pt["at"] = round_to_hour(pt["at"])
+
+
 def choose_window(schedule: list[dict], current: dict, now: datetime) -> dict:
     """The window the site shows by default at `now`. Keep identical to chooseWindow in site/src/lib/data/window.ts.
 
@@ -706,7 +738,7 @@ def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal
         if not done:
             return skip("no section-window could be calibrated")
         print(f"distribution calibration: {done} of {len(live['keys'])} corrected section-windows (held-out {terms['heldOut']})")
-        return new, {"distCalibration": {"enabled": True, "ok": True, "heldOutTerm": terms["heldOut"], "createdAt": payload.get("createdAt")},
+        return new, {"distCalibration": {"enabled": True, "ok": True, "heldOutTerm": terms["heldOut"], "createdAt": round_to_hour(payload.get("createdAt"))},
                      "bidLevels": payload["levels"]}
     except Exception as e:  # noqa: BLE001 the site build must never fail because of the calibration
         return skip(f"{type(e).__name__}: {e}")
@@ -828,7 +860,7 @@ def load_refit_note(path: Path) -> dict:
         return {}
     out = {}
     if isinstance(meta.get("refitAt"), str) and meta["refitAt"]:
-        out["refitAt"] = meta["refitAt"]
+        out["refitAt"] = round_to_hour(meta["refitAt"])
         if isinstance(meta.get("afterWindow"), str) and meta["afterWindow"]:
             out["afterWindow"] = meta["afterWindow"]
         n = meta.get("newBids")
@@ -1156,11 +1188,12 @@ def main(argv=None) -> int:
         # history only alongside deltas that passed the same-window check
         history = load_seat_history(args.availability, term, seats_summary["window"]) if delta_times else {}
         attached_deltas = attach_seat_deltas(docs, deltas, history, (delta_times or {}).get("openScanAt"))
+        round_scan_times(docs)  # from here on, scan times are written to the hour; the deltas above used the exact ones
         attached_exams = attach_exams(docs, args.csv.parent / "schedule-html", term)
         t_drops = datetime.now().timestamp()
         attached_drops = attach_drops(docs, rows, cfg["window"], cfg["schedule"], term)
         t_drops = datetime.now().timestamp() - t_drops
-        generated = args.generated_at or datetime.now(SGT).isoformat(timespec="seconds")
+        generated = round_to_hour(args.generated_at or datetime.now(SGT).isoformat(timespec="seconds"))
         meta = {
             "generatedAt": generated,
             "sourceRows": len(rows),
@@ -1177,6 +1210,9 @@ def main(argv=None) -> int:
                 meta["seats"]["scanAt"] = scan_at
             if delta_times:
                 meta["seats"].update({k: v for k, v in delta_times.items() if v})
+            for k in ("capturedAt", "scanAt", "openScanAt", "prevScanAt"):
+                if k in meta["seats"]:
+                    meta["seats"][k] = round_to_hour(meta["seats"][k])
         params = load_forecast_params(args.params, term)
         backtest = json.loads(args.backtest.read_text(encoding="utf-8")) if params and args.backtest.exists() else None
         if params and not backtest:

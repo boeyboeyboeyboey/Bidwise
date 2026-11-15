@@ -148,6 +148,24 @@ class UnitTests(unittest.TestCase):
             bsd.parse_meetings(self._row(meeting_count="2"))
 
 
+class RoundToHour(unittest.TestCase):
+    def test_nearest_hour_keeps_the_offset(self):
+        for given, want in (("2026-11-12T00:03:33.123456+08:00", "2026-11-12T00:00:00+08:00"),
+                            ("2026-11-07T09:42:10+08:00", "2026-11-07T10:00:00+08:00"),
+                            ("2026-12-31T23:45:00+08:00", "2027-01-01T00:00:00+08:00"),
+                            ("2026-11-07T09:30:00+08:00", "2026-11-07T10:00:00+08:00"),
+                            ("2026-11-07T09:29:59+08:00", "2026-11-07T09:00:00+08:00"),
+                            ("2026-11-07T09:29:59.999999+08:00", "2026-11-07T09:00:00+08:00"),
+                            ("2026-11-07T09:42:10", "2026-11-07T10:00:00"),
+                            ("2026-11-14T23:40:00+0800", "2026-11-15T00:00:00+08:00"),
+                            ("2026-11-12T20:30:00+00:00", "2026-11-12T21:00:00+00:00")):
+            self.assertEqual(bsd.round_to_hour(given), want, given)
+
+    def test_nothing_to_round_is_returned_unchanged(self):
+        for given in (None, "", "t", "nonsense", "2026-11-07", "2026-13-45T99:00:00", 5):
+            self.assertEqual(bsd.round_to_hour(given), given)
+
+
 class ResultsPartialTests(unittest.TestCase):
     def load(self, text=None):
         import shutil
@@ -811,13 +829,16 @@ class SeatDeltas(unittest.TestCase):
         meta, doc = res["with"]
         g1 = next(s for s in doc["sectionsNow"] if s["section"] == "G1")["live"]
         self.assertEqual((g1["sinceOpen"], g1["sinceLast"]), (4, -1))
-        self.assertEqual(meta["seats"]["openScanAt"], "2026-11-06T17:29:20+08:00")
-        self.assertEqual(meta["seats"]["prevScanAt"], "2026-11-07T01:30:50+08:00")
-        self.assertEqual(meta["seats"]["scanAt"], "2026-11-07T09:20:10+08:00")
+        # every scan time is written to the nearest hour; the deltas and history values are the exact-time ones
+        self.assertEqual(meta["seats"]["openScanAt"], "2026-11-06T17:00:00+08:00")
+        self.assertEqual(meta["seats"]["prevScanAt"], "2026-11-07T02:00:00+08:00")
+        self.assertEqual(meta["seats"]["scanAt"], "2026-11-07T09:00:00+08:00")
+        self.assertEqual(meta["seats"]["capturedAt"], "2026-11-07T10:00:00+08:00")
+        self.assertEqual(g1["capturedAt"], "2026-11-07T10:00:00+08:00")
         self.assertNotIn("lastScanAt", meta["seats"])
         # one dir (09:20) + the seeded open point (6 - 4 = 2 at 17:29 on the 6th)
         self.assertEqual([(h["at"], h["available"]) for h in g1["history"]],
-                         [("2026-11-06T17:29:20+08:00", 2), ("2026-11-07T09:20:10+08:00", 6)])
+                         [("2026-11-06T17:00:00+08:00", 2), ("2026-11-07T09:00:00+08:00", 6)])
         self.assertEqual(g1["history"][0]["available"] + g1["sinceOpen"], g1["history"][-1]["available"])
         for blob in map(json.dumps, res["with"]):
             self.assertNotIn("reserved", blob)
@@ -825,6 +846,16 @@ class SeatDeltas(unittest.TestCase):
         g1 = next(s for s in doc["sectionsNow"] if s["section"] == "G1")["live"]
         self.assertNotIn("sinceOpen", g1)
         self.assertNotIn("openScanAt", meta["seats"])
+
+    def test_rounding_keeps_every_history_point_even_when_two_share_an_hour(self):
+        docs = {"AAA101": {"sectionsNow": [{"section": "G1", "live": {"source": "live", "available": 5, "capturedAt": "2026-11-07T09:42:39+08:00",
+                "history": [{"at": "2026-11-07T08:40:00+08:00", "available": 2}, {"at": "2026-11-07T09:10:00+08:00", "available": 3},
+                            {"at": "2026-11-07T09:20:13+08:00", "available": 5}]}}, {"section": "G2"}]}}
+        bsd.round_scan_times(docs)
+        live = docs["AAA101"]["sectionsNow"][0]["live"]
+        self.assertEqual([(h["at"], h["available"]) for h in live["history"]],
+                         [("2026-11-07T09:00:00+08:00", 2), ("2026-11-07T09:00:00+08:00", 3), ("2026-11-07T09:00:00+08:00", 5)])
+        self.assertEqual(live["capturedAt"], "2026-11-07T10:00:00+08:00")
 
     def test_main_skips_deltas_and_history_when_scan_changes_window_differs(self):
         p = self._dirs({"20261107T092010": self._row("2026-11-07T09:42:39+08:00", "live_scan", "AAA101", "G1", 6)},

@@ -29,12 +29,13 @@
     win = '',
     windowFlagged = false,
     canPick = true,
+    canStart = true,
     onremove,
     grouped = false,
     onrole,
     reason = '',
     clashes = [],
-  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
+  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; canStart?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
 
   const sec = $derived(course?.sectionsNow.find((x) => x.id === row.sectionId));
   /** Most people the group can be: capped by the seats left. */
@@ -84,7 +85,7 @@
     </div>
     <div class="seg role" role="radiogroup" aria-label="How much you need {row.course}">
       {#each roles as r (r.v)}
-        <button type="button" role="radio" aria-checked={row.role === r.v} onclick={() => onrole(r.v)}>{r.l}</button>
+        <button type="button" role="radio" aria-checked={row.role === r.v} disabled={r.v === 'oneOf' && !canStart && row.role !== 'oneOf'} aria-describedby={r.v === 'oneOf' && !canStart && row.role !== 'oneOf' ? 'group-limit-note' : undefined} onclick={() => onrole(r.v)}>{r.l}</button>
       {/each}
     </div>
     <button type="button" class="btn btn-icon rm" aria-label="Remove {row.course}" onclick={onremove}>

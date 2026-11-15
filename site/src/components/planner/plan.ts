@@ -214,7 +214,7 @@ export function decodePlan(raw: unknown): StoredPlan | null {
         i: typeof x.i === 'string' ? x.i : '',
         g: typeof x.g === 'number' ? clampGroup(x.g) : 1,
         o: x.o === 'oneOf' || x.o === 'optional' ? x.o : 'required',
-        l: typeof x.l === 'string' && x.l ? x.l : 'A',
+        l: GROUP_LETTERS.some((g) => g === x.l) ? x.l : 'A',
       });
     }
   }
@@ -385,16 +385,86 @@ export function samePlan(a: StoredPlan, b: StoredPlan): boolean {
   return JSON.stringify([a.b, typeof a.s === 'number' ? Math.round(a.s * 100) : a.s, a.w, a.a, a.r]) === JSON.stringify([b.b, typeof b.s === 'number' ? Math.round(b.s * 100) : b.s, b.w, b.a, b.r]);
 }
 
+type GroupRow = Pick<PlanRowState, 'role' | 'oneOf'>;
+
 /**
- * Group letter a row gets when it becomes "Pick one": the first pick-one group that has only one
- * course (that one is waiting for a partner), otherwise a new group.
+ * Letter of a new Pick one group for the row `selfId`: the first of A-D no other Pick one row holds, or null when four
+ * groups already exist (the row's own old letter does not count). Choosing "Pick one" always starts a new group.
  */
-export function pickGroupFor(rows: (Pick<PlanRowState, 'role' | 'oneOf'> & { id: string })[], selfId: string): string {
-  const others = rows.filter((r) => r.id !== selfId && r.role === 'oneOf');
-  const count = new Map<string, number>();
-  for (const r of others) count.set(r.oneOf, (count.get(r.oneOf) ?? 0) + 1);
-  for (const [letter, n] of count) if (n === 1) return letter;
-  return freeLetter(others);
+export function newGroupLetter(rows: (GroupRow & { id: string })[], selfId: string): string | null {
+  const used = new Set(rows.filter((r) => r.id !== selfId && r.role === 'oneOf').map((r) => r.oneOf));
+  return GROUP_LETTERS.find((g) => !used.has(g)) ?? null;
+}
+
+/** True when "Pick one" can be chosen on this row: it already is one, or a group letter is free. */
+export const canStartGroup = (rows: (GroupRow & { id: string })[], selfId: string): boolean =>
+  rows.some((r) => r.id === selfId && r.role === 'oneOf') || newGroupLetter(rows, selfId) !== null;
+
+/** Role change from the role control: the new role and group letter of the row (a patch), or null when it is not allowed (four groups). */
+export function changeRole(rows: (GroupRow & { id: string })[], selfId: string, role: Role): { role: Role; oneOf: string } | null {
+  const row = rows.find((r) => r.id === selfId);
+  if (!row) return null;
+  if (role !== 'oneOf' || row.role === 'oneOf') return { role, oneOf: row.oneOf };
+  const letter = newGroupLetter(rows, selfId);
+  return letter ? { role, oneOf: letter } : null;
+}
+
+/** The row moves into the Pick one group `letter` (whatever it was before). Its old group keeps its other rows or disappears. */
+export const moveToGroup = (letter: string): { role: Role; oneOf: string } => ({ role: 'oneOf', oneOf: letter });
+
+/** Where a row is now, for the list that adds a course to a group; '' for a row of that same group (it is not listed). */
+export function whereNow(row: GroupRow, letter: string): string {
+  if (row.role === 'oneOf') return row.oneOf === letter ? '' : 'in another group';
+  return row.role === 'required' ? 'Must get' : 'Nice to have';
+}
+
+/**
+ * The courses the list "Add a course to this group" offers: one row per other course, in plan order (the first of its
+ * rows outside the group), skipping courses whose rows are all in this group already.
+ */
+export function joinableRows<T extends GroupRow & { course: string }>(rows: T[], letter: string): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => {
+    if ((r.role === 'oneOf' && r.oneOf === letter) || seen.has(r.course)) return false;
+    seen.add(r.course);
+    return true;
+  });
+}
+
+/**
+ * The plan list in its three parts, as row indexes in plan order: Must get rows, then one entry per Pick one group
+ * (in the order of the group's first row), then Nice to have rows.
+ */
+export function planParts(rows: GroupRow[]): { must: number[]; groups: { letter: string; idxs: number[] }[]; nice: number[] } {
+  const must: number[] = [];
+  const nice: number[] = [];
+  const groups: { letter: string; idxs: number[] }[] = [];
+  rows.forEach((r, i) => {
+    if (r.role === 'required') must.push(i);
+    else if (r.role === 'optional') nice.push(i);
+    else {
+      const g = groups.find((x) => x.letter === r.oneOf);
+      if (g) g.idxs.push(i);
+      else groups.push({ letter: r.oneOf, idxs: [i] });
+    }
+  });
+  return { must, groups, nice };
+}
+
+/**
+ * Chance of getting at least one row of Pick one group `letter`, from each row's chance: the same product the plan
+ * chance uses for a group (chanceOfAll). A group with one row is that row's own chance. Null when the group has no row.
+ */
+export function chanceOfGroup(items: Pick<PlanItem, 'role' | 'oneOfGroup'>[], ps: number[], letter: string): number | null {
+  let miss = 1;
+  let n = 0;
+  items.forEach((it, i) => {
+    if (it.role === 'oneOf' && (it.oneOfGroup ?? 'A') === letter) {
+      miss *= 1 - ps[i];
+      n++;
+    }
+  });
+  return n ? 1 - miss : null;
 }
 
 /**

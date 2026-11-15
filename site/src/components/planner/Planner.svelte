@@ -10,7 +10,7 @@
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
   import { liveWindow } from '../../lib/data/window';
   import { BALANCE_KEY, getBalanceText, getChosenWindow, getPlan, onPlanChange, onWindowChange, savePlan, setBalanceText, setChosenWindow } from '../../lib/state';
-  import { eS, pct } from '../course/fmt';
+  import { aboutPctParts, eS, pct } from '../course/fmt';
   import { buildReportCsv, reportFileName, sgtStamp, type ReportMeta, type ReportRow } from '../../lib/report/csv';
   import { downloadCsv } from '../../lib/report/download';
   import { bidReason, planReportRow, planTotals } from '../../lib/report/plan';
@@ -19,10 +19,10 @@
   import CourseAdd from './CourseAdd.svelte';
   import PlanRow from './PlanRow.svelte';
   import {
-    DEFAULT_TARGET, balanceFromCents, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
-    pickGroupFor, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
+    DEFAULT_TARGET, balanceFromCents, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
+    canStartGroup, changeRole, chanceOfGroup, joinableRows, moveToGroup, planParts, whereNow, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
-  import { DAYS, type PlanRowState } from './types';
+  import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
   let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [], startTimes = [] }: {
     windows: string[];
@@ -133,35 +133,31 @@
   const onePer = $derived(oneBidPerCourse(simItems, target));
   const planItems = $derived(onePer.kept);
 
-  const blocks = $derived.by(() => {
-    const out: number[][] = [];
-    const at = new Map<string, number[]>();
-    rows.forEach((r, i) => {
-      if (r.role === 'oneOf') {
-        const g = at.get(r.oneOf);
-        if (g) { g.push(i); return; }
-        const n = [i];
-        at.set(r.oneOf, n);
-        out.push(n);
-      } else out.push([i]);
-    });
-    return out;
-  });
+  /** The list in its three parts: Must get rows, one card per Pick one group, Nice to have rows. */
+  const parts = $derived(planParts(rows));
+  /** Row indexes in the order shown (also the order of the bid report). */
+  const shownOrder = $derived([...parts.must, ...parts.groups.flatMap((g) => g.idxs), ...parts.nice]);
   const rowName = (r: PlanRowState) => {
     const sec = courses[r.course]?.sectionsNow.find((s) => s.id === r.sectionId);
     return sec ? `${r.course} ${sec.section}` : r.course;
   };
-  /** Setting a row to Pick one puts it with a course that is waiting for a partner, else in a new group. */
-  function setRole(row: PlanRowState, role: Role) {
-    if (role === 'oneOf' && row.role !== 'oneOf') row.oneOf = pickGroupFor(rows, row.id);
-    row.role = role;
+  /** Pick one always starts a new group holding just this row; refused when four groups exist (the option is disabled then). */
+  async function setRole(row: PlanRowState, role: Role) {
+    const patch = changeRole(rows, row.id, role);
+    if (!patch) return;
+    const sel = `[data-row-id="${CSS.escape(row.id)}"]`;
+    const hadFocus = !!document.activeElement?.closest(sel);
+    row.role = patch.role;
+    row.oneOf = patch.oneOf;
+    // The row moves to another part of the list and is drawn again: keep the keyboard on its role control.
+    if (!hadFocus) return;
+    await tick();
+    document.querySelector<HTMLElement>(`${sel} [role="radio"][aria-checked="true"]`)?.focus();
   }
-  /** Pulls another course of the plan into the Pick one group of `letter`. */
-  function joinGroup(id: string, letter: string) {
-    const r = rows.find((x) => x.id === id);
-    if (!r) return;
-    r.role = 'oneOf';
-    r.oneOf = letter;
+  /** Pulls every row of a course into the Pick one group of `letter`, so two sections of one course never end up in different groups. */
+  function joinGroup(course: string, letter: string) {
+    const patch = moveToGroup(letter);
+    for (const r of rows) if (r.course === course) Object.assign(r, patch);
   }
 
   // name of the course that covers a skipped one-of row
@@ -513,7 +509,7 @@
   const reportReady = $derived(ready && !pending && info.some((x) => !!x.sec) && rows.every((r, i) => !!info[i].sec || !!courses[r.course]));
   function buildReport(): { rows: ReportRow[]; meta: ReportMeta } | null {
     if (!reportReady) return null;
-    const order = blocks.flat();
+    const order = shownOrder;
     const skipped = order.filter((i) => !info[i].sec).map((i) => rows[i].course);
     const out = order.filter((i) => !!info[i].sec).map((i) => {
       const r = rows[i];
@@ -670,63 +666,75 @@
 
     {#if rows.length}
       <p class="legend"><span>Priority</span> <InfoTip label="What the priorities mean" anchor="planner" lines={['Must get: you need it this term.', 'Pick one: any one of a set.', 'Nice to have: only if the balance allows.']} /></p>
+      {#snippet one(i: number, grouped: boolean)}
+        {@const row = rows[i]}
+        <PlanRow
+          bind:row={rows[i]}
+          course={courses[row.course]}
+          issue={info[i]?.issue ?? null}
+          {avoid}
+          {grouped}
+          onrole={(role) => setRole(row, role)}
+          bid={result ? (result.bids[row.id] ?? null) : null}
+          p={result ? (result.p[row.id] ?? null) : null}
+          busy={pending}
+          none={overBudget}
+          fullBid={fullBidOf(row)}
+          capMode={needsFit}
+          {target}
+          {win}
+          windowFlagged={windowTagged}
+          canPick={rows.length >= 2}
+          canStart={canStartGroup(rows, row.id)}
+          covered={coveredBy(row)}
+          reason={reasonOf(row, i)}
+          clashes={clashLines(clashPairs, row.id)}
+          onremove={() => (rows = rows.filter((r) => r.id !== row.id))}
+        />
+      {/snippet}
+      <!-- Three parts, in this order: Must get rows, one card per Pick one group, Nice to have rows. -->
       <ul class="rows">
-        {#each blocks as idxs (rows[idxs[0]].id)}
-          {#snippet one(i: number, grouped: boolean)}
-            {@const row = rows[i]}
-            <PlanRow
-              bind:row={rows[i]}
-              course={courses[row.course]}
-              issue={info[i]?.issue ?? null}
-              {avoid}
-              {grouped}
-              onrole={(role) => setRole(row, role)}
-              bid={result ? (result.bids[row.id] ?? null) : null}
-              p={result ? (result.p[row.id] ?? null) : null}
-              busy={pending}
-              none={overBudget}
-              fullBid={fullBidOf(row)}
-              capMode={needsFit}
-              {target}
-              {win}
-              windowFlagged={windowTagged}
-              canPick={rows.length >= 2}
-              covered={coveredBy(row)}
-              reason={reasonOf(row, i)}
-              clashes={clashLines(clashPairs, row.id)}
-              onremove={() => (rows = rows.filter((r) => r.id !== row.id))}
-            />
-          {/snippet}
-          {#if rows[idxs[0]].role === 'oneOf'}
-            {@const letter = rows[idxs[0]].oneOf}
-            {@const ids = idxs.map((i) => rows[i].id)}
-            {@const others = rows.filter((r) => !ids.includes(r.id))}
-            {@const more = [...new Set(idxs.map((i) => rows[i].course))].filter(moreSections)}
-            <li class="grp">
-              <div class="pick" role="group" aria-label="Pick one of">
-                <span class="pickh">Pick one of: {#each idxs as i, k (rows[i].id)}{#if k > 0}<span class="or">{' or '}</span>{/if}<b class="num">{rowName(rows[i])}</b>{/each}</span>
-                {#if idxs.length < 2}<span class="pc warn">Pair it with another course</span>{/if}
-                {#if others.length || more.length}
-                  <button type="button" class="btn addbtn" aria-expanded={addOpen === letter} onclick={() => (addOpen = addOpen === letter ? '' : letter)}>+ Add a course to this group</button>
-                {/if}
-              </div>
-              {#if addOpen === letter && (others.length || more.length)}
-                <div class="addlist" role="group" aria-label="Add a course to this group">
-                  {#each more as c (c)}<button type="button" class="btn" onclick={() => { onAddPick('sec:' + c, letter); addOpen = ''; }}>Another {c} section</button>{/each}
-                  {#each others as o (o.id)}<button type="button" class="btn" onclick={() => { onAddPick(o.id, letter); addOpen = ''; }}>{rowName(o)}</button>{/each}
-                </div>
+        {#each parts.must as i (rows[i].id)}
+          {@render one(i, false)}
+        {/each}
+        {#each parts.groups as g (g.letter)}
+          {@const letter = g.letter}
+          {@const gp = result && !pending && !overBudget ? chanceOfGroup(planItems, planItems.map((it) => result.p[it.key] ?? 0), letter) : null}
+          {@const joinable = joinableRows(rows, letter)}
+          {@const more = [...new Set(g.idxs.map((i) => rows[i].course))].filter(moreSections)}
+          <li class="grp">
+            <div class="pick" role="group" aria-label="Need one of these">
+              <span class="pickh">Need one of these</span>
+              {#if gp !== null}
+                <span class="gchance"><span class="lab">Chance of getting one</span> <span class="lab">{aboutPctParts(gp)[0]}</span><b class="num tint" style="background: {chanceTint(gp)}">{aboutPctParts(gp)[1]}</b></span>
               {/if}
-              <ul>
-                {#each idxs as i (rows[i].id)}
-                  {@render one(i, true)}
+              {#if new Set(g.idxs.map((i) => rows[i].course)).size < 2}<span class="solo">Only one course here so far</span>{/if}
+              {#if joinable.length || more.length}
+                <button type="button" class="btn addbtn" aria-expanded={addOpen === letter} onclick={() => (addOpen = addOpen === letter ? '' : letter)}>+ Add a course to this group</button>
+              {/if}
+            </div>
+            {#if addOpen === letter && (joinable.length || more.length)}
+              <div class="addlist" role="group" aria-label="Add a course to this group">
+                {#each more as c (c)}<button type="button" class="btn" onclick={() => { onAddPick('sec:' + c, letter); addOpen = ''; }}>Another {c} section</button>{/each}
+                {#each joinable as o (o.course)}
+                  <button type="button" class="btn" onclick={() => { onAddPick(o.course, letter); addOpen = ''; }}>{rows.filter((x) => x.course === o.course).length > 1 ? o.course : rowName(o)} <span class="where">{whereNow(o, letter)}</span></button>
                 {/each}
-              </ul>
-            </li>
-          {:else}
-            {@render one(idxs[0], false)}
-          {/if}
+              </div>
+            {/if}
+            <ul>
+              {#each g.idxs as i (rows[i].id)}
+                {@render one(i, true)}
+              {/each}
+            </ul>
+          </li>
+        {/each}
+        {#each parts.nice as i (rows[i].id)}
+          {@render one(i, false)}
         {/each}
       </ul>
+      {#if parts.groups.length >= GROUP_LETTERS.length && rows.some((r) => r.role !== 'oneOf')}
+        <p class="limitnote" id="group-limit-note">Four groups is the limit</p>
+      {/if}
     {/if}
 
     {#if rows.length}
@@ -895,8 +903,6 @@
   }
   .grp :global(.row) + :global(.row) { border-top: 1px solid var(--rule); }
   .pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--accent); }
-  .pc { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--s3); font-size: 14px; font-weight: 600; background: var(--surface); border: 1px solid var(--accent); border-radius: 999px; white-space: nowrap; }
-  .pc.warn { color: var(--danger); border-color: var(--danger); background: var(--surface); }
   .addpick { min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md); cursor: pointer; }
   .addpick:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .avoid { width: 100%; display: grid; grid-template-columns: 44px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
@@ -907,8 +913,13 @@
   .avoidbox { display: grid; gap: var(--s2); width: 100%; max-width: 300px; }
   .avoidh { margin: 0; font-size: 15px; font-weight: 600; }
   .pickh { font-size: 15px; }
-  .pickh b { font-weight: 600; }
-  .or { color: var(--muted); }
+  .gchance { font-size: 15px; }
+  .gchance .lab { font-size: 13px; color: var(--muted); }
+  .gchance b { font-weight: 600; }
+  .gchance .tint { display: inline-block; padding: 1px 6px; border-radius: var(--r-sm); color: #1b1d21; }
+  .solo, .limitnote { font-size: 13px; color: var(--muted); }
+  .limitnote { margin: var(--s2) 0 0; }
+  .where { margin-left: var(--s1); font-size: 13px; color: var(--muted); }
   .addbtn { min-height: 44px; padding: 0 var(--s3); font-size: 14px; margin-left: auto; }
   .addlist { display: flex; flex-wrap: wrap; gap: var(--s2); padding: 0 0 var(--s2); }
   .addlist .btn { font-size: 14px; }

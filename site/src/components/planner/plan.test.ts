@@ -6,8 +6,9 @@ import { FORECAST_RUNS, FORECAST_SEED, toSimParams } from '../../lib/sim/forecas
 import type { PlanItem } from '../../lib/sim/planner';
 import {
   balanceFromCents, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
-  biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, pickGroupFor, dropToFit, encodeShare, decodeShare,
+  biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
+  canStartGroup, chanceOfGroup, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
@@ -257,12 +258,64 @@ describe('samePlan', () => {
   });
 });
 
-describe('pickGroupFor', () => {
-  const r = (id: string, role: 'required' | 'oneOf' | 'optional', oneOf = 'A') => ({ id, role, oneOf });
-  it('joins a lone pick-one course, else starts a new group', () => {
-    expect(pickGroupFor([r('x', 'required'), r('y', 'oneOf', 'B')], 'x')).toBe('B');
-    expect(pickGroupFor([r('x', 'required'), r('y', 'oneOf', 'A'), r('z', 'oneOf', 'A')], 'x')).toBe('B');
-    expect(pickGroupFor([r('x', 'required'), r('y', 'required')], 'x')).toBe('A');
+describe('Pick one groups', () => {
+  type R = { id: string; course: string; role: 'required' | 'oneOf' | 'optional'; oneOf: string };
+  const r = (id: string, role: R['role'], oneOf = 'A', course = id): R => ({ id, course, role, oneOf });
+  const four = [r('a', 'oneOf', 'A'), r('b', 'oneOf', 'B'), r('c', 'oneOf', 'C'), r('d', 'oneOf', 'D')];
+
+  it('newGroupLetter gives the first free letter and ignores the row\'s own letter', () => {
+    expect(newGroupLetter([r('x', 'required'), r('y', 'oneOf', 'A'), r('z', 'oneOf', 'C')], 'x')).toBe('B');
+    expect(newGroupLetter([r('x', 'oneOf', 'A'), r('y', 'oneOf', 'B')], 'x')).toBe('A');
+    expect(newGroupLetter([r('x', 'required'), ...four], 'x')).toBeNull();
+  });
+
+  it('canStartGroup is false only at the cap for a row that is not in a group', () => {
+    expect(canStartGroup([r('x', 'required'), r('y', 'oneOf', 'A')], 'x')).toBe(true);
+    expect(canStartGroup([r('x', 'required'), ...four], 'x')).toBe(false);
+    expect(canStartGroup([r('x', 'oneOf', 'A'), ...four.slice(1)], 'x')).toBe(true);
+  });
+
+  it('changeRole starts a new group, is refused at the cap, and keeps the letter otherwise', () => {
+    expect(changeRole([r('x', 'required'), r('y', 'oneOf', 'A')], 'x', 'oneOf')).toEqual({ role: 'oneOf', oneOf: 'B' });
+    expect(changeRole([r('x', 'required'), ...four], 'x', 'oneOf')).toBeNull();
+    expect(changeRole([r('x', 'oneOf', 'C'), r('y', 'oneOf', 'A')], 'x', 'oneOf')).toEqual({ role: 'oneOf', oneOf: 'C' });
+    expect(changeRole([r('x', 'oneOf', 'C')], 'x', 'optional')).toEqual({ role: 'optional', oneOf: 'C' });
+    expect(changeRole([r('x', 'required')], 'x', 'required')).toEqual({ role: 'required', oneOf: 'A' });
+    expect(changeRole([r('x', 'required')], 'nobody', 'oneOf')).toBeNull();
+  });
+
+  it('moveToGroup puts a row in the given group', () => {
+    expect(moveToGroup('C')).toEqual({ role: 'oneOf', oneOf: 'C' });
+  });
+
+  it('whereNow names where a row is, and is empty for a row of that group', () => {
+    expect(whereNow(r('x', 'oneOf', 'A'), 'A')).toBe('');
+    expect(whereNow(r('x', 'oneOf', 'B'), 'A')).toBe('in another group');
+    expect(whereNow(r('x', 'required'), 'A')).toBe('Must get');
+    expect(whereNow(r('x', 'optional'), 'A')).toBe('Nice to have');
+  });
+
+  it('planParts orders Must get, groups by first member, then Nice to have; an emptied group vanishes', () => {
+    const rows = [r('n', 'optional'), r('g1', 'oneOf', 'B'), r('m', 'required'), r('g2', 'oneOf', 'A'), r('g3', 'oneOf', 'B')];
+    expect(planParts(rows)).toEqual({ must: [2], groups: [{ letter: 'B', idxs: [1, 4] }, { letter: 'A', idxs: [3] }], nice: [0] });
+    rows[1].role = 'required';
+    rows[4].role = 'optional';
+    expect(planParts(rows).groups.map((g) => g.letter)).toEqual(['A']);
+  });
+
+  it('joinableRows lists each other course once, in plan order, and skips courses wholly in the group', () => {
+    const rows = [r('a1', 'oneOf', 'A', 'X'), r('a2', 'oneOf', 'A', 'X'), r('y1', 'required', 'A', 'Y'), r('y2', 'oneOf', 'B', 'Y'), r('z', 'optional', 'A', 'Z')];
+    expect(joinableRows(rows, 'A').map((x) => x.id)).toEqual(['y1', 'z']);
+    expect(joinableRows(rows, 'B').map((x) => x.id)).toEqual(['a1', 'y1', 'z']);
+  });
+
+  it('chanceOfGroup is the chance of at least one member, and null for a letter with no member', () => {
+    const it = (role: PlanItem['role'], g?: string) => ({ role, oneOfGroup: g });
+    expect(chanceOfGroup([it('required'), it('oneOf', 'A')], [0.1, 0.4], 'A')).toBeCloseTo(0.4, 10);
+    expect(chanceOfGroup([it('oneOf', 'A'), it('oneOf', 'A'), it('oneOf', 'B')], [0.5, 0.4, 0.9], 'A')).toBeCloseTo(1 - 0.5 * 0.6, 10);
+    expect(chanceOfGroup([it('oneOf', 'A')], [0.5], 'B')).toBeNull();
+    const only = [it('oneOf', 'C'), it('oneOf', 'C')];
+    expect(chanceOfGroup(only, [0.3, 0.6], 'C')).toBeCloseTo(chanceOfAll(only, [0.3, 0.6]), 10);
   });
 });
 
@@ -501,5 +554,12 @@ describe('findClashes', () => {
     expect(c).toHaveLength(2);
     expect(clashSummary(c)).toBe('2 clashes: A clashes with B (Mon 10:00–11:00); A clashes with C (Mon 11:00–13:00)');
     expect(clashSummary([])).toBe('');
+  });
+});
+
+describe('decodePlan group letters', () => {
+  it('puts a letter outside A-D in group A, so a shared link cannot make a fifth group', () => {
+    const plan = decodePlan({ r: [{ c: 'X1', o: 'oneOf', l: 'Z' }, { c: 'X2', o: 'oneOf', l: 'B' }, { c: 'X3', o: 'oneOf' }] });
+    expect(plan?.r.map((x) => x.l)).toEqual(['A', 'B', 'A']);
   });
 });

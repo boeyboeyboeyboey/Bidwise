@@ -21,20 +21,20 @@ const s: Section = {
 };
 
 describe('chance you want, calibrated', () => {
-  it('defaults to Safe; a stored preset key is kept, any stored number (an old save) becomes the default', () => {
-    expect(DEFAULT_TARGET).toBe(0.99);
+  it('defaults to Balanced; a stored preset key is kept, any stored number (an old save) becomes the default', () => {
+    expect(DEFAULT_TARGET).toBe(0.975);
     expect(snapTarget('cheap')).toBe(0.9);
     expect(snapTarget('balanced')).toBe(0.975);
     expect(snapTarget('safe')).toBe(0.99);
-    for (const old of [0.8, 0.9, 0.95, 0.975, 0.99]) expect(snapTarget(old)).toBe(0.99); // an old "90%" must not become Cheap
-    expect(snapTarget('t90')).toBe(0.99);
-    expect(snapTarget(undefined)).toBe(0.99);
+    for (const old of [0.8, 0.9, 0.95, 0.975, 0.99]) expect(snapTarget(old)).toBe(0.975); // an old "90%" must not become Cheap
+    expect(snapTarget('t90')).toBe(0.975);
+    expect(snapTarget(undefined)).toBe(0.975);
   });
   it('a plan stores the key, and an old numeric s reads as the default key', () => {
     expect(decodePlan({ s: 'balanced' })?.s).toBe('balanced');
-    expect(decodePlan({ s: 0.9 })?.s).toBe('safe');
-    expect(decodePlan({ s: 'bogus' })?.s).toBe('safe');
-    expect(decodePlan({})?.s).toBe('safe');
+    expect(decodePlan({ s: 0.9 })?.s).toBe('balanced');
+    expect(decodePlan({ s: 'bogus' })?.s).toBe('balanced');
+    expect(decodePlan({})?.s).toBe('balanced');
     expect(targetToStored(0.9)).toBe('cheap');
     expect(snapTarget(decodePlan({ s: targetToStored(0.975) })!.s)).toBe(0.975);
   });

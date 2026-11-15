@@ -29,14 +29,14 @@ describe('presets', () => {
     expect([...m.TARGETS]).toEqual([0.8, 0.9, 0.95]);
     expect(m.DEFAULT_TARGET).toBe(0.9);
   });
-  it('calibrated: Cheap / Balanced / Safe from the data, default Safe', async () => {
+  it('calibrated: Cheap / Balanced / Safe from the data, default Balanced', async () => {
     const m = await load(true);
     expect(m.bidCalibrated()).toBe(true);
     expect(m.bidPresets().map((p) => [p.key, p.label, p.level, p.lossFilled])).toEqual([
       ['cheap', 'Cheap', 0.9, 0.304], ['balanced', 'Balanced', 0.975, 0.157], ['safe', 'Safe', 0.99, 0.106],
     ]);
     expect([...m.TARGETS]).toEqual([0.9, 0.975, 0.99]);
-    expect(m.DEFAULT_TARGET).toBe(0.99);
+    expect(m.DEFAULT_TARGET).toBe(0.975);
   });
   it('presetFor finds a preset by level, else null', async () => {
     const m = await load(true);
@@ -49,10 +49,10 @@ describe('presets', () => {
     expect(off.normaliseTarget(0.85)).toBe(0.9);
     const on = await load(true);
     expect(on.normaliseTarget(0.975)).toBe(0.975);
-    expect(on.normaliseTarget(0.8)).toBe(0.99);
+    expect(on.normaliseTarget(0.8)).toBe(0.975);
     expect(on.normaliseTarget(0.9)).toBe(0.9);
-    expect(on.normaliseTarget('x')).toBe(0.99);
-    expect(on.normaliseTarget(undefined)).toBe(0.99);
+    expect(on.normaliseTarget('x')).toBe(0.975);
+    expect(on.normaliseTarget(undefined)).toBe(0.975);
   });
 });
 
@@ -62,9 +62,9 @@ describe('stored target', () => {
     expect(m.targetToStored(0.9)).toBe('cheap');
     expect(m.targetToStored(0.99)).toBe('safe');
     expect(m.targetFromStored('balanced')).toBe(0.975);
-    expect(m.targetFromStored(0.9)).toBe(0.99);
+    expect(m.targetFromStored(0.9)).toBe(0.975);
     expect(m.targetFromStored(0.9, 0.9)).toBe(0.9);
-    expect(m.targetFromStored('t90')).toBe(0.99);
+    expect(m.targetFromStored('t90')).toBe(0.975);
   });
   it('not calibrated: stores the number, as before', async () => {
     const m = await load(false);
@@ -164,10 +164,10 @@ describe('planner and report follow the presets', () => {
     expect(plan.bidsAtTarget([item], 0.95, 99999).bids.a).toBe(full);
     const fit = { bids: { a: 9000 }, p: { a: 1 }, pAll: 1, spentCents: 0, bidTotalCents: 0, leftCents: 0 };
     expect(plan.clampToRecommended([item], fit, 0.95, 99999).bids.a).toBe(full);
-    expect(plan.snapTarget(0.8)).toBe(0.99);
+    expect(plan.snapTarget(0.8)).toBe(0.975);
     expect(plan.snapTarget('balanced')).toBe(0.975);
-    expect(plan.snapTarget(0.975)).toBe(0.99); // a stored number is an old save
-    expect(plan.DEFAULT_TARGET).toBe(0.99);
+    expect(plan.snapTarget(0.975)).toBe(0.975); // a stored number is an old save
+    expect(plan.DEFAULT_TARGET).toBe(0.975);
   });
   it('not calibrated: snapTarget still picks the closest of 80 / 90 / 95%', async () => {
     await load(false);

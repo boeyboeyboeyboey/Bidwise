@@ -38,8 +38,8 @@ export const bidPresets = (): readonly BidPreset[] => PRESETS;
 /** The preset levels; the chance choices every screen offers. */
 export const TARGETS: readonly number[] = PRESETS.map((p) => p.level);
 
-/** Default chance: Safe when calibrated, else 90%. */
-export const DEFAULT_TARGET: number = levels ? PRESETS[2].level : 0.9;
+/** Default chance: Balanced when calibrated, else 90%. */
+export const DEFAULT_TARGET: number = levels ? PRESETS[1].level : 0.9;
 
 export const presetFor = (level: number): BidPreset | null => PRESETS.find((p) => p.level === level) ?? null;
 
@@ -57,7 +57,7 @@ export const normaliseTarget = (stored: unknown): number =>
  * What to store for a chosen chance level. Calibrated: the preset key ('cheap' | 'balanced' | 'safe'), because Cheap's level (0.90)
  * equals an old saved "90%" and a number could not tell the two apart. Not calibrated: the number, as before.
  */
-export const targetToStored = (target: number): number | string => (levels ? (presetFor(target) ?? PRESETS[2]).key : target);
+export const targetToStored = (target: number): number | string => (levels ? (presetFor(target) ?? PRESETS[1]).key : target);
 
 /**
  * The chance level for a stored value. Calibrated: only a preset key counts; any number is a legacy save and gives `fallback`

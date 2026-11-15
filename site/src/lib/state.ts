@@ -4,6 +4,7 @@
 // Pages subscribe with onWindowChange/onPlanChange; changes in another tab arrive via the storage event.
 import { decodePlan } from '../components/planner/plan';
 import type { StoredPlan } from '../components/planner/plan';
+import { DEFAULT_TARGET, targetToStored } from './sim/presets';
 
 export const WINDOW_KEY = 'boss.window';
 export const PLAN_KEY = 'boss.planner';
@@ -89,7 +90,7 @@ export function onPlanChange(fn: () => void): () => void {
 
 /** Adds (or updates) one course section in the saved plan; returns the updated plan. */
 export function addToPlan(code: string, sectionId: string, group: number): StoredPlan {
-  const plan: StoredPlan = getPlan() ?? { b: null, s: 0.9, w: '', a: [], r: [] };
+  const plan: StoredPlan = getPlan() ?? { b: null, s: targetToStored(DEFAULT_TARGET), w: '', a: [], r: [] };
   const rows = plan.r.filter((x) => x.c !== code);
   rows.push({ c: code, i: sectionId, g: group, o: 'required', l: 'A' });
   const next = { ...plan, r: rows };

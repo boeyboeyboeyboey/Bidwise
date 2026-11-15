@@ -282,6 +282,20 @@ describe('members without a plain code', () => {
     expect(r.ignored).toContainEqual(expect.objectContaining({ id: 'quiet', reason: 'empty' }));
   });
 
+  it('hides a 0-CU basket overlay cleared by compulsory courses, but keeps optional, tagged and non_course ones', () => {
+    const req = (c: string) => member(c, { mandatory: true });
+    const v = view('d', [
+      group('sus', { role: 'overlay', cus: 0, members: [req('A'), req('B')] }),
+      group('mixed', { role: 'overlay', cus: 0, members: [req('A'), member('C')] }),
+      group('tag', { role: 'overlay', cus: 0, members: [member('T', { cls: 'tagged', mandatory: true })] }),
+      group('cfa', { type: 'non_course', role: 'overlay', cus: 0, members: [member('CFA100', { cus: 0, mandatory: true })] }),
+    ]);
+    const r = deriveBlocks([loaded('degree', v)], INTAKE, []);
+    expect(r.ignored).toContainEqual(expect.objectContaining({ id: 'sus', reason: 'meta' }));
+    expect(ids([...r.open, ...r.finished])).toEqual(expect.arrayContaining(['mixed', 'tag', 'cfa']));
+    expect(ids([...r.open, ...r.finished])).not.toContain('sus');
+  });
+
   it('an overlay with no stated quantity is complete once any listed course is done, and has no CUs left', () => {
     const v = view('d', [group('o', { role: 'overlay', cus: null, members: codes('A', 'B') })]);
     expect(deriveBlocks([loaded('degree', v)], INTAKE, []).open[0]).toMatchObject({ need: null, left: null, complete: false });

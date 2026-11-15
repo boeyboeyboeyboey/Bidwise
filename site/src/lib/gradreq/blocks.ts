@@ -147,6 +147,14 @@ function readView(lv: LoadedView, intake: string, startOrder: number, out: {
     const hasNeed = (g.cus ?? 0) > 0 || (g.minCourses ?? 0) > 0;
     const second = lv.kind === 'second';
     const item = { id: g.id, viewId: view.id, name: g.name, headings: pathOf(g), cus: g.cus ?? null };
+    // A 0-CU overlay cleared by compulsory courses (BBM "Sustainability": the nine core courses) asks for nothing extra,
+    // and listing those core courses under its name reads as if they were that kind of course: hide it (owner, 16 Nov).
+    // Baskets only: a non_course overlay such as Finance's CFA100 (view a lecture, pass a test) is a real task.
+    if (g.type === 'basket' && g.role === 'overlay' && !hasNeed && !g.missingList && named.length > 0 && unnamed.length === 0 && hints.length === 0
+      && named.every((m) => m.cls === 'rule' && m.mandatory)) {
+      out.ignored.push({ id: g.id, viewId: view.id, name: g.name, reason: 'meta' });
+      continue;
+    }
 
     if (g.type === 'non_course') {
       if (counting.length > 0) {

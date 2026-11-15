@@ -1,12 +1,12 @@
 <svelte:options css="injected" />
 <script lang="ts">
-  import type { HistoryRow } from '../../lib/data/types';
+  import type { HistoryRowLite } from '../../lib/data/types';
   import type { TimelineCell } from './history';
   import { sameInstructor } from '../../lib/data/format';
   import { bandWidth, bandX, byTerm, labelIndices, useBands, windowTimeline } from './history';
   import { eS } from './fmt';
 
-  let { rows, instructor = null }: { rows: HistoryRow[]; instructor?: string | null } = $props();
+  let { rows, instructor = null }: { rows: HistoryRowLite[]; instructor?: string | null } = $props();
 
   let W = $state(340);
   const H = $derived(W < 500 ? 190 : 240);
@@ -39,8 +39,8 @@
   };
   const yr = (t: string) => t.split(' ')[0];
   const tm = (t: string) => t.slice(t.indexOf(' ') + 1);
-  const mine = (r: HistoryRow) => !!instructor && sameInstructor(r.instructor, instructor);
-  const tip = (r: HistoryRow, what: string, c: number) => `${r.term}, ${r.window}\n${r.section} ${r.instructor}\n${what} ${eS(c)}`;
+  const mine = (r: HistoryRowLite) => !!instructor && sameInstructor(r.instructor, instructor);
+  const tip = (r: HistoryRowLite, what: string, c: number) => `${r.term}, ${r.window}\n${r.section} ${r.instructor}\n${what} ${eS(c)}`;
 </script>
 
 <div class="wrap" bind:clientWidth={W}>

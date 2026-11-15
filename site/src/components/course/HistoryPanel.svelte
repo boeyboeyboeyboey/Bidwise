@@ -1,14 +1,16 @@
 <svelte:options css="injected" />
 <script lang="ts">
-  import type { HistoryRow } from '../../lib/data/types';
+  import type { HistoryRowLite } from '../../lib/data/types';
   import { sameInstructor } from '../../lib/data/format';
   import HistoryChart from './HistoryChart.svelte';
-  import { defaultHistoryWindow, sortWindows, timeText } from './history';
+  import { defaultHistoryWindow, sortWindows, timeText, type HistorySeed } from './history';
   import { bidOrNone } from './fmt';
 
-  let { history, instructor = null, currentWindow = '', hideTitle = false }: {
+  let { history, instructor = null, currentWindow = '', hideTitle = false, seed = undefined }: {
     hideTitle?: boolean;
-    history: HistoryRow[];
+    history: HistoryRowLite[];
+    /** Set while `history` holds only the default window's rows (the page's embedded copy): the panel opens on the seed's view and the Window menu waits for the full history. */
+    seed?: HistorySeed;
     /** Instructor of the section being viewed; null on a course with no sections this term. */
     instructor?: string | null;
     /** The site's current window; the Window menu opens on the latest one at or before it with bids. */
@@ -16,15 +18,15 @@
   } = $props();
 
   const CAP = 40;
-  const windows = $derived(sortWindows(history.map((r) => r.window)));
-  const mine = (r: HistoryRow) => !!instructor && sameInstructor(r.instructor, instructor);
-  const hasMine = $derived(history.some(mine));
+  const windows = $derived(seed ? seed.windows : sortWindows(history.map((r) => r.window)));
+  const mine = (r: HistoryRowLite) => !!instructor && sameInstructor(r.instructor, instructor);
+  const hasMine = $derived(seed ? seed.hasMine : history.some(mine));
 
   // Initial choices are read once: the panel is re-created when the section changes.
   const firstMine = () => !!instructor && history.some(mine);
-  let scope = $state<'instructor' | 'course'>(firstMine() ? 'instructor' : 'course');
+  let scope = $state<'instructor' | 'course'>(seed ? seed.scope : firstMine() ? 'instructor' : 'course');
   // Read once as well: a window the user picks stays put when they switch between Same instructor and Whole course.
-  let win = $state(defaultHistoryWindow(scope === 'instructor' ? history.filter(mine) : history, currentWindow));
+  let win = $state(seed ? seed.win : defaultHistoryWindow(scope === 'instructor' ? history.filter(mine) : history, currentWindow));
   let all = $state(false);
 
   const rows = $derived(
@@ -35,7 +37,7 @@
   const shown = $derived(all ? rows : rows.slice(0, CAP));
   /** Every row shown has no lowest or median bid: nobody won in them. */
   const noPrice = $derived(rows.length > 0 && rows.every((r) => r.minCents === null && r.medianCents === null));
-  const seats = (r: HistoryRow) => `${r.after} of ${r.vacancy}`;
+  const seats = (r: HistoryRowLite) => `${r.after} of ${r.vacancy}`;
 </script>
 
 <div class="hh"><section class="hist">
@@ -52,7 +54,7 @@
     {/if}
     <label class="pair win">
       <span class="lab">Window</span>
-      <select class="field" bind:value={win}>
+      <select class="field" bind:value={win} disabled={!!seed}>
         <option value="">All windows</option>
         {#each windows as w}<option value={w}>{w}</option>{/each}
       </select>

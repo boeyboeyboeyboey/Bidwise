@@ -1,4 +1,4 @@
-import type { HistoryRow } from '../../lib/data/types';
+import type { HistoryRow, HistoryRowLite } from '../../lib/data/types';
 import { formatSlot } from '../../lib/format/slot';
 import { sameInstructor } from '../../lib/data/format';
 
@@ -9,7 +9,7 @@ export function sortWindows(ws: Iterable<string>): string[] {
 }
 
 /** A history row where somebody won a seat: a lowest or median bid is present. */
-export const hasBids = (r: HistoryRow): boolean => r.medianCents !== null || r.minCents !== null;
+export const hasBids = (r: HistoryRowLite): boolean => r.medianCents !== null || r.minCents !== null;
 
 /** A window needs at least this many past results with bids before the past-results page opens on it. */
 export const MIN_WINDOW_RESULTS = 3;
@@ -19,7 +19,7 @@ export const MIN_WINDOW_RESULTS = 3;
  * MIN_WINDOW_RESULTS of `rows` (already filtered to the series on screen) have bids, so the page never opens on a chart with
  * one lonely point. '' means all windows, when no single window qualifies.
  */
-export function defaultHistoryWindow(rows: HistoryRow[], currentWindow: string): string {
+export function defaultHistoryWindow(rows: HistoryRowLite[], currentWindow: string): string {
   const count = new Map<string, number>();
   for (const r of rows) if (hasBids(r)) count.set(r.window, (count.get(r.window) ?? 0) + 1);
   const order = sortWindows([...count.keys(), currentWindow]);
@@ -31,18 +31,50 @@ export function sortTerms(ts: Iterable<string>): string[] {
   return [...new Set(ts)].sort();
 }
 
+/** What HistoryPanel needs to open on its default view before the course's full history has loaded. */
+export interface HistorySeed {
+  /** Only the rows of the default window (every window when `win` is ''). */
+  rows: HistoryRowLite[];
+  /** Every window in the full history, for the Window menu. */
+  windows: string[];
+  hasMine: boolean;
+  scope: 'instructor' | 'course';
+  win: string;
+}
+
+/** Embedding more than this many bytes of rows in the page costs more than it gains; the page then loads the history as before. */
+const SEED_MAX_BYTES = 120_000;
+
+/**
+ * The default view of the past-results panel, worked out the same way the panel does it (same instructor when that
+ * instructor has rows, else the whole course; then defaultHistoryWindow), carrying only the rows that view shows. Null when
+ * the view needs too many rows to embed.
+ */
+export function historySeed(history: HistoryRow[], instructor: string | null, currentWindow: string): HistorySeed | null {
+  const mine = (r: HistoryRowLite) => !!instructor && sameInstructor(r.instructor, instructor);
+  const hasMine = history.some(mine);
+  const scope = hasMine ? 'instructor' : 'course';
+  const win = defaultHistoryWindow(scope === 'instructor' ? history.filter(mine) : history, currentWindow);
+  const rows = history.filter((r) => !win || r.window === win).map((r): HistoryRowLite => ({
+    term: r.term, window: r.window, section: r.section, instructor: r.instructor, days: r.days, start: r.start, end: r.end,
+    medianCents: r.medianCents, minCents: r.minCents, vacancy: r.vacancy, after: r.after,
+  }));
+  if (JSON.stringify(rows).length > SEED_MAX_BYTES) return null;
+  return { rows, windows: sortWindows(history.map((r) => r.window)), hasMine, scope, win };
+}
+
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 export interface TermPoint {
   term: string;
-  rows: HistoryRow[];
+  rows: HistoryRowLite[];
   /** Mean of the rows' medians / lowest winning bids; null when nobody won. */
   median: number | null;
   min: number | null;
 }
 
-export function byTerm(rows: HistoryRow[]): TermPoint[] {
-  const m = new Map<string, HistoryRow[]>();
+export function byTerm(rows: HistoryRowLite[]): TermPoint[] {
+  const m = new Map<string, HistoryRowLite[]>();
   for (const r of rows) (m.get(r.term) ?? m.set(r.term, []).get(r.term)!).push(r);
   return sortTerms(m.keys()).map((term) => {
     const rs = m.get(term)!;
@@ -93,7 +125,7 @@ export interface TimelineCell {
   termIdx: number;
   window: string;
   slotIdx: number;
-  rows: HistoryRow[];
+  rows: HistoryRowLite[];
   /** Mean of the rows' medians / lowest winning bids, as for a term point; null when nobody won. */
   median: number | null;
   min: number | null;
@@ -103,7 +135,7 @@ export interface TimelineCell {
  * Every (term, window) with rows, in time order: term order, then slot order. `slots` is every window present in `rows` in
  * `sortWindows` order, so a window has the same slot in every term and a missing one leaves its slot empty.
  */
-export function windowTimeline(rows: HistoryRow[]): { terms: string[]; slots: string[]; cells: TimelineCell[] } {
+export function windowTimeline(rows: HistoryRowLite[]): { terms: string[]; slots: string[]; cells: TimelineCell[] } {
   const terms = sortTerms(rows.map((r) => r.term));
   const slots = sortWindows(rows.map((r) => r.window));
   const cells: TimelineCell[] = [];
@@ -142,7 +174,7 @@ const median = (xs: number[]) => {
 
 export interface WindowPoint {
   window: string;
-  rows: HistoryRow[];
+  rows: HistoryRowLite[];
   /** Median of the sections' median bids; null when no section had one (nobody won). */
   median: number | null;
   /** Lowest winning bid of any section in the window; null when nobody won. */
@@ -150,8 +182,8 @@ export interface WindowPoint {
 }
 
 /** One point per window for one term, in window order. `instructor` keeps only that instructor's sections. */
-export function byWindow(rows: HistoryRow[], term: string, instructor: string | null = null): WindowPoint[] {
-  const m = new Map<string, HistoryRow[]>();
+export function byWindow(rows: HistoryRowLite[], term: string, instructor: string | null = null): WindowPoint[] {
+  const m = new Map<string, HistoryRowLite[]>();
   for (const r of rows) {
     if (r.term !== term || (instructor && !sameInstructor(r.instructor, instructor))) continue;
     (m.get(r.window) ?? m.set(r.window, []).get(r.window)!).push(r);
@@ -168,8 +200,8 @@ export function byWindow(rows: HistoryRow[], term: string, instructor: string | 
  * The newest term, up to the current one, with at least one winning bid for this filter; failing that, the newest with any rows
  * (so a current term where nobody has won yet gives way to an earlier one with prices). Null when there are none.
  */
-export function termWithResults(rows: HistoryRow[], currentTerm: string, instructor: string | null = null): string | null {
+export function termWithResults(rows: HistoryRowLite[], currentTerm: string, instructor: string | null = null): string | null {
   const own = rows.filter((r) => (!instructor || sameInstructor(r.instructor, instructor)) && r.term <= currentTerm);
-  const newest = (rs: HistoryRow[]) => sortTerms(rs.map((r) => r.term)).pop() ?? null;
+  const newest = (rs: HistoryRowLite[]) => sortTerms(rs.map((r) => r.term)).pop() ?? null;
   return newest(own.filter((r) => r.medianCents !== null || r.minCents !== null)) ?? newest(own);
 }

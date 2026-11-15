@@ -28,7 +28,10 @@
     best = false,
     openScanAt = null,
     swap = null,
+    seeded = false,
   }: {
+    /** The bid comes from the page's build-time numbers: hidden at first paint when this visitor's chosen window differs (see the course page). */
+    seeded?: boolean;
     /** Swap mode: what this row shows instead of the bid. null = Bid mode. */
     swap?: SwapCell | null;
     openScanAt?: string | null;
@@ -78,10 +81,10 @@
     onclick={ontoggle}
   >
     <b class="sec">{section.section}</b>
-    <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge">Lowest bid</span>{/if}</span>
+    <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge" data-seeded={seeded || undefined}>Lowest bid</span>{/if}</span>
     <span class="time num">{when}{#if examText}<span class="exam">Exam {examText}</span>{/if}</span>
-    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}{#if low}<span class="lc">Low confidence</span>{/if}</span>
-    <span class="bid num" class:swapcol={!!swap}>
+    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}{#if low}<span class="lc" data-seeded={seeded || undefined}>Low confidence</span>{/if}</span>
+    <span class="bid num" class:swapcol={!!swap} data-seeded={(seeded && !swap) || undefined}>
       {#if swap}
         {#if swap.kind === 'mine'}
           <span class="chip mine">Yours</span>
@@ -143,6 +146,10 @@
   .ar { color: var(--muted); }
   .ch { color: var(--text); }
   .no { color: var(--muted); font-size: var(--fs-xs); white-space: normal; }
+  /* Visitor's chosen window differs from the build's: show the same "Calculating" as before until the page has recomputed. */
+  :global(html.seed-off) .bid[data-seeded] > * { display: none; }
+  :global(html.seed-off) .bid[data-seeded]::after { content: 'Calculating'; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+  :global(html.seed-off) .badge[data-seeded], :global(html.seed-off) .lc[data-seeded] { display: none; }
   .chg { font-size: var(--fs-xs); }
   .chg::before { content: ' · '; }
   .lc { display: inline-block; margin-left: var(--s2); padding: 0 6px; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted); border: 1px solid var(--rule-strong); border-radius: 4px; white-space: nowrap; }

@@ -108,6 +108,9 @@ export interface HistoryRow {
   enrolled: number;
 }
 
+/** The HistoryRow fields the past-results table and chart read; what the history page embeds in its HTML. */
+export type HistoryRowLite = Pick<HistoryRow, 'term' | 'window' | 'section' | 'instructor' | 'days' | 'start' | 'end' | 'medianCents' | 'minCents' | 'vacancy' | 'after'>;
+
 /** Contents of data/real/courses/<code>.json. */
 /** Chance a full section gets a seat back, cumulative by each later window (model/forecast/drops.py). Course-level, full sections only. */
 export interface DropChance {

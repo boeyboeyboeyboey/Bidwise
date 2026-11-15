@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bandWidth, bandX, labelIndices, useBands, byWindow, dayText, defaultHistoryWindow, shortWindow, termWithResults, timeText, windowTimeline } from './history';
+import { bandWidth, bandX, labelIndices, useBands, byWindow, dayText, defaultHistoryWindow, historySeed, shortWindow, termWithResults, timeText, windowTimeline } from './history';
 import type { HistoryRow } from '../../lib/data/types';
 
 describe('timeText', () => {
@@ -203,4 +203,29 @@ describe('labelIndices', () => {
     expect(labelIndices(12, 20)).toEqual([2, 5, 8, 11]); // k = 3
   });
   it('keeps a lone term', () => expect(labelIndices(1, 0)).toEqual([0]));
+});
+
+describe('historySeed', () => {
+  const R1 = 'Round 1 Window 1';
+  const R1B = 'Round 1B Window 1';
+  const rs = (window: string, instructor: string, n = 3) => Array.from({ length: n }, (_, i) => row({ window, instructor, section: `G${i}` }));
+  it('opens on the same instructor and the window the panel would pick, keeping only that window\'s rows', () => {
+    const h = [...rs(R1, 'LIM'), ...rs(R1, 'TAN'), ...rs(R1B, 'TAN'), ...rs(R1B, 'LIM', 1)];
+    const s = historySeed(h, 'lim', R1B)!;
+    expect(s.scope).toBe('instructor');
+    expect(s.win).toBe(R1); // LIM has only one result in R1B, so R1B does not qualify
+    expect(s.rows).toHaveLength(6);
+    expect(s.windows).toEqual([R1, R1B]);
+    expect(s.hasMine).toBe(true);
+  });
+  it('falls back to the whole course when the instructor has no rows', () => {
+    const s = historySeed(rs(R1B, 'TAN'), 'LIM', R1B)!;
+    expect(s.scope).toBe('course');
+    expect(s.hasMine).toBe(false);
+    expect(s.win).toBe(R1B);
+  });
+  it('drops fields the panel does not read, and gives up when the rows are too big to embed', () => {
+    expect(Object.keys(historySeed(rs(R1, 'LIM'), 'LIM', R1)!.rows[0])).not.toContain('classNumber');
+    expect(historySeed(rs(R1, 'LIM', 3000), 'LIM', R1)).toBeNull();
+  });
 });

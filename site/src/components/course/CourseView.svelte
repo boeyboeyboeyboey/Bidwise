@@ -6,7 +6,7 @@
   import { fetchCourse } from '../../lib/data/client';
   import { orderSections, type RowBid } from './sections';
   import { anyApprox, APPROX_NOTE, latestScan, scanDayText, seatsLeftNow } from '../../lib/data/seats';
-  import { pInAt, type SimResult } from '../../lib/sim';
+  import type { SimResult } from '../../lib/sim';
   import { DEFAULT_TARGET, TARGETS, bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import { styleMeaning } from './bidStyle';
   import { effectiveWindow } from '../../lib/sim/forecast';
@@ -16,6 +16,7 @@
   import { NO_BIDS, buildReportCsv, courseNote, reportFileName, sectionFacts, sgtStamp, type ReportRow } from '../../lib/report/csv';
   import { downloadCsv } from '../../lib/report/download';
   import { simSection } from './sectionSim';
+  import { rowBidOf, seedUsable, type RowSeed } from './rowSeed';
   import SectionCard from './SectionCard.svelte';
   import SectionDetail from './SectionDetail.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
@@ -25,7 +26,9 @@
   import { formatSlot } from '../../lib/format/slot';
   import { modeFromUrl, modeToSearch, orderForSwap, SWAP_DISCLAIMER, type Mode, type SwapCell } from './swapUi';
 
-  let { code, title = '', sections, windowName, currentTerm, latestWindow, resultsPartial = null, openScanAt = null, prevScanAt = null, forecastMeta }: {
+  let { code, title = '', sections, windowName, currentTerm, latestWindow, resultsPartial = null, openScanAt = null, prevScanAt = null, forecastMeta, rowSeed = undefined }: {
+    /** Row bids worked out at build time for the build's window and the default chance; used while they still apply. */
+    rowSeed?: RowSeed;
     /** Set while the newest window's results are only partly released. */
     resultsPartial?: ResultsPartial | null; code: string; title?: string; sections: Section[]; windowName: string; currentTerm: string; latestWindow: string; openScanAt?: string | null; prevScanAt?: string | null; forecastMeta: ForecastMeta } = $props();
   const ordered = $derived(orderSections(sections));
@@ -72,19 +75,22 @@
 
   // One simulation per open section (group of 1, the chosen window), run as soon as the course file has loaded, so every row can show
   // its bid without a click. Results land row by row; null = this section has no forecast. sectionSim caches them for the detail panel.
+  // Rows the build already worked out (same window, same chance) need no simulation here.
+  const seedOn = $derived(seedUsable(rowSeed, currentName, chosen, target));
   let sims = $state.raw(new Map<string, SimResult | null>());
   let simToken = 0;
   $effect(() => {
     const m = withForecast;
     const chosenWin = chosen;
     const open = currentName;
+    const seeded = seedOn ? rowSeed : null;
     const my = ++simToken;
     const acc = new Map<string, SimResult | null>();
     sims = acc;
     if (!m) return;
     for (const s0 of ordered) {
       const s = m.get(s0.classNumber);
-      if (!s || seatsLeftNow(s) <= 0) continue;
+      if (!s || seatsLeftNow(s) <= 0 || seeded?.bySection[s0.classNumber] !== undefined) continue;
       const win = effectiveWindow(chosenWin, open, forecastMeta.windows.filter((w) => !!s.forecast?.[w]));
       const job = simSection(s, win, 1);
       if (!job) {
@@ -108,12 +114,12 @@
   // Rows are tagged for the 1-seat reason only: a late window is already said by the forecast panel's headline tag.
   const bids = $derived.by(() => {
     const out = new Map<string, RowBid>();
+    if (seedOn && rowSeed) for (const [cn, b] of Object.entries(rowSeed.bySection)) if (b) out.set(cn, b);
     for (const [cn, r] of sims) {
       if (!r) continue;
-      const cents = suggestBid(r, target);
       const s = withForecast?.get(cn);
       const win = s ? effectiveWindow(chosen, currentName, forecastMeta.windows.filter((w) => !!s.forecast?.[w])) : '';
-      out.set(cn, { cents, p: pInAt(r, cents), low: !!s && rowLowConfidence(seatsLeftNow(s), win, true).length > 0 });
+      out.set(cn, rowBidOf(r, target, s ? seatsLeftNow(s) : 0, win));
     }
     return out;
   });
@@ -138,6 +144,7 @@
   function rowBid(s: Section): RowBid | 'full' | 'none' | 'wait' {
     if (seatsLeftNow(s) <= 0) return 'full';
     if (failed) return 'none';
+    if (seedOn && rowSeed && rowSeed.bySection[s.classNumber] !== undefined) return rowSeed.bySection[s.classNumber] ?? 'none';
     if (!withForecast || !sims.has(s.classNumber)) return 'wait';
     return bids.get(s.classNumber) ?? 'none';
   }
@@ -242,6 +249,8 @@
     const upd = () => (desktop = mq.matches);
     upd();
     mounted = true;
+    // The page's first-paint guard (course page script) has done its job once this island is running.
+    void tick().then(() => document.documentElement.classList.remove('seed-off'));
     // ?s=G1 (section name or class number) or #id names the section to open instead of the lowest-bid one.
     const u = modeFromUrl(location.search);
     // Swap needs the Bid/Swap toggle, which only shows for courses with more than one section; otherwise stay in Bid.
@@ -345,7 +354,7 @@
     <p class="sortnote">{#if scanText}<span>Seats as of {scanText}</span>{/if}{#if !swapping}<InfoTip label="About these bids and seat counts" lines={[style ? `Open sections first. ${styleMeaning(style)}` : `Open sections first. Bids are for 1 person, aiming for about a ${pct(target)} chance of a seat.`, ...(approxAny ? [`Seat counts marked “about” are estimates. ${APPROX_NOTE}`] : [])]} />{/if}</p>
     {#if approxAny}<p class="sortnote">Seats marked ≈ are estimates.</p>{/if}
     {#if !swapping && bestSection && bestBid}
-      <button type="button" class="btn best" aria-label={`Show ${bestSection.section}, lowest bid ${eS(bestBid.cents)}, ${pct(bestBid.p)} chance`} onclick={() => choose(bestSection.id, true)}>
+      <button type="button" class="btn best" data-seeded={seedOn || undefined} aria-label={`Show ${bestSection.section}, lowest bid ${eS(bestBid.cents)}, ${pct(bestBid.p)} chance`} onclick={() => choose(bestSection.id, true)}>
         <span class="bt">Lowest bid: <b>{bestSection.section}</b> <b class="num">{eS(bestBid.cents)}</b> <span aria-hidden="true">→</span> {pct(bestBid.p)} chance</span>
         <span class="go" aria-hidden="true">›</span>
       </button>
@@ -371,6 +380,7 @@
           open={!desktop && openId === s.id}
           selected={desktop && !!current && current.id === s.id}
           best={s.id === bestId}
+          seeded={seedOn && !!rowSeed && rowSeed.bySection[s.classNumber] !== undefined}
           swap={swapping ? swapCell(s) : null}
           ontoggle={() => choose(s.id)}
         />
@@ -409,6 +419,7 @@
   .best { justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; width: 100%; min-height: 44px; margin: var(--s1) 0 var(--s2); font-weight: 400; text-align: left; }
   .best .go { margin-left: auto; color: var(--accent); font-weight: 600; white-space: nowrap; }
   .best b { font-weight: 600; }
+  :global(html.seed-off) .best[data-seeded] { display: none; }
   .modebar { margin: 0 0 var(--s2); }
   .modebar .seg > button { min-height: 44px; min-width: 88px; }
   .mine { display: grid; gap: var(--s1); margin: 0 0 var(--s2); font-size: var(--fs-xs); color: var(--muted); }

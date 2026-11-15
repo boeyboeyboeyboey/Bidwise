@@ -99,10 +99,8 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
       const el = document.getElementById('fresh');
       const meta = readSeatMeta();
       if (el && meta) {
-        let schedule = [];
-        try { schedule = JSON.parse(document.getElementById('win-data')?.textContent ?? '{}').schedule ?? []; } catch { /* no schedule: no next scan */ }
         // Textual changes only: the line is not a live region, so a screen reader reads it once, in place.
-        const tick = () => { const t = freshnessText(meta, schedule, nowMs()); if (t && el.textContent !== t) el.textContent = t; };
+        const tick = () => { const t = freshnessText(meta, nowMs()); if (t && el.textContent !== t) el.textContent = t; };
         tick();
         setInterval(tick, 60_000);
       }

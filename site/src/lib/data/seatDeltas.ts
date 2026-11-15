@@ -1,7 +1,7 @@
 // How seat counts moved this window: marker text, tooltip, sparkline points and the "most freed" list.
 // Only live-scan sections carry deltas. Approx or missing data gives no marker. Pure, so it is unit tested (seatDeltas.test.ts).
 import type { LiveSeats, SeatPoint } from './types';
-import { scanTimeText } from './seats';
+import { scanDayText } from './seats';
 
 export interface DeltaInput {
   live?: LiveSeats;
@@ -13,7 +13,7 @@ export interface DeltaMarker {
   /** "+3" or "−2" (a real minus sign). */
   text: string;
   tone: DeltaTone;
-  /** Tooltip: since open, then since the previous scan when that also moved. */
+  /** Tooltip: since open, then since the last update when that also moved. */
   title: string;
   /** Screen-reader text. */
   label: string;
@@ -32,43 +32,36 @@ export function deltaText(n: number | null | undefined): string {
 }
 
 /** The marker for a section's seat count, or null (approx, no data, or no change since the window opened). */
-export function deltaMarker(s: DeltaInput, openScanAt?: string | null, prevScanAt?: string | null): DeltaMarker | null {
+export function deltaMarker(s: DeltaInput, _openScanAt?: string | null, _prevScanAt?: string | null): DeltaMarker | null {
   const v = s.live;
   if (!v || v.source !== 'live' || !usable(v.sinceOpen)) return null;
-  const at = (iso?: string | null) => {
-    const t = scanTimeText(iso);
-    return t ? ` (${t})` : '';
-  };
-  let title = `${deltaText(v.sinceOpen)} since the window opened${at(openScanAt)}`;
-  if (usable(v.sinceLast)) title += ` · ${deltaText(v.sinceLast)} since the previous scan${at(prevScanAt)}`;
+  let title = `${deltaText(v.sinceOpen)} since the window opened`;
+  if (usable(v.sinceLast)) title += ` · ${deltaText(v.sinceLast)} since the last update`;
   return { text: deltaText(v.sinceOpen), tone: v.sinceOpen > 0 ? 'up' : 'down', title, label: title };
 }
 
 export interface ScanBadge {
-  /** "−3 since 09:00" (a real minus sign), or "+2 since 10 Nov, 21:00" when the previous scan was on another day. */
+  /** "−3 since last update" (a real minus sign). */
   text: string;
   tone: DeltaTone;
-  /** Screen-reader text: "3 fewer seats since 09:00". */
+  /** Screen-reader text: "3 fewer seats since the last update". */
   label: string;
   /** Change since the previous scan; the same as sinceOpen when that scan was the window-open one. */
   n: number;
 }
 
 /**
- * Badge for a row from the change since the previous scan (`sinceLast`). Null for zero, missing or an unreadable scan time.
- * The time is the real previous scan time; a scan on the same day as the newest one is just "09:00", else "10 Nov, 21:00".
+ * Badge for a row from the change since the previous scan (`sinceLast`). Null for zero, missing or an unreadable previous scan time.
+ * No time is shown. `_scanAt` is unused; callers still pass it.
  */
-export function scanBadgeFor(sinceLast: number | null | undefined, prevScanAt?: string | null, scanAt?: string | null): ScanBadge | null {
+export function scanBadgeFor(sinceLast: number | null | undefined, prevScanAt?: string | null, _scanAt?: string | null): ScanBadge | null {
   if (!usable(sinceLast)) return null;
-  const full = scanTimeText(prevScanAt);
-  if (!full) return null;
-  const day = (iso?: string | null) => /^\d{4}-\d{2}-\d{2}/.exec(iso ?? '')?.[0];
-  const since = scanAt && day(prevScanAt) === day(scanAt) ? full.slice(full.indexOf(',') + 2) : full;
+  if (!scanDayText(prevScanAt)) return null;
   const k = Math.abs(sinceLast);
   return {
-    text: `${deltaText(sinceLast)} since ${since}`,
+    text: `${deltaText(sinceLast)} since last update`,
     tone: sinceLast > 0 ? 'up' : 'down',
-    label: `${k} ${sinceLast > 0 ? 'more' : 'fewer'} ${k === 1 ? 'seat' : 'seats'} since ${since}`,
+    label: `${k} ${sinceLast > 0 ? 'more' : 'fewer'} ${k === 1 ? 'seat' : 'seats'} since the last update`,
     n: sinceLast,
   };
 }
@@ -79,11 +72,11 @@ export function scanBadge(s: DeltaInput, prevScanAt?: string | null, scanAt?: st
   return v && v.source === 'live' ? scanBadgeFor(v.sinceLast, prevScanAt, scanAt) : null;
 }
 
-/** Second line for the last scan's change, '' when it is zero, null or the section is not live. */
+/** Second line for the last update's change, '' when it is zero, null or the section is not live. */
 export function lastScanText(s: DeltaInput): string {
   const v = s.live;
   if (!v || v.source !== 'live' || !usable(v.sinceLast)) return '';
-  return `${deltaText(v.sinceLast)} since last scan`;
+  return `${deltaText(v.sinceLast)} since last update`;
 }
 
 export interface Spark {

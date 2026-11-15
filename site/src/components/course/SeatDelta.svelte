@@ -3,7 +3,7 @@
   import type { Section } from '../../lib/data/types';
   import { deltaMarker, type ScanBadge } from '../../lib/data/seatDeltas';
 
-  /** `badge` (a row's "−3 since 09:00") is shown on its own; without it the section's since-open marker is. */
+  /** `badge` (a row's "−3 since last update") is shown on its own; without it the section's since-open marker is. */
   let { section = null, openScanAt = null, prevScanAt = null, badge = null }: { section?: Section | null; openScanAt?: string | null; prevScanAt?: string | null; badge?: ScanBadge | null } = $props();
   const m = $derived(!badge && section ? deltaMarker(section, openScanAt, prevScanAt) : null);
 </script>

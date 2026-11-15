@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anyApprox, fullText, isLikelyFull, latestScan, scanTimeText, seatsLeftNow, seatsOf, seatsPhrase } from './seats';
+import { anyApprox, fullText, isLikelyFull, latestScan, scanDayText, seatsLeftNow, seatsOf, seatsPhrase } from './seats';
 
 const live = (o: Partial<{ available: number; total: number; source: 'live' | 'approx'; capturedAt: string }> = {}) => ({
   available: 6, total: 48, source: 'live' as const, capturedAt: '2026-11-07T09:42:39+08:00', window: 'Round 1B Window 1', ...o,
@@ -24,11 +24,13 @@ describe('seatsOf', () => {
 });
 
 describe('scan time helpers', () => {
-  it('formats the stamp as written, in any viewer zone', () => {
-    expect(scanTimeText('2026-11-07T09:42:39.089071+08:00')).toBe('7 Nov, 09:42');
-    expect(scanTimeText('')).toBe('');
-    expect(scanTimeText(null)).toBe('');
-    expect(scanTimeText('2026-13-07T09:42:39')).toBe('');
+  it('gives the SGT day as written, around midnight and in any viewer zone', () => {
+    expect(scanDayText('2026-11-07T09:42:39.089071+08:00')).toBe('7 Nov');
+    expect(scanDayText('2026-11-07T23:59:59+08:00')).toBe('7 Nov');
+    expect(scanDayText('2026-11-08T00:00:01+08:00')).toBe('8 Nov');
+    expect(scanDayText('')).toBe('');
+    expect(scanDayText(null)).toBe('');
+    expect(scanDayText('2026-13-07T09:42:39')).toBe('');
   });
   it('finds the latest scan and any approx section', () => {
     const a = { seatsLeft: 1, live: live({ capturedAt: '2026-11-07T09:42:39+08:00' }) };

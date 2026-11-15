@@ -17,10 +17,10 @@ describe('deltaText', () => {
 });
 
 describe('deltaMarker', () => {
-  it('is green for freed seats, with the last-scan change in the tooltip', () => {
+  it('is green for freed seats, with the last-update change in the tooltip', () => {
     const m = deltaMarker({ live: live({ sinceOpen: 4, sinceLast: -1 }) }, '2026-11-06T17:29:20+08:00', '2026-11-07T01:30:50+08:00');
     expect(m).toMatchObject({ text: '+4', tone: 'up' });
-    expect(m?.title).toBe('+4 since the window opened (6 Nov, 17:29) · −1 since the previous scan (7 Nov, 01:30)');
+    expect(m?.title).toBe('+4 since the window opened · −1 since the last update');
   });
   it('is red for taken seats and omits a zero last-scan change', () => {
     const m = deltaMarker({ live: live({ sinceOpen: -2, sinceLast: 0 }) });
@@ -38,7 +38,7 @@ describe('deltaMarker', () => {
 
 describe('lastScanText', () => {
   it('describes a non-zero change on a live section only', () => {
-    expect(lastScanText({ live: live({ sinceLast: 2 }) })).toBe('+2 since last scan');
+    expect(lastScanText({ live: live({ sinceLast: 2 }) })).toBe('+2 since last update');
     expect(lastScanText({ live: live({ sinceLast: 0 }) })).toBe('');
     expect(lastScanText({ live: live({ source: 'approx', sinceLast: 2 }) })).toBe('');
   });
@@ -79,18 +79,16 @@ describe('topFreed', () => {
 
 describe('scanBadge', () => {
   const NEWEST = '2026-11-12T21:00:00+08:00';
-  it('says how many seats were taken since the previous scan, with its time', () => {
-    expect(scanBadge({ live: live({ sinceLast: -3 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '−3 since 09:00', tone: 'down', label: '3 fewer seats since 09:00', n: -3 });
+  it('says how many seats were taken since the last update, with no time', () => {
+    expect(scanBadge({ live: live({ sinceLast: -3 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '−3 since last update', tone: 'down', label: '3 fewer seats since the last update', n: -3 });
   });
   it('says how many were freed, singular for one', () => {
-    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '+2 since 09:00', tone: 'up', label: '2 more seats since 09:00' });
-    expect(scanBadge({ live: live({ sinceLast: 1 }) }, '2026-11-12T09:00:00+08:00', NEWEST)?.label).toBe('1 more seat since 09:00');
+    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toMatchObject({ text: '+2 since last update', tone: 'up', label: '2 more seats since the last update' });
+    expect(scanBadge({ live: live({ sinceLast: 1 }) }, '2026-11-12T09:00:00+08:00', NEWEST)?.label).toBe('1 more seat since the last update');
   });
-  it('adds the date when the previous scan was on another day', () => {
-    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-11T21:00:00+08:00', NEWEST)?.text).toBe('+2 since 11 Nov, 21:00');
-  });
-  it('adds the date when the newest scan time is unknown', () => {
-    expect(scanBadgeFor(-1, '2026-11-12T09:00:00+08:00')?.text).toBe('−1 since 12 Nov, 09:00');
+  it('shows no time or date, whatever day the previous scan was on', () => {
+    expect(scanBadge({ live: live({ sinceLast: 2 }) }, '2026-11-11T21:00:00+08:00', NEWEST)?.text).toBe('+2 since last update');
+    expect(scanBadgeFor(-1, '2026-11-12T09:00:00+08:00')?.text).toBe('−1 since last update');
   });
   it('is null for no change, no data, approx seats or no previous scan time', () => {
     expect(scanBadge({ live: live({ sinceLast: 0 }) }, '2026-11-12T09:00:00+08:00', NEWEST)).toBeNull();

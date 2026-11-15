@@ -37,11 +37,11 @@ export function seatsLeftNow(s: SeatInput): number {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "7 Nov, 09:42" from an ISO stamp, read as written (the scanner stamps SGT), so it does not depend on the viewer's zone. */
-export function scanTimeText(iso: string | null | undefined): string {
-  const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(iso ?? '');
+/** "7 Nov": the calendar day of an ISO stamp, read as written (the scanner stamps SGT), so it does not depend on the viewer's zone. Empty when missing or unreadable. */
+export function scanDayText(iso: string | null | undefined): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})T\d{2}:\d{2}/.exec(iso ?? '');
   if (!m || +m[1] < 1 || +m[1] > 12) return '';
-  return `${+m[2]} ${MONTHS[+m[1] - 1]}, ${m[3]}`;
+  return `${+m[2]} ${MONTHS[+m[1] - 1]}`;
 }
 
 /** Latest scan time among sections that have live data, as an ISO string, or null. */

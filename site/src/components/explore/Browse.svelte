@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { APPROX_NOTE, scanTimeText } from '../../lib/data/seats';
+  import { APPROX_NOTE, scanDayText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
   import MultiSelect from '../ui/MultiSelect.svelte';
   import { R, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
@@ -29,7 +29,7 @@
   const hits = $derived(filterCourses(courses, bs));
   const count = $derived(activeFilterCount(bs));
   const filtered = $derived(sectionFilterOn(bs));
-  const scanText = $derived(scanTimeText(scannedAt));
+  const scanText = $derived(scanDayText(scannedAt));
   const open = $derived(bs.course ? courses.find((c) => c.code === bs.course) : undefined);
 
   function load() {

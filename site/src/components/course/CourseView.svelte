@@ -5,7 +5,7 @@
   import type { ForecastCtx } from './forecast-ctx';
   import { fetchCourse } from '../../lib/data/client';
   import { orderSections, type RowBid } from './sections';
-  import { anyApprox, APPROX_NOTE, latestScan, scanTimeText, seatsLeftNow } from '../../lib/data/seats';
+  import { anyApprox, APPROX_NOTE, latestScan, scanDayText, seatsLeftNow } from '../../lib/data/seats';
   import { pInAt, type SimResult } from '../../lib/sim';
   import { DEFAULT_TARGET, TARGETS, bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import { styleMeaning } from './bidStyle';
@@ -146,7 +146,7 @@
   const MAX_ROWS = 14;
   const MAX_ROWS_PHONE = 6;
   let showFull = $state(false);
-  const scanText = $derived(scanTimeText(latestScan(sections)));
+  const scanText = $derived(scanDayText(latestScan(sections)));
   const approxAny = $derived(anyApprox(sections));
   const fullCount = $derived(ordered.filter((s) => seatsLeftNow(s) <= 0).length);
   const foldable = $derived(!swapping && ordered.length > (desktop ? MAX_ROWS : MAX_ROWS_PHONE) && fullCount > 0);

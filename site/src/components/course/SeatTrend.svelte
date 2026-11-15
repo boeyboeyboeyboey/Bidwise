@@ -29,7 +29,7 @@
   <div class="trend">
     <p class="t">Seats left this window{#if m && changeText}<span class="num" class:up={m.tone === 'up'} class:down={m.tone === 'down'}>&nbsp;· {changeText}</span>{/if}{#if last}<span class="num mu">&nbsp;· {last}</span>{/if}</p>
     {#if chart && ends}
-      <svg class="spark" viewBox="0 0 {W} {H}" width={W} height={H} role="img" aria-label={`Seats left across ${spark.count} scans, from ${spark.first} to ${spark.last}`}>
+      <svg class="spark" viewBox="0 0 {W} {H}" width={W} height={H} role="img" aria-label={`Seats left during this window, from ${spark.first} to ${spark.last}`}>
         <line x1="0" x2={W} y1={H - 1} y2={H - 1} class="base" />
         <polyline points={spark.points} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
         <circle cx={ends.a[0]} cy={ends.a[1]} r="3" class="from" />

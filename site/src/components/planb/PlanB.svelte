@@ -492,7 +492,7 @@
 
               {#each derived.needsSelection as p (p.viewId + p.id)}
                 <div class="block">
-                  <h4>{p.name}</h4>
+                  <div class="bh"><h4>{p.name}</h4></div>
                   <p class="small">{needText(p.needs)}</p>
                 </div>
               {/each}
@@ -647,14 +647,15 @@
 
   .warn { margin: 0; padding: var(--s3); font-size: var(--fs-sm); background: var(--surface); border-left: 3px solid var(--rule-strong); border-radius: var(--r-sm); }
   .warn.risk { border-left-color: var(--danger); }
-  .grp-list { display: grid; gap: var(--s3); }
+  .grp-list { display: grid; gap: var(--s4); }
   h3 { font-size: var(--fs-md); font-weight: 600; padding-top: var(--s3); border-top: 1px solid var(--rule); }
   h3.view { font-size: var(--fs-lg); font-weight: 600; padding-top: var(--s4); border-top: 2px solid var(--rule-strong); }
   h3.sub { font-size: var(--fs-sm); }
   .block { display: grid; gap: var(--s2); min-width: 0; }
-  .bh { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--s3); }
-  h4 { font-size: var(--fs-sm); font-weight: 600; }
-  .left { font-size: var(--fs-xs); color: var(--muted); }
+  /* Requirement (basket) header: a tinted band so it reads as a heading, not another row */
+  .bh { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--s3); padding: var(--s2) var(--s3); background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: var(--r-sm); }
+  h4 { margin: 0; font-size: var(--fs-sm); font-weight: 700; color: var(--text); }
+  .left { margin-left: auto; font-size: var(--fs-sm); color: var(--text); }
   .plain { display: grid; gap: var(--s1); font-size: var(--fs-sm); }
   .cands { display: block; }
   .cands > li:first-child :global(.row-link) { border-top: 1px solid var(--rule); }

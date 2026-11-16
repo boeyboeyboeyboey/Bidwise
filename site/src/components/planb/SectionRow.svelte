@@ -1,6 +1,7 @@
 <svelte:options css="injected" />
 <script lang="ts">
   import { eS } from '../course/fmt';
+  import { titleName } from '../../lib/data/format';
   import { seatText } from './seats';
   import type { PlanRow } from './logic';
   import { onMount } from 'svelte';
@@ -23,7 +24,7 @@
     <span><i>{bidLabel}</i> {eS(s.bidCents as number)}</span>
     <span><i>Seats</i> {seatText(s)}{#if badge}<span class="chg"> · <SeatDelta {badge} /></span>{/if}</span>
   </span>
-  <span class="l3">{s.instructor || 'Instructor not listed'} · <span class="num">{s.times || 'Time not set'}</span></span>
+  <span class="l3">{titleName(s.instructor) || 'Instructor not listed'} · <span class="num">{s.times || 'Time not set'}</span></span>
   {#if row.note}<small>{row.note}</small>{/if}
   {#if row.cls === 'tagged'}<small>From BOSS course tags</small>{/if}
 </a>

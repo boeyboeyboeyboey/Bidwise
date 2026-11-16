@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { HistoryRow, Section } from '../../lib/data/types';
   import { seatsOf } from '../../lib/data/seats';
+  import { titleName } from '../../lib/data/format';
   import { formatSlot } from '../../lib/format/slot';
   import { formatExam } from '../../lib/format/exam';
   import { aboutPct, eS, pct } from './fmt';
@@ -51,7 +52,7 @@
   const panelId = `p-${section.id}`;
   const when = $derived(formatSlot(section.meetings) || 'Time not set');
   const examText = $derived(formatExam(section.exam));
-  const who = $derived(section.instructor || 'Instructor not listed');
+  const who = $derived(titleName(section.instructor) || 'Instructor not listed');
   const seatText = $derived(seatLabel(section));
   // Scan times come from the page (Base.astro), so this is read after mount and the server render matches the first client render.
   let seatMeta = $state<SeatMeta | null>(null);
@@ -107,7 +108,7 @@
   {/if}
   {#if open}
     <div class="panel detail" id={panelId}>
-      <SectionDetail {section} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swap} showClassNumber={!swap} />
+      <SectionDetail {section} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swap} />
     </div>
   {/if}
 </li>

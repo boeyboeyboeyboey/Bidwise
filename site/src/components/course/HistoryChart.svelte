@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { HistoryRowLite } from '../../lib/data/types';
   import type { TimelineCell } from './history';
-  import { sameInstructor } from '../../lib/data/format';
+  import { sameInstructor, titleName } from '../../lib/data/format';
   import { bandWidth, bandX, byTerm, labelIndices, useBands, windowTimeline } from './history';
   import { eS } from './fmt';
 
@@ -40,7 +40,7 @@
   const yr = (t: string) => t.split(' ')[0];
   const tm = (t: string) => t.slice(t.indexOf(' ') + 1);
   const mine = (r: HistoryRowLite) => !!instructor && sameInstructor(r.instructor, instructor);
-  const tip = (r: HistoryRowLite, what: string, c: number) => `${r.term}, ${r.window}\n${r.section} ${r.instructor}\n${what} ${eS(c)}`;
+  const tip = (r: HistoryRowLite, what: string, c: number) => `${r.term}, ${r.window}\n${r.section} ${titleName(r.instructor)}\n${what} ${eS(c)}`;
 </script>
 
 <div class="wrap" bind:clientWidth={W}>

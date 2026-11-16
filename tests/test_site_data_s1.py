@@ -103,16 +103,29 @@ class Accuracy(unittest.TestCase):
 
 
 class AccuracyMatchesModelOutput(unittest.TestCase):
-    def test_current_backtest_gives_the_published_numbers(self):
-        p = ROOT / "model/forecast/out/backtest.json"
-        if not p.exists():
-            self.skipTest("no backtest.json")
-        a = bsd.build_accuracy(json.loads(p.read_text()))
-        by = {t["term"]: t for t in a["filledTests"]}
-        self.assertEqual(set(by), {"2025-26 Term 2", "2026-27 Term 1"})
-        self.assertEqual(by["2025-26 Term 2"], {"term": "2025-26 Term 2", "filled": 1302, "fMae": 1527.5, "fBase": 2179.6, "fCov": 0.8425, "fMed": 989})
-        self.assertEqual(by["2026-27 Term 1"], {"term": "2026-27 Term 1", "filled": 1696, "fMae": 1305.41, "fBase": 2019.66, "fCov": 0.8054, "fMed": 884})
-        self.assertEqual(a["heldOut"], {"term": "2026-27 Term 1", "n": 7243, "baseN": 6989, "mae": 515.67, "base": 697.1, "cov": 0.8172})
+    def test_shipped_accuracy_matches_the_backtest(self):
+        # Mirrors build_site_data.main: the corrected backtest (and its model version from forecast-meta.json) when the
+        # correction is enabled and its corrected backtest is usable for this fit, else the plain backtest.json.
+        import sys  # noqa: PLC0415
+        bt_path = ROOT / "model/forecast/out/backtest.json"
+        corr_path = ROOT / "model/forecast/out/backtest-corrected.json"
+        meta_path = ROOT / "site/src/data/real/forecast-meta.json"
+        shipped_path = ROOT / "site/src/data/real/accuracy.json"
+        if not bt_path.exists() or not shipped_path.exists() or not meta_path.exists():
+            self.skipTest("no backtest.json, forecast-meta.json or shipped accuracy.json")
+        bt = json.loads(bt_path.read_text())
+        sys.path.insert(0, str(ROOT / "model"))
+        try:
+            from forecast import correction  # noqa: PLC0415
+        finally:
+            sys.path.pop(0)
+        corr = json.loads(corr_path.read_text()) if corr_path.exists() else None
+        if bsd.CORRECTION_ENABLED and correction.corrected_backtest_usable(corr, bt) is None:
+            version = json.loads(meta_path.read_text()).get("modelVersion", "fit")
+            expected = bsd.build_accuracy(corr, version)
+        else:
+            expected = bsd.build_accuracy(bt)
+        self.assertEqual(json.loads(shipped_path.read_text()), expected)
 
 
 if __name__ == "__main__":

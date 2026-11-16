@@ -24,5 +24,6 @@ export const sameInstructor = (a: string, b: string): boolean => {
 
 /** BOSS stores instructor names in capitals: "LEE KOK THONG, TAN AH-MENG" becomes "Lee Kok Thong, Tan Ah-Meng". */
 export function titleName(raw: string | null | undefined): string {
-  return (raw ?? '').trim().toLowerCase().replace(/(^|[\s\-'’/,.(\[])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase());
+  return (raw ?? '').trim().toLowerCase().replace(/(^|[\s\-'’/,.(\[])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase())
+    .replace(/(^|[^\p{L}])Mc(\p{Ll})/gu, (_, sep: string, ch: string) => `${sep}Mc${ch.toUpperCase()}`);
 }

@@ -7,6 +7,7 @@
   import SeatDelta from './SeatDelta.svelte';
   import { APPROX_NOTE, fullText, SEATS_HELP_HREF, seatsLeftNow, seatsOf } from '../../lib/data/seats';
   import { eS, pct } from './fmt';
+  import { titleName } from '../../lib/data/format';
   import { formatSlot } from '../../lib/format/slot';
   import { simSection } from './sectionSim';
 
@@ -102,7 +103,7 @@
         {#each shown as r (r.s.id)}
           <div class="tr" class:full={seatsLeftNow(r.s) <= 0} role="row">
             <span role="cell"><button type="button" class="btn sel" onclick={() => ctx.select(r.s.id)} aria-label="Show section {r.s.section}">{r.s.section}</button></span>
-            <span role="cell" class="ins">{r.s.instructor || 'TBA'}</span>
+            <span role="cell" class="ins">{titleName(r.s.instructor) || 'TBA'}</span>
             <span role="cell" class="tm num">{r.time}</span>
             <span role="cell" class="r num">{#if seatsLeftNow(r.s) <= 0}<b class="badge">{fullText(r.s)}</b>{:else}{#if seatsOf(r.s).source === 'approx'}<a class="approx" href={SEATS_HELP_HREF} title={APPROX_NOTE} aria-label={APPROX_NOTE}>≈</a>{/if}{seatsLeftNow(r.s)}{/if}<SeatDelta section={r.s} /></span>
             <span role="cell" class="r num">{r.chance === null ? '—' : pct(r.chance)}</span>

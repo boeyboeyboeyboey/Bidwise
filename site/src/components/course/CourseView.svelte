@@ -4,6 +4,7 @@
   import { resultsPending } from '../../lib/data/partial';
   import type { ForecastCtx } from './forecast-ctx';
   import { fetchCourse } from '../../lib/data/client';
+  import { titleName } from '../../lib/data/format';
   import { orderSections, type RowBid } from './sections';
   import { anyApprox, APPROX_NOTE, latestScan, scanDayText, seatsLeftNow } from '../../lib/data/seats';
   import type { SimResult } from '../../lib/sim';
@@ -345,7 +346,7 @@
         <select bind:value={mine} onchange={syncUrl}>
           <option value="">Select</option>
           {#each ordered as s (s.id)}
-            <option value={s.section}>{s.section} · {formatSlot(s.meetings) || 'Time not set'} · {s.instructor || 'Instructor not listed'}</option>
+            <option value={s.section}>{s.section} · {formatSlot(s.meetings) || 'Time not set'} · {titleName(s.instructor) || 'Instructor not listed'}</option>
           {/each}
         </select>
       </label>
@@ -396,9 +397,9 @@
   {#if showDesk && current}
     <aside class="side" aria-label="Selected section">
       <div class="panel">
-        <h2>{current.section} <span>{current.instructor || 'Instructor not listed'}</span></h2>
+        <h2>{current.section} <span>{titleName(current.instructor) || 'Instructor not listed'}</span></h2>
         {#key current.id}
-          <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} showClassNumber={!swapping} />
+          <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} />
         {/key}
       </div>
     </aside>

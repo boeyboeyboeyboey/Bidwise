@@ -3,12 +3,28 @@ import Base from '../layouts/Base.astro';
 import Planner from '../components/planner/Planner.svelte';
 import { getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../lib/data';
 import { getCourse, getForecastHighlights } from '../lib/data/server';
-import { startTimesOf } from '../components/planner/plan';
+import { defaultSection, startTimesOf, toPlanSimInput } from '../components/planner/plan';
+import { simulate } from '../lib/sim';
+import { DEFAULT_TARGET, suggestBid } from '../lib/sim/presets';
+import { pickExampleCourses, type ExampleCandidate } from '../lib/planner/example';
 
 const fm = getForecastMeta();
 const hl = getForecastHighlights();
 const seen = new Set<string>();
 const hot = (hl?.mostContested ?? []).filter((h) => !seen.has(h.code) && seen.add(h.code)).slice(0, 8).map((h) => ({ code: h.code, cents: h.p50Cents }));
+// "Try an example plan": every course on offer, on the section the planner starts its row on, with the bid the planner
+// suggests there at the default bid style, highest bid (most contested) first. The picker keeps three that e$125 covers.
+// The contested list alone has no section with 3 or more seats, so it cannot make an affordable example.
+const exWindow = windowLabel(getWindow());
+const candidates: ExampleCandidate[] = getCourseIndex()
+  .filter((c) => c.offeredNow)
+  .flatMap((c) => {
+    const sec = defaultSection(getCourse(c.code)?.sectionsNow ?? [], [], []);
+    const input = sec && toPlanSimInput(sec, exWindow, 1);
+    return input ? [{ code: c.code, seats: input.seats, bidCents: suggestBid(simulate(input), DEFAULT_TARGET) }] : [];
+  })
+  .sort((a, b) => b.bidCents - a.bidCents);
+const example = pickExampleCourses(candidates);
 const lowConfidence = fm.windows.filter((w) => fm.byWindow[w]?.confidence !== 'ok');
 const startTimes = startTimesOf(
   getCourseIndex().filter((c) => c.offeredNow).flatMap((c) => getCourse(c.code)?.sectionsNow ?? []),
@@ -16,7 +32,7 @@ const startTimes = startTimesOf(
 ---
 <Base title="Bid planner · Bidwise" description="Plan bids for several courses at once: set your e$ balance and see the forecast bid for each." active="planner">
   <h1>Bid planner</h1>
-  <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot} startTimes={startTimes}>
+  <Planner client:only="svelte" windows={fm.windows} currentWindow={windowLabel(getWindow())} lowConfidence={lowConfidence} hot={hot} example={example} startTimes={startTimes}>
     <p slot="fallback" class="loading">Loading…</p>
   </Planner>
 </Base>

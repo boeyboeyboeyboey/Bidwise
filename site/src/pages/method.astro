@@ -110,7 +110,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   </>) : null}
 
   {FORECASTS_ENABLED && (<>
-  <section class="plain" id="plain" aria-label="Summary">
+  <section class={calibrated ? 'plain tri' : 'plain'} id="plain" aria-label="Summary">
     <div class="card">
       <h2>What it predicts</h2>
       <ul class="bul">
@@ -135,9 +135,9 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>This term’s earlier rounds: prices are moved up or down to match how the term is going</li>
       </ul>
     </div>
+    {calibrated ? (<>
     <div class="card" id="replay">
-      {calibrated ? (<>
-      <h2>Bid styles</h2>
+      <h2>How a window is replayed</h2>
       <ul class="bul">
         <li>It estimates how many students bid, and how much each bids</li>
         <li>The window is replayed {FORECAST_RUNS.toLocaleString('en-US')} times; the highest bids get the seats</li>
@@ -146,6 +146,11 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>The chance a section fills is estimated separately, from past terms and this term’s earlier rounds</li>
         <li>The range is then narrowed or widened to match past results, by how high the forecast is and whether one seat or more is left</li>
         <li>Both steps are tested again at every update and left out if they make the forecast worse</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Bid styles</h2>
+      <ul class="bul">
         <li>Each style takes a higher bid from the replays: Cheap the lowest, Safe the highest</li>
         <li>The chance shown is how often that bid won a seat in the replays</li>
         <li>In {styleTerm}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' won' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
@@ -153,7 +158,9 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Safe can show a high chance for a section that rarely fills: it also covers the case where the section fills unexpectedly</li>
         <li>Groups: every member needs a seat</li>
       </ul>
-      </>) : (<>
+    </div>
+    </>) : (
+    <div class="card" id="replay">
       <h2>“e$X → about 90%”</h2>
       <ul class="bul">
         <li>It estimates how many students bid, and how much each bids</li>
@@ -163,8 +170,8 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>e$X won a seat in about 90 of 100 replays</li>
         <li>Groups: every member needs a seat</li>
       </ul>
-      </>)}
     </div>
+    )}
     <div class="card" id="limits">
       <h2>What it can’t know</h2>
       <ul class="bul">
@@ -351,6 +358,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   @media (min-width: 640px) {
     .plain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .plain .card:last-child { grid-column: 1 / -1; }
+    .plain.tri .card:last-child { grid-column: auto; }
     .acc-points { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .hero { padding: var(--s5); }
   }
@@ -361,5 +369,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     .plain { grid-template-columns: repeat(6, minmax(0, 1fr)); }
     .plain .card { grid-column: span 2; }
     .plain .card:nth-child(n + 4) { grid-column: span 3; }
+    .plain.tri .card:nth-child(n + 4) { grid-column: span 2; }
   }
 </style>

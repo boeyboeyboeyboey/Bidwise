@@ -24,7 +24,7 @@
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
-  let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [], startTimes = [] }: {
+  let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [], example = [], startTimes = [] }: {
     windows: string[];
     /** Distinct meeting start times this term ("08:15"), sorted: the rows of the can't-attend grid. */
     startTimes?: string[];
@@ -33,6 +33,8 @@
     lowConfidence?: string[];
     /** Most contested courses in the current window, for the quick-add chips. */
     hot?: { code: string; cents: number }[];
+    /** Courses for "Try an example plan", chosen at build time to fit e$125 (empty: no button). */
+    example?: string[];
   } = $props();
 
   // Open now, or the next to open between windows: the default window and the one "no choice" means.
@@ -467,7 +469,7 @@
   }
   // Adds courses only: the balance, priority and busy times the student set stay as they are.
   async function tryExample() {
-    const codes = examples.map((h) => h.code);
+    const codes = example;
     for (const c of codes) await addRow(c);
     const ex = codes.map((c) => rows.find((r) => r.course === c));
     if (ex.length >= 3 && ex[1] && ex[2]) {
@@ -740,7 +742,7 @@
     {:else}
       <section class="start" aria-label="Start">
         <CourseAdd onadd={onAdd} inPlan={[]} label="Add a course" placeholder="Course code or title" />
-        {#if examples.length >= 3}
+        {#if example.length >= 3}
           <div class="go">
             <button type="button" class="btn btn-primary" onclick={tryExample}>Try an example plan</button>
           </div>

@@ -6,6 +6,8 @@ describe('titleName', () => {
     expect(titleName('PRADEEP REDDY VARAKANTHAM')).toBe('Pradeep Reddy Varakantham');
     expect(titleName('LEE KOK THONG, TAN AH-MENG')).toBe('Lee Kok Thong, Tan Ah-Meng');
     expect(titleName("O'BRIEN")).toBe("O'Brien");
+    expect(titleName('MARK MCLAUGHLIN')).toBe('Mark McLaughlin');
+    expect(titleName('MCGUIRE, JACK')).toBe('McGuire, Jack');
     expect(titleName('A/B (C.D)')).toBe('A/B (C.D)');
   });
   it('normalises mixed case and trims', () => {

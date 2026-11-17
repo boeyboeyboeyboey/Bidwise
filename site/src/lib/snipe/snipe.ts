@@ -54,9 +54,16 @@ export function snipeMoney(paidCents: number, rebidCents: number, windowLabel: s
   return { refundCents: refund, netCents: paid - refund + rebid, savingCents: refund - rebid };
 }
 
-/** The freed seat is one seat, bid for by one person, in the chosen window. */
+/**
+ * The freed seat is one seat, bid for by one person, in the chosen window. When the build shipped the fill chance at 1 seat
+ * (`fillProbAt1`, a number strictly between 0 and 1) it replaces the section's own fill chance, which was predicted at its
+ * current seat count; otherwise the parameters are the section's, unchanged.
+ */
 export function snipeSimInput(f: ForecastWindow, minBidCents: number): SimInput {
-  return { seats: 1, group: 1, minBidCents, params: toSimParams(f) as SimParams, runs: FORECAST_RUNS, seed: FORECAST_SEED };
+  const params = toSimParams(f) as SimParams;
+  const at1 = f.fillProbAt1;
+  if (typeof at1 === 'number' && at1 > 0 && at1 < 1) params.fillProb = at1;
+  return { seats: 1, group: 1, minBidCents, params, runs: FORECAST_RUNS, seed: FORECAST_SEED };
 }
 
 /** Chance the re-bid wins the single freed seat. A re-bid below the minimum is raised to it. */

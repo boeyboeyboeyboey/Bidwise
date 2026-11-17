@@ -84,6 +84,11 @@ export interface ForecastWindow extends SimParams {
   pooledLevel: PooledLevel;
   /** Past results behind the estimate at its pooling level. */
   nObs: number;
+  /**
+   * Fill chance as if the section had 1 seat (model/forecast/distcal.py), present only when the build ships it and the section
+   * has more than 1 seat. Read only by Snipe; not a simulator input.
+   */
+  fillProbAt1?: number | null;
 }
 
 /** One section in one past bidding window. null bids mean nobody bid successfully. */

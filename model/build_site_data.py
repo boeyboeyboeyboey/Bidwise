@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import sys
@@ -62,9 +63,12 @@ CORRECTION_ENABLED = True
 # fillProb / spreadLo / spreadHi per section-window and bidLevels in forecast-meta.json. Needs the correction to be active and a
 # valid out/distcal.json; any failure falls back to the corrected-but-uncalibrated params for ALL sections.
 DIST_CALIBRATION_ENABLED = True
+# Fill chance at 1 seat, shipped as fillProbAt1 (only Snipe reads it). Off until the owner approves; see the 18 Nov log.
+FILL_AT_ONE_SEAT_ENABLED = False
 SIM_PARAM_KEYS = ("demandMean", "demandDispersion", "priceLevelCents", "priceSigma",
                   "anchorSigma", "anchorShare", "anchorCents")
 SIM_CALIBRATION_KEYS = ("fillProb", "spreadLo", "spreadHi")  # shipped only on the section-windows distcal calibrated
+SIM_EXTRA_KEYS = ("fillProbAt1",)  # shipped beside the calibration keys but never passed to sim.SimParams
 # Same runs, seed and target as the course page (site/src/lib/sim/forecast.ts: FORECAST_RUNS, FORECAST_SEED, 90% target)
 # so a section shows the identical bid on the home lists and on its own page.
 HIGHLIGHT_RUNS = 20000
@@ -827,7 +831,10 @@ def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal
         why = distcal.invalid_reason(payload, cfg, terms)
         if why:
             return skip(why)
-        p_clf = distcal.live_predict_fill(live)
+        if FILL_AT_ONE_SEAT_ENABLED:
+            p_clf, p_at1 = distcal.live_predict_fill_with_one_seat(live)
+        else:
+            p_clf, p_at1 = distcal.live_predict_fill(live), {}
         table = payload["exponents"]
         new = json.loads(json.dumps(params))
         done = 0
@@ -841,6 +848,8 @@ def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal
             c = distcal.apply(sim.SimParams(**{k: d[k] for k in SIM_PARAM_KEYS}), p, table, median, int(live["tf"].seats.iloc[i]))
             if c.fillProb is not None:
                 d["fillProb"] = min(0.9999, max(0.0001, round(c.fillProb, 4)))
+            if (cn, w) in p_at1 and not math.isnan(p_at1[(cn, w)]):
+                d["fillProbAt1"] = min(0.9999, max(0.0001, round(p_at1[(cn, w)], 4)))
             d["spreadLo"], d["spreadHi"] = c.spreadLo, c.spreadHi
             done += 1
         if not done:
@@ -940,7 +949,7 @@ def attach_forecasts(docs: dict, params: dict) -> int:
             s["minBidCents"] = c["minBidCents"]
             s["forecast"] = {
                 w: {**{k: v[k] for k in SIM_PARAM_KEYS}, "pooledLevel": v["pooledLevel"], "nObs": v["nObs"],
-                    **{k: v[k] for k in SIM_CALIBRATION_KEYS if k in v}}
+                    **{k: v[k] for k in SIM_CALIBRATION_KEYS + SIM_EXTRA_KEYS if k in v}}
                 for w, v in c["windows"].items()
             }
             attached += 1

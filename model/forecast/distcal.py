@@ -72,9 +72,10 @@ def _clf(seed: int):
 
 
 # ----------------------------------------------------------------------------- fill classifier (lab variant A)
-def train_predict_fill(tables: dict, T: int, tgt_feat):
-    """P(filled) for tgt_feat's rows: classifier on ALL sections with seats > 0 of every table with tidx < T (tables only holds
-    terms from correction.FIRST_TRAIN_TERM on), same features as the price regressor, mean of the correction.SEEDS models."""
+def train_predict_fill_multi(tables: dict, T: int, tgt_feats: list) -> list:
+    """P(filled) for each frame in tgt_feats, from ONE training: classifier on ALL sections with seats > 0 of every table with
+    tidx < T (tables only holds terms from correction.FIRST_TRAIN_TERM on), same features as the price regressor, mean of the
+    correction.SEEDS models. Returns one array per frame, in order."""
     C.require_deps()
     if HistGradientBoostingClassifier is None:
         raise CorrectionError("scikit-learn unavailable")
@@ -83,8 +84,24 @@ def train_predict_fill(tables: dict, T: int, tgt_feat):
     if len(tr) < 200 or tr.filled.nunique() < 2:
         raise CorrectionError(f"too few training rows for the fill classifier before term index {T}")
     X = tr[C.FEATURES].replace([np.inf, -np.inf], np.nan)
-    Xt = tgt_feat[C.FEATURES].replace([np.inf, -np.inf], np.nan)
-    return np.mean([_clf(s).fit(X, tr.filled.astype(int)).predict_proba(Xt)[:, 1] for s in C.SEEDS], axis=0)
+    Xts = [f[C.FEATURES].replace([np.inf, -np.inf], np.nan) for f in tgt_feats]
+    models = [_clf(s).fit(X, tr.filled.astype(int)) for s in C.SEEDS]
+    return [np.mean([m.predict_proba(Xt)[:, 1] for m in models], axis=0) for Xt in Xts]
+
+
+def train_predict_fill(tables: dict, T: int, tgt_feat):
+    """P(filled) for tgt_feat's rows (see train_predict_fill_multi)."""
+    return train_predict_fill_multi(tables, T, [tgt_feat])[0]
+
+
+def one_seat_frame(tf):
+    """Copy of the target feature table as if every section had 1 seat: seats, lseats and seat_ratio (the only columns derived
+    from the row's own seats in correction.features_for) are reset; cap, the ws_* history and everything else stay."""
+    f = tf.copy()
+    f["seats"] = 1
+    f["lseats"] = np.log(f.seats.astype(float))
+    f["seat_ratio"] = f.seats / f.cap.clip(lower=1)
+    return f
 
 
 def predict_fill(df, tables, all_obs, term: str, cfg) -> dict:
@@ -505,6 +522,17 @@ def live_predict_fill(live: dict) -> dict:
     tf = live["tf"]
     p = train_predict_fill(live["tables"], live["ti"], tf)
     return {(c, w): float(v) for c, w, v, s in zip(tf.cls, tf.window, p, tf.seats) if s > 0}
+
+
+def live_predict_fill_with_one_seat(live: dict) -> tuple[dict, dict]:
+    """(current, at1): `current` is live_predict_fill's dict; `at1` is {(class, window): P(filled) as if the section had 1 seat}
+    for rows with seats > 1 (the classifier fitted once, applied to the target table and to its one_seat_frame)."""
+    C.require_deps()
+    tf = live["tf"]
+    p, p1 = train_predict_fill_multi(live["tables"], live["ti"], [tf, one_seat_frame(tf)])
+    cur = {(c, w): float(v) for c, w, v, s in zip(tf.cls, tf.window, p, tf.seats) if s > 0}
+    at1 = {(c, w): float(v) for c, w, v, s in zip(tf.cls, tf.window, p1, tf.seats) if s > 1}
+    return cur, at1
 
 
 # ----------------------------------------------------------------------------- persistence

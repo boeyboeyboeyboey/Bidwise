@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ForecastWindow } from '../data/types';
 import { simulate } from '../sim';
+import { toSimParams } from '../sim/forecast';
 import { dropWindows, parseDollars, refundCapCents, refundCents, snipeChance, snipeMoney, snipeSimInput, validPaid } from './snipe';
 
 const fw: ForecastWindow = {
@@ -57,6 +58,21 @@ describe('sim mapping', () => {
     expect(i.group).toBe(1);
     expect(i.minBidCents).toBe(1000);
     expect(i.params.priceLevelCents).toBe(1500);
+  });
+  it('uses the fill chance at 1 seat when it is a number strictly between 0 and 1', () => {
+    const base = { ...fw, fillProb: 0.3 };
+    expect(snipeSimInput({ ...base, fillProbAt1: 0.7 }, 1000).params.fillProb).toBe(0.7);
+    expect(snipeSimInput({ ...fw, fillProbAt1: 0.7 }, 1000).params.fillProb).toBe(0.7);
+  });
+  it('leaves the section parameters unchanged when the fill chance at 1 seat is absent, null, 0 or 1', () => {
+    const base = { ...fw, fillProb: 0.3 };
+    for (const v of [undefined, null, 0, 1, NaN]) {
+      const i = snipeSimInput({ ...base, fillProbAt1: v }, 1000);
+      expect(i.params).toEqual(toSimParams(base));
+      expect(i.params.fillProb).toBe(0.3);
+    }
+    expect(snipeSimInput(fw, 1000).params).toEqual(toSimParams(fw));
+    expect('fillProb' in snipeSimInput({ ...fw, fillProbAt1: 0 }, 1000).params).toBe(false);
   });
   it('chance of a minimum re-bid is lower than a higher re-bid, and a sub-minimum re-bid counts as the minimum', () => {
     const sim = simulate({ ...snipeSimInput(fw, 1000), runs: 2000 });

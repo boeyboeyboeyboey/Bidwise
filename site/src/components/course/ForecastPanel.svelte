@@ -4,7 +4,7 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isLowConfidence, lowConfidence, measuredIfFills, presetFor, suggestBid, underDelivers } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isFarWindow, isLowConfidence, lowConfidence, measuredIfFills, presetFor, suggestBid, underDelivers } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { lowConfidenceLines, styleTipLines } from './bidStyle';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
@@ -105,7 +105,7 @@
   const measuredLow = $derived(measured !== null && (styleKey === 'cheap' || styleKey === 'balanced' || styleKey === 'safe') && underDelivers(styleKey, measured));
   // Only a bid above the minimum has an "if it fills" chance worth showing (at the minimum it is certain).
   const aboveMin = $derived(minBid !== null && rec > minBid + 1);
-  const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win) : []);
+  const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win, isFarWindow(res.win, ctx.buildWindow, ctx.meta.windows)) : []);
 
   // null until the saved plan has been read in the browser, so the server-rendered button does not flip.
   let inPlan = $state<boolean | null>(null);

@@ -156,6 +156,29 @@ describe('lowConfidence', () => {
     expect(m.lowConfidence(5, 'Round 2A Window 1')).toEqual(['lateWindow']);
     expect(m.lowConfidence(1, 'Round 2A Window 3')).toEqual(['oneSeat', 'lateWindow']);
   });
+  it('adds farWindow last when the window is after the build window', async () => {
+    const m = await load(false);
+    expect(m.lowConfidence(5, 'Round 2 Window 2', true)).toEqual(['farWindow']);
+    expect(m.lowConfidence(5, 'Round 2 Window 2')).toEqual([]);
+    expect(m.lowConfidence(1, 'Round 2 Window 3', true)).toEqual(['oneSeat', 'lateWindow', 'farWindow']);
+  });
+});
+
+describe('isFarWindow', () => {
+  const W = ['Round 1 Window 1', 'Round 2 Window 1', 'Round 2 Window 2', 'Round 2 Window 3'];
+  it('is true only for windows after the build window', async () => {
+    const m = await load(false);
+    expect(m.isFarWindow('Round 2 Window 2', 'Round 2 Window 1', W)).toBe(true);
+    expect(m.isFarWindow('Round 2 Window 3', 'Round 2 Window 1', W)).toBe(true);
+    expect(m.isFarWindow('Round 2 Window 1', 'Round 2 Window 1', W)).toBe(false);
+    expect(m.isFarWindow('Round 1 Window 1', 'Round 2 Window 1', W)).toBe(false);
+  });
+  it('is false when either label is not in the list', async () => {
+    const m = await load(false);
+    expect(m.isFarWindow('Round 9 Window 1', 'Round 2 Window 1', W)).toBe(false);
+    expect(m.isFarWindow('Round 2 Window 2', 'Round 9 Window 1', W)).toBe(false);
+    expect(m.isFarWindow('Round 2 Window 2', 'Round 2 Window 1', [])).toBe(false);
+  });
 });
 
 describe('planner and report follow the presets', () => {

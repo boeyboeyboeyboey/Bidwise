@@ -46,6 +46,7 @@ describe('lowConfidenceLines', () => {
   it('gives one line per reason', () => {
     expect(lowConfidenceLines(['oneSeat', 'lateWindow'])).toHaveLength(2);
     expect(lowConfidenceLines([])).toEqual([]);
+    expect(lowConfidenceLines(['lateWindow', 'farWindow'])).toHaveLength(2);
   });
   it('adds the window flag as a third plain line, alone or after the others', () => {
     expect(lowConfidenceLines([], true)).toEqual(['This window was harder to forecast in past terms.']);

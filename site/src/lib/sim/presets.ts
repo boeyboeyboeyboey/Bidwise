@@ -104,16 +104,27 @@ export function chanceIfFills(result: SimResult, bidCents: number): number | nul
   return Math.min(1, Math.max(0, Math.round(((pInAt(result, bidCents) - (1 - f)) / f) * 1e9) / 1e9));
 }
 
-export type LowConfidenceReason = 'oneSeat' | 'lateWindow';
+export type LowConfidenceReason = 'oneSeat' | 'lateWindow' | 'farWindow';
 
 /** The late windows: few seats and few bids, so prices are harder to predict. */
 export const isLateWindow = (windowLabel: string): boolean => windowLabel === 'Round 2 Window 3' || windowLabel.startsWith('Round 2A');
 
-/** Why a forecast deserves less trust: one seat only, or a window the backtests found least reliable. */
-export function lowConfidence(seats: number, windowLabel: string): LowConfidenceReason[] {
+/**
+ * A window after the build's own window (open or next to open when the data was built), in the forecast window order: its
+ * forecast was made before the earlier windows' results were in. False when either label is not in `windows`.
+ */
+export function isFarWindow(windowLabel: string, buildWindowLabel: string, windows: readonly string[]): boolean {
+  const at = windows.indexOf(windowLabel);
+  const build = windows.indexOf(buildWindowLabel);
+  return at >= 0 && build >= 0 && at > build;
+}
+
+/** Why a forecast deserves less trust: one seat only, a late window, or a window after the build's own (`far`, see isFarWindow). */
+export function lowConfidence(seats: number, windowLabel: string, far = false): LowConfidenceReason[] {
   const out: LowConfidenceReason[] = [];
   if (seats === 1) out.push('oneSeat');
   if (isLateWindow(windowLabel)) out.push('lateWindow');
+  if (far) out.push('farWindow');
   return out;
 }
 
@@ -121,6 +132,6 @@ export function lowConfidence(seats: number, windowLabel: string): LowConfidence
  * Why a row's forecast deserves less trust. A window whose own tag already says it is low confidence (`windowTagged`) is not
  * repeated on every row: only the 1-seat reason stays there.
  */
-export function rowLowConfidence(seats: number, windowLabel: string, windowTagged: boolean): LowConfidenceReason[] {
-  return lowConfidence(seats, windowLabel).filter((r) => !(windowTagged && r === 'lateWindow'));
+export function rowLowConfidence(seats: number, windowLabel: string, windowTagged: boolean, far = false): LowConfidenceReason[] {
+  return lowConfidence(seats, windowLabel, far).filter((r) => !(windowTagged && (r === 'lateWindow' || r === 'farWindow')));
 }

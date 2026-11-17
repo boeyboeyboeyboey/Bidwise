@@ -7,6 +7,8 @@ export interface ForecastCtx {
   readonly meta: ForecastMeta;
   /** Label of the current window: the one open now, or the next to open between windows. */
   readonly currentWindow: string;
+  /** The window the site data was built for (baked in, not re-picked from the clock): what the forecasts' data knew. */
+  readonly buildWindow: string;
   /** True when currentWindow has not opened yet. */
   readonly currentUpcoming: boolean;
   /** The bidding window the person chose (shared with the rest of the site); null = the open window. */

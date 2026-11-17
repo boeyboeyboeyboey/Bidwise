@@ -57,6 +57,7 @@
     get code() { return code; },
     get meta() { return forecastMeta; },
     get currentWindow() { return currentName; },
+    get buildWindow() { return windowName; },
     get currentUpcoming() { return curUpcoming; },
     get chosenWindow() { return chosen; },
     setWindow(label: string) { chosen = label; setChosenWindow(label); },

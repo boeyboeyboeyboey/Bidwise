@@ -74,7 +74,7 @@ const aims = KEYS.map((k) => `${Math.round(STYLE_TARGET[k] * 100)}%`);
 const r100 = (v: number) => `${Math.round(v * 100)}%`;
 const shortRounds = measured ? measured.byRound.filter((r) => KEYS.some((k) => underDelivers(k, r[k]))).map((r) => r.label) : [];
 const andList = (xs: string[]) => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
-const lowConf = lowConfidenceLines(['oneSeat', 'lateWindow'], true);
+const lowConf = lowConfidenceLines(['oneSeat', 'lateWindow', 'farWindow'], true);
 const e = (c: number | null) => (c === null ? '–' : eS(c));
 const p = (v: number | null) => (v === null ? '–' : pct(v));
 const { sourceRows: results, sourceTerms: terms } = dataMeta as { sourceRows?: number; sourceTerms?: number };
@@ -202,6 +202,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>What this term’s students decide</li>
         <li>Seats marked ≈ are estimates and can be wrong</li>
         <li>Later windows (Round 2 Window 3 on): few sections fill, so forecasts there are low confidence</li>
+        <li>Windows after the open or next one: forecasts there are made before the earlier windows’ results are in, and were less accurate in past terms</li>
       </ul>
     </div>
   </section>
@@ -245,7 +246,8 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     <ul class="acc-points">
       <li><b>One seat</b><span>{lowConf[0]}</span></li>
       <li><b>Late rounds</b><span>{lowConf[1]}</span></li>
-      <li><b>Hard-to-forecast windows</b><span>{lowConf[2]}</span></li>
+      <li><b>Windows after the open or next one</b><span>{lowConf[2]}</span></li>
+      <li><b>Hard-to-forecast windows</b><span>{lowConf[3]}</span></li>
     </ul>
     </>)}
 

@@ -3,7 +3,7 @@ import type { ForecastWindow, ForecastWindowMeta, SimParams } from '../data/type
 import type { SimResult } from './index';
 import { suggestBid } from './presets';
 
-export { TARGETS, DEFAULT_TARGET, bidPresets, bidCalibrated, presetFor, normaliseTarget, targetToStored, targetFromStored, suggestBid, chanceIfFills, measuredIfFills, underDelivers, STYLE_TARGET, lowConfidence } from './presets';
+export { TARGETS, DEFAULT_TARGET, bidPresets, bidCalibrated, presetFor, normaliseTarget, targetToStored, targetFromStored, suggestBid, chanceIfFills, measuredIfFills, underDelivers, STYLE_TARGET, lowConfidence, isFarWindow } from './presets';
 export type { BidPreset, LowConfidenceReason } from './presets';
 
 export const MAX_FRIENDS_GROUP = 6;

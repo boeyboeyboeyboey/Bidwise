@@ -40,6 +40,7 @@ export function styleMeaning(preset: BidPreset): string {
 const REASON_TEXT: Record<LowConfidenceReason, string> = {
   oneSeat: 'Only 1 seat: the price is set by the single highest bid, so it swings a lot.',
   lateWindow: 'Late round: few seats and few bids, so prices are harder to predict.',
+  farWindow: "Forecast made before the earlier windows' results are in, so it's less certain.",
 };
 
 /** The window's own flag: the backtests found it harder to forecast than most (few filled sections, or the ranges missed too often). */

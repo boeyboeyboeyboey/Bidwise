@@ -6,7 +6,7 @@
   import { runOptimise, runSim } from '../../lib/sim/client';
   import { TARGETS, bidCalibrated, bidPresets, fromCurrent, suggestBid, targetToStored } from '../../lib/sim/forecast';
   import { lowConfidenceLines, styleTipLines } from '../course/bidStyle';
-  import { isLateWindow } from '../../lib/sim/presets';
+  import { isFarWindow, isLateWindow } from '../../lib/sim/presets';
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
   import { liveWindow } from '../../lib/data/window';
   import { BALANCE_KEY, getBalanceText, getChosenWindow, getPlan, onPlanChange, onWindowChange, savePlan, setBalanceText, setChosenWindow } from '../../lib/state';
@@ -52,10 +52,12 @@
   /** Chance level you want, as on the course page: Cheap / Balanced / Safe (calibrated) or 80, 90 or 95%. */
   const calibrated = bidCalibrated();
   const presets = bidPresets();
-  // One tag for the window: late round and/or flagged in the backtests. Rows then keep only their own 1-seat reason.
+  // One tag for the window: late round, after the build's own window and/or flagged in the backtests. Rows then keep only their own 1-seat reason.
   const windowHard = $derived(lowConfidence.includes(win));
   const windowLate = $derived(isLateWindow(win));
-  const windowTagged = $derived(windowHard || windowLate);
+  // The build's window (not the live one): what the data knew when it was built.
+  const windowFar = $derived(isFarWindow(win, builtWindow, allWindows));
+  const windowTagged = $derived(windowHard || windowLate || windowFar);
   const styleTip = styleTipLines(presets);
   let target = $state<number>(DEFAULT_TARGET);
   let avoid = $state<string[]>([]);
@@ -627,7 +629,7 @@
         </div>
       </div>
       {#if windowTagged}
-        <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(windowLate ? ['lateWindow'] : [], windowHard)} /></span>
+        <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines([...(windowLate ? ['lateWindow' as const] : []), ...(windowFar ? ['farWindow' as const] : [])], windowHard)} /></span>
       {/if}
       </div>
       {#if rows.length}

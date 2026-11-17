@@ -92,6 +92,11 @@ describe('rowLowConfidence', () => {
     expect(rowLowConfidence(1, 'Round 2 Window 3', true)).toEqual(['oneSeat']);
     expect(rowLowConfidence(1, 'Round 1B Window 1', true)).toEqual(['oneSeat']);
   });
+  it('farWindow is a reason like lateWindow: kept on a row in an untagged window, dropped once the window is tagged', () => {
+    expect(rowLowConfidence(1, 'Round 2 Window 2', false, true)).toEqual(['oneSeat', 'farWindow']);
+    expect(rowLowConfidence(1, 'Round 2 Window 2', true, true)).toEqual(['oneSeat']);
+    expect(rowLowConfidence(5, 'Round 2 Window 2', true, true)).toEqual([]);
+  });
   it('knows the late windows', () => {
     expect(['Round 2 Window 3', 'Round 2A Window 1', 'Round 2A Window 3'].every(isLateWindow)).toBe(true);
     expect(['Round 2 Window 2', 'Round 1A Window 3'].some(isLateWindow)).toBe(false);

@@ -371,7 +371,7 @@ Since 17 Nov 2026 (`distcal-a2`) each style targets a win rate on sections that 
 
 **Rounding.** A raw bid is raised to the next odd cent. At the minimum it stays there; above it, it goes up to the next whole e\$ plus one cent, because about 3 in 10 real clearing bids are whole e\$ amounts (`site_round`).
 
-**Choosing a level.** For each level on `LEVEL_GRID` (0.300 to 0.995 in steps of 0.005), every backtest row gets a rounded bid, and `lossFilled` is the share of filled rows whose real clearing bid was above it. A style's level is the lowest one with `lossFilled` at or under its limit (`pick_levels`). If none qualifies, the top of the grid is used and flagged `reached: false`.
+**Choosing a level.** For each level on `LEVEL_GRID` (0.300 to 0.995 in steps of 0.005), every backtest row gets an unrounded bid (the measured win rates below use rounded bids), and `lossFilled` is the share of filled rows whose real clearing bid was above it. A style's level is the lowest one with `lossFilled` at or under its limit (`pick_levels`). If none qualifies, the top of the grid is used and flagged `reached: false`.
 
 **Per window group.** Levels are picked separately for each window group (`GROUPS`, from `evalscore.window_group`):
 

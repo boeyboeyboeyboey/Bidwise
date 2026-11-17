@@ -68,6 +68,15 @@ describe('filterCourses', () => {
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'FA' }))).toEqual(['ACCT101', 'FA100']);
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'modeling and data' }))).toEqual(['X1']);
   });
+  it('falls back to close matches, marked, only when nothing matches exactly', () => {
+    const hits = f({ q: 'acounting' });
+    expect(codes(hits)).toEqual(['ACCT101']);
+    expect(hits[0].close).toBe(true);
+    expect(f({ q: 'accounting' })[0].close).toBeUndefined();
+  });
+  it('shows no close matches when filters hide the exact ones', () => {
+    expect(f({ q: 'accounting', sub: 'ECON' })).toEqual([]);
+  });
   it('puts courses whose code starts with the text first', () => {
     const extra = groupCourses([], [{ code: 'IS2140', title: '' }, { code: 'COR-IS214', title: 'x' }, { code: 'IS214', title: 'Y' }]);
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'IS214' }))).toEqual(['IS214', 'IS2140', 'COR-IS214']);

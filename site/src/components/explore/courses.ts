@@ -1,7 +1,7 @@
 // Browse: courses with this term's sections, filters, term list per course and URL state. Pure and DOM-free, so it is unit tested (courses.test.ts).
 // Section-level data only, never anything about an individual student.
 import { DAYS, DAY_IDS, R, bitsToIds, idsToBits, subjectOf, type ClassRow } from '../classes/logic';
-import { aliasesOf, flatText, queryTokens } from '../../lib/search/courseSearch';
+import { aliasesOf, closeCost, flatText, queryTokens } from '../../lib/search/courseSearch';
 
 export interface CourseEntry {
   code: string;
@@ -83,25 +83,44 @@ export interface CourseHit {
   course: CourseEntry;
   /** This term's sections that pass the section filters (all of them when none is set). */
   sections: ClassRow[];
+  /** Set when nothing matched exactly and this is a typo match. */
+  close?: true;
 }
 
-/** Courses matching the search text (code, title, nickname or a professor of this term) and subject, with at least one section passing the section filters when any is set. An exact nickname comes first, then courses whose code starts with the text. */
+/** Courses matching the search text (code, title, nickname or a professor of this term) and subject, with at least one section passing the section filters when any is set. An exact nickname comes first, then courses whose code starts with the text. When nothing matches exactly, close (typo) matches of code, title or nickname, marked `close`. */
 export function filterCourses(courses: readonly CourseEntry[], f: BrowseState): CourseHit[] {
   const on = sectionFilterOn(f);
   const hits: CourseHit[] = [];
+  let textHit = false;
   for (const c of courses) {
-    if (f.sub && c.subject !== f.sub) continue;
     if (!matchesWords(`${c.code} ${c.title} ${c.professors.join(' ')} ${aliasesOf(c.code).join(' ')}`, f.q)) continue;
+    textHit = true;
+    if (f.sub && c.subject !== f.sub) continue;
     const sections = on ? c.sections.filter((r) => sectionMatches(r, f)) : c.sections;
     if (on && !sections.length) continue;
     hits.push({ course: c, sections });
   }
   const q = flatText(f.q);
+  // Close matches only when no course at all matches the text (not when the filters hid the exact ones).
+  if (q && !textHit) return closeHits(courses, f, on);
   if (q) {
     const rank = (h: CourseHit) => (aliasesOf(h.course.code).includes(q) ? 0 : flatText(h.course.code).startsWith(q) ? 1 : 2);
     return hits.map((h, i) => [h, i] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
   }
   return hits;
+}
+
+function closeHits(courses: readonly CourseEntry[], f: BrowseState, on: boolean): CourseHit[] {
+  const close: { hit: CourseHit; cost: number; i: number }[] = [];
+  courses.forEach((c, i) => {
+    if (f.sub && c.subject !== f.sub) return;
+    const cost = closeCost(c.code, c.title, f.q);
+    if (cost < 0) return;
+    const sections = on ? c.sections.filter((r) => sectionMatches(r, f)) : c.sections;
+    if (on && !sections.length) return;
+    close.push({ hit: { course: c, sections, close: true }, cost, i });
+  });
+  return close.sort((a, b) => a.cost - b.cost || a.i - b.i).map((x) => x.hit);
 }
 
 /** Instructors under a course title: the first `max`, then "+N more". */

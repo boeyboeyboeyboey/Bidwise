@@ -275,7 +275,7 @@
     </div>
 
     <p class="meta" aria-live="polite">
-      {hits.length} {hits.length === 1 ? 'course' : 'courses'}{scanText ? ` · seats as of ${scanText}` : ''}
+      {hits[0]?.close ? 'No exact match. Close matches: ' : ''}{hits.length} {hits.length === 1 ? 'course' : 'courses'}{scanText ? ` · seats as of ${scanText}` : ''}
     </p>
     {#if filtered}<p class="note">Day, time, seats and exam filters apply to this term's sections.</p>{/if}
 

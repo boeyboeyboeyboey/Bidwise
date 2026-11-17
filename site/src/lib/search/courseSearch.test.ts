@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COURSE_ALIASES } from './aliases';
-import { aliasesOf, courseRank, flatText, isExactCode, queryTokens, rankCourses } from './courseSearch';
+import { aliasesOf, courseRank, editDistance, flatText, isExactCode, queryTokens, rankCourses, searchCourses } from './courseSearch';
 
 describe('text normalising', () => {
   it('reads & as and, drops apostrophes and other punctuation', () => {
@@ -85,5 +85,49 @@ describe('alias table', () => {
         expect(codes.has(flatText(n)), `${code}: "${n}" is a course code`).toBe(false);
       }
     }
+  });
+});
+
+describe('editDistance', () => {
+  it('counts insertions, deletions, substitutions and neighbour swaps as one edit each', () => {
+    expect(editDistance('managment', 'management', 2)).toBe(1);
+    expect(editDistance('statistcs', 'statistics', 2)).toBe(1);
+    expect(editDistance('fianncial', 'financial', 2)).toBe(1);
+    expect(editDistance('abc', 'xyz', 1)).toBe(2);
+  });
+});
+
+describe('searchCourses close matches', () => {
+  const index: [string, string][] = [
+    ['ACCT101', 'Financial Accounting'],
+    ['ACCT102', 'Management Accounting'],
+    ['COR-STAT1202', 'Introductory Statistics'],
+    ['IS113', 'Web Application Development I'],
+    ['IS112', 'Data Management'],
+    ['IS115', 'Algorithms and Programming'],
+  ];
+  const find = (q: string) => {
+    const r = searchCourses(index, q, (e) => e);
+    return { codes: r.items.map((e) => e[0]), close: r.close };
+  };
+  it('uses exact matches when there are any', () => {
+    expect(find('management')).toEqual({ codes: ['ACCT102', 'IS112'], close: false });
+  });
+  it('finds title typos, including a half-typed last word', () => {
+    expect(find('managment')).toEqual({ codes: ['ACCT102', 'IS112'], close: true });
+    expect(find('statistcs')).toEqual({ codes: ['COR-STAT1202'], close: true });
+    expect(find('finacial acco')).toEqual({ codes: ['ACCT101'], close: true });
+    expect(find('acounting')).toEqual({ codes: ['ACCT101', 'ACCT102'], close: true });
+  });
+  it('forgives one typo in a whole code and in a nickname', () => {
+    expect(find('act101').codes[0]).toBe('ACCT101');
+    expect(find('algp').codes).toContain('IS115');
+  });
+  it('on a tie, puts the title with fewer words first', () => {
+    const two: [string, string][] = [['COMM246', 'Crisis Management and Communication'], ['COR-COMM1304', 'Management Communication']];
+    expect(searchCourses(two, 'mangement comunication', (e) => e).items.map((e) => e[0])).toEqual(['COR-COMM1304', 'COMM246']);
+  });
+  it('forgives nothing in words of 3 letters or fewer', () => {
+    expect(find('wqd')).toEqual({ codes: [], close: false });
   });
 });

@@ -4,7 +4,7 @@
   import { candidates, deriveBlocks, findDegree, pickViews, withoutCoveredDegree } from '../../lib/gradreq';
   import type { Block, GradIndex, GradView, LoadedView, OfferedCourse, Requisites } from '../../lib/gradreq';
   import { fetchIndex } from '../../lib/data/client';
-  import { flatText, rankCourses } from '../../lib/search/courseSearch';
+  import { flatText, searchCourses } from '../../lib/search/courseSearch';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { liveWindow } from '../../lib/data/window';
   import { getChosenWindow } from '../../lib/state';
@@ -179,16 +179,18 @@
     return m;
   });
   let q = $state('');
-  const matches = $derived.by(() => {
-    if (!flatText(q)) return [];
+  // `close`: nothing matched exactly, so these are typo matches.
+  const matchSet = $derived.by(() => {
+    if (!flatText(q)) return { list: [] as [string, string][], close: false };
     // Every course the site knows, plus any course a selected view lists that the site has no page for.
     const all = new Map<string, string>(allCourses.map((c) => [c.code, c.title]));
     for (const [code, title] of poolCourses) if (!all.has(code)) all.set(code, title);
     const open = [...all].filter(([code]) => !completed.includes(code)).sort((a, b) => a[0].localeCompare(b[0]));
-    const ranked = rankCourses(open, q, (e) => e);
+    const { items: ranked, close } = searchCourses(open, q, (e) => e);
     // Courses in the selected views first, each group in match order (code, nickname, title).
-    return [...ranked.filter(([c]) => poolCourses.has(c)), ...ranked.filter(([c]) => !poolCourses.has(c))].slice(0, 6);
+    return { list: [...ranked.filter(([c]) => poolCourses.has(c)), ...ranked.filter(([c]) => !poolCourses.has(c))].slice(0, 6), close };
   });
+  const matches = $derived(matchSet.list);
   function addDone(code: string) {
     if (!completed.includes(code)) completed = [...completed, code];
     q = '';
@@ -412,6 +414,7 @@
         onkeydown={(e) => e.key === 'Enter' && matches[0] && addDone(matches[0][0])} />
       {#if matches.length}
         <ul class="matches">
+          {#if matchSet.close}<li class="hint">No exact match. Close matches:</li>{/if}
           {#each matches as [code, title] (code)}
             <li><button type="button" onclick={() => addDone(code)}><b>{code}</b> <span>{title}</span></button></li>
           {/each}
@@ -641,6 +644,7 @@
   .matches button { display: flex; gap: var(--s2); width: 100%; min-height: 48px; align-items: center; padding: 0 var(--s3); background: none; border: 0; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
   .matches button:hover, .matches button:focus-visible { background: var(--accent-soft); }
   .matches b { font-weight: 600; flex: none; }
+  .matches .hint { padding: var(--s2) var(--s3); font-size: 13px; color: var(--muted); }
   .matches span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .picks { display: flex; flex-wrap: wrap; gap: var(--s2); }
   .pick-chip { display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: var(--fs-sm); color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--r-md); cursor: pointer; }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SearchEntry } from '../lib/data/types';
-  import { flatText, isExactCode, rankCourses } from '../lib/search/courseSearch';
+  import { flatText, isExactCode, searchCourses } from '../lib/search/courseSearch';
 
   /** `suffix` is appended to every result link (e.g. '?mode=swap' to open course pages in Swap mode). */
   let { index, suffix = '' }: { index: SearchEntry[]; suffix?: string } = $props();
@@ -9,7 +9,9 @@
   let query = $state('');
   // Ranked by courseRank (code, nickname, title). Offered-now courses come before all not-offered ones (those sit in a
   // collapsed group at the end); within a tier, code order (the index is pre-sorted).
-  const matches = $derived(rankCourses(index, query, (e) => [e[0], e[1]]));
+  // When nothing matches exactly, `found.close` marks typo matches.
+  const found = $derived(searchCourses(index, query, (e) => [e[0], e[1]]));
+  const matches = $derived(found.items);
   const offered = $derived(matches.filter((e) => e[2] > 0));
   const notOffered = $derived(matches.filter((e) => e[2] <= 0));
   let showAll = $state(false);
@@ -65,6 +67,7 @@
 
   {#if searching}
     {#if matches.length}
+      {#if found.close}<p class="close" aria-live="polite">No exact match. Close matches:</p>{/if}
       {#if results.length}
       <ul class="list" id="q-list" role="listbox" aria-label="Matching courses">
         {#each results as [code, title, n], i (code)}
@@ -103,6 +106,7 @@
   .box svg { left: 16px; width: 24px; height: 24px; }
   input::-webkit-search-cancel-button { -webkit-appearance: none; }
   .list { margin-top: var(--s3); }
+  .close { margin-top: var(--s3); font-size: var(--fs-sm); color: var(--muted); }
   li.active a { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
   a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: baseline; gap: var(--s3); min-height: 44px; }
   .open { color: var(--accent); font-weight: 600; white-space: nowrap; }

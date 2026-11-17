@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { fetchIndex } from '../../lib/data/client';
-  import { rankCourses } from '../../lib/search/courseSearch';
+  import { searchCourses } from '../../lib/search/courseSearch';
 
   let { onadd, inPlan = [], label = 'Add course', placeholder = 'Add course', dropUp = false, prominent = false }: {
     /** byKey: picked with Enter, so the caller keeps the cursor in the box. */
@@ -18,7 +18,8 @@
   onMount(() => {
     fetchIndex().then((i) => (index = i.filter((c) => c.offeredNow && c.sectionCount > 0)), () => (failed = true));
   });
-  const results = $derived(rankCourses(index, q, (c) => [c.code, c.title]).slice(0, 6));
+  const found = $derived(searchCourses(index, q, (c) => [c.code, c.title]));
+  const results = $derived(found.items.slice(0, 6));
   const free = $derived(results.filter((c) => !inPlan.includes(c.code)));
   function pick(code: string, byKey = false) {
     onadd(code, byKey);
@@ -41,6 +42,7 @@
   />
   {#if results.length}
     <ul class="list" class:up={dropUp}>
+      {#if found.close}<li class="hint">No exact match. Close matches:</li>{/if}
       {#each results as c (c.code)}
         {@const has = inPlan.includes(c.code)}
         <li><button type="button" disabled={has} onclick={() => pick(c.code)}><b>{c.code}</b> <span>{c.title}</span><i class="num">{has ? 'In plan' : `${c.sectionCount} ${c.sectionCount === 1 ? 'section' : 'sections'}`}</i></button></li>
@@ -64,6 +66,7 @@
   .list button:disabled b { color: var(--muted); }
   .list button:not(:disabled):hover, .list button:focus-visible { background: var(--accent-soft); }
   .list b { font-weight: 600; }
+  .list .hint { padding: var(--s2) var(--s3); font-size: 13px; color: var(--muted); }
   .list i { margin-left: auto; flex: none; font-style: normal; font-size: 13px; color: var(--muted); }
   .list span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 </style>

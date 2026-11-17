@@ -13,6 +13,8 @@
 !/tests/test_forecast_sim.py
 !/tests/test_build_site_data.py
 !/tests/test_site_data_s1.py
+!/tests/test_evalharness.py
+!/tests/test_evalscore.py
 !/tests/fixtures/
 /tests/fixtures/*
 !/tests/fixtures/site_data_fixture.csv
@@ -54,6 +56,8 @@ dist/
 # Generated from the private dataset by build_site_data.py / model.forecast.fit; deployed as built site output, never committed.
 /site/src/data/real/
 /model/forecast/out*/
+# Evaluation harness output (per-section backtest rows from the private dataset).
+/model/forecast/eval/
 # Agent instructions and handovers stay local.
 CLAUDE.md
 AGENTS.md

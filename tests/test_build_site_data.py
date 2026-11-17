@@ -952,3 +952,53 @@ class WindowBidFields(unittest.TestCase):
 
     def test_json_serialisable(self):
         json.dumps(bsd.window_bid_fields(self._payload()))
+
+
+class MeasuredSummary(unittest.TestCase):
+    """measured_summary: one rate per round for /method, from the per-band cells of distcal.json's measuredWin."""
+
+    @staticmethod
+    def _cell(rate, n, source):
+        return {"cheap": rate, "balanced": rate + 0.1, "safe": rate + 0.15, "nFilled": n, "source": source}
+
+    def _measured(self):
+        c = self._cell
+        return {
+            # R1W1: two bands fall back to the group's own rate (n = the whole group), which is used as is
+            "R1W1": {"0": c(0.72, 600, "group"), "1": c(0.6, 200, "cell"), "2": c(0.8, 250, "cell"),
+                     "3": c(0.72, 600, "group"), "4": c(0.72, 600, "group")},
+            # R1A: every band is its own cell, so the round's rate is their nFilled-weighted mean
+            "R1A": {"0": c(0.5, 100, "cell"), "1": c(0.7, 300, "cell"), "2": c(0.8, 100, "cell"),
+                    "3": c(0.6, 100, "cell"), "4": c(0.6, 400, "cell")},
+            # R2A: too thin for a group rate; measured only over all rows, so left out
+            "R2A": {str(b): c(0.69, 3000, "all") for b in range(5)},
+            "overall": {"cheap": 0.695, "balanced": 0.838, "safe": 0.884},
+        }
+
+    def test_rounds_overall_and_terms(self):
+        out = bsd.measured_summary(self._measured(), {"test": "2025-26 Term 2", "heldOut": "2026-27 Term 1"})
+        self.assertEqual(out["overall"], {"cheap": 0.695, "balanced": 0.838, "safe": 0.884})
+        self.assertEqual(out["terms"], ["2025-26 Term 2", "2026-27 Term 1"])
+        self.assertEqual([r["group"] for r in out["byRound"]], ["R1W1", "R1A"])
+        r1, r1a = out["byRound"]
+        self.assertEqual((r1["label"], r1["cheap"], r1["nFilled"]), ("Round 1", 0.72, 600))
+        # (0.5*100 + 0.7*300 + 0.8*100 + 0.6*100 + 0.6*400) / 1000 = 0.64
+        self.assertEqual((r1a["label"], r1a["nFilled"]), ("Round 1A", 1000))
+        self.assertAlmostEqual(r1a["cheap"], 0.64)
+        self.assertAlmostEqual(r1a["safe"], 0.79)
+
+    def test_round_with_a_bad_band_is_left_out(self):
+        m = self._measured()
+        m["R1A"]["2"]["safe"] = None        # one malformed band: no partial weighted mean
+        m["R1W1"]["1"]["nFilled"] = True    # a bool is not a count
+        self.assertEqual(bsd.measured_summary(m, None)["byRound"], [])
+
+    def test_missing_overall_or_terms(self):
+        m = self._measured()
+        self.assertNotIn("terms", bsd.measured_summary(m, None))
+        m["overall"]["safe"] = None
+        self.assertIsNone(bsd.measured_summary(m, None))
+
+    def test_emitted_by_window_bid_fields(self):
+        p = {"measuredWin": self._measured(), "terms": {"test": "a", "heldOut": "b"}}
+        self.assertEqual(bsd.window_bid_fields(p)["measuredWinSummary"]["terms"], ["a", "b"])

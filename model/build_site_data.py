@@ -687,6 +687,46 @@ def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, doc
         return params, backtest, "fit"
 
 
+ROUND_LABELS = (("R1W1", "Round 1"), ("R1A", "Round 1A"), ("R1B", "Round 1B"), ("R2", "Round 2"), ("R2A", "Round 2A"))
+
+
+def measured_summary(measured: dict, terms) -> dict | None:
+    """The /method table from distcal.json's `measuredWin`: {"overall": {style: rate}, "byRound": [{group, label, style...,
+    nFilled}], "terms": [test, heldOut]}. A round's rate is its group-level cell (source "group") when one exists, else the
+    nFilled-weighted mean of its band cells (the bands partition the group); a round measured only at the "all" level, or with
+    any of its five band cells missing or malformed, is left out. None when `overall` is missing or malformed."""
+    styles = ("cheap", "balanced", "safe")
+
+    def ok(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 0 <= v <= 1
+
+    overall = measured.get("overall")
+    if not isinstance(overall, dict) or not all(ok(overall.get(st)) for st in styles):
+        return None
+    rounds = []
+    for g, label in ROUND_LABELS:
+        cells = measured.get(g)
+        if not isinstance(cells, dict):
+            continue
+        cells = [c for c in cells.values() if isinstance(c, dict) and all(ok(c.get(st)) for st in styles)
+                 and isinstance(c.get("nFilled"), int) and not isinstance(c["nFilled"], bool) and c["nFilled"] > 0]
+        if len(cells) != len(measured.get(g)) or len(cells) != 5 or any(c.get("source") == "all" for c in cells):
+            continue
+        whole = next((c for c in cells if c.get("source") == "group"), None)
+        if whole is not None:
+            row = {st: whole[st] for st in styles} | {"nFilled": whole["nFilled"]}
+        elif all(c.get("source") == "cell" for c in cells):
+            n = sum(c["nFilled"] for c in cells)
+            row = {st: round(sum(c[st] * c["nFilled"] for c in cells) / n, 4) for st in styles} | {"nFilled": n}
+        else:
+            continue
+        rounds.append({"group": g, "label": label, **row})
+    out = {"overall": {st: overall[st] for st in styles}, "byRound": rounds}
+    if isinstance(terms, dict) and all(isinstance(terms.get(k), str) for k in ("test", "heldOut")):
+        out["terms"] = [terms["test"], terms["heldOut"]]
+    return out
+
+
 def window_bid_fields(payload: dict) -> dict:
     """forecast-meta fields built from distcal.json's per-window-group keys, by window name (every window of fit.WINDOWS).
 
@@ -741,6 +781,9 @@ def window_bid_fields(payload: dict) -> dict:
                 table[w] = bands
         if table:
             out["measuredWin"] = table
+        summary = measured_summary(measured, payload.get("terms"))
+        if summary:
+            out["measuredWinSummary"] = summary
     edges = payload.get("bandEdges")
     if isinstance(edges, list) and len(edges) == 4 and all(num(e) for e in edges) and edges == sorted(edges):
         out["bandEdges"] = list(edges)

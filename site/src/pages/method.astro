@@ -4,7 +4,8 @@ import { FORECASTS_ENABLED } from '../lib/flags';
 import { FILLED_TESTS, HELD_OUT_TEST, LATEST_FILLED_TEST } from '../lib/data/accuracy';
 import { dataMeta, getForecastMeta } from '../lib/data';
 import { refitNote } from '../lib/data/refitNote';
-import { bidLevels } from '../lib/data/bidLevels';
+import { bidLevels, measuredSummary } from '../lib/data/bidLevels';
+import { STYLE_TARGET, underDelivers } from '../lib/sim/windowBids';
 import { lowConfidenceLines, styleResults } from '../components/course/bidStyle';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
@@ -65,6 +66,14 @@ const calibrated = styles.length === 3;
 const wonFilledPct = (r: { wonFilled: number }) => `${Math.round(r.wonFilled * 100)}%`;
 const wonAllPct = (r: { wonAll: number }) => `${Math.round(r.wonAll * 100)}%`;
 const styleTerm = fm.distCalibration?.heldOutTerm ?? latest.term;
+// Past win rates per round (out of sample); without them the page falls back to the pooled held-out table.
+const measured = calibrated ? measuredSummary(fm) : null;
+const KEYS = ['cheap', 'balanced', 'safe'] as const;
+const LABEL = { cheap: 'Cheap', balanced: 'Balanced', safe: 'Safe' } as const;
+const aims = KEYS.map((k) => `${Math.round(STYLE_TARGET[k] * 100)}%`);
+const r100 = (v: number) => `${Math.round(v * 100)}%`;
+const shortRounds = measured ? measured.byRound.filter((r) => KEYS.some((k) => underDelivers(k, r[k]))).map((r) => r.label) : [];
+const andList = (xs: string[]) => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 const lowConf = lowConfidenceLines(['oneSeat', 'lateWindow'], true);
 const e = (c: number | null) => (c === null ? '–' : eS(c));
 const p = (v: number | null) => (v === null ? '–' : pct(v));
@@ -148,6 +157,18 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Both steps are tested again at every update and left out if they make the forecast worse</li>
       </ul>
     </div>
+    {measured ? (
+    <div class="card">
+      <h2>Bid styles</h2>
+      <ul class="bul">
+        <li>Cheap, Balanced and Safe aim to win a seat {aims[0]}, {aims[1]} and {aims[2]} of the time when the section fills. When it doesn’t fill, any bid at the minimum gets in.</li>
+        <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in the last two terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
+        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, similar forecast price), and says so where it fell well short.</li>
+        <li>The headline chance also counts the times the section doesn’t fill, so it is usually higher than the “if it fills” figure.</li>
+        <li>Groups: every member needs a seat</li>
+      </ul>
+    </div>
+    ) : (
     <div class="card">
       <h2>Bid styles</h2>
       <ul class="bul">
@@ -159,6 +180,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Groups: every member needs a seat</li>
       </ul>
     </div>
+    )}
     </>) : (
     <div class="card" id="replay">
       <h2>“e$X → about 90%”</h2>
@@ -191,7 +213,18 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       ? <p class="acc-big"><span class="lbl">Median miss</span><span class="val">{eS(latest.fMed)}</span><span class="cap">Typical miss on the clearing bid, for sections that filled in {latest.term}. It assumes the section fills. The forecast for that term was made without its results.</span></p>
       : <p class="acc-big"><span class="lbl">Median miss</span><span class="val">{eS(latest.fMed)}</span><span class="cap">Clearing bid, sections that filled in {latest.term}, a term the model was not trained on</span></p>)}
 
-    {calibrated && (<>
+    {measured ? (<>
+    <h3 id="bid-styles">How each bid style did</h3>
+    <table class="sty rounds">
+      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, so a new term may differ.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A had too few filled sections for a clean test, so its figures are rough and probably low.</caption>
+      <thead><tr><th scope="col"><span class="sr-only">Round</span></th>{KEYS.map((k) => <th scope="col" class="r">{LABEL[k]}</th>)}</tr></thead>
+      <tbody>
+        <tr class="aim"><th scope="row">Aim</th>{aims.map((a) => <td class="r">{a}</td>)}</tr>
+        {measured.byRound.map((r) => <tr><th scope="row">{r.label}<span>{r.nFilled.toLocaleString('en-US')} filled sections</span></th>{KEYS.map((k) => <td class={underDelivers(k, r[k]) ? 'r short' : 'r'}><b>{r100(r[k])}</b>{underDelivers(k, r[k]) && <span>below aim</span>}</td>)}</tr>)}
+        <tr class="all"><th scope="row">All rounds</th>{KEYS.map((k) => <td class="r"><b>{r100(measured.overall[k])}</b></td>)}</tr>
+      </tbody>
+    </table>
+    </>) : calibrated ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty">
       <caption>Share of bids that won in {styleTerm}. The forecast for that term was made without its results, but the style levels were chosen using that term's results, so a new term may differ.</caption>
@@ -200,7 +233,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         {styles.map((r) => <tr><th scope="row">{r.label}</th><td class="r"><b>{wonFilledPct(r)}</b> <span>{r.wonFilledText}</span></td><td class="r"><b>{wonAllPct(r)}</b></td></tr>)}
       </tbody>
     </table>
-    </>)}
+    </>) : null}
 
     <h3 id="accounts">What it accounts for</h3>
     <ul class="acc-points">
@@ -313,7 +346,11 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .sty tbody tr:last-child > * { border-bottom: 0; }
   .sty .r { text-align: right; }
   .sty td b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .sty td span { display: block; font-size: 13px; color: var(--muted); }
+  .sty td span, .sty th span { display: block; font-size: 13px; color: var(--muted); font-weight: 400; }
+  .sty .aim > * { color: var(--muted); }
+  .sty .all > * { border-top: 1px solid var(--rule-strong); }
+  .sty td.short b { color: color-mix(in srgb, var(--warn) 70%, var(--text)); }
+  .rounds th:first-child { width: 40%; }
 
   .more, .formula-box { background: var(--surface); border-radius: var(--r-lg); margin-bottom: var(--s3); }
   .more > summary, .formula-box > summary { cursor: pointer; list-style: none; padding: var(--s3) var(--s4); font-size: var(--fs-md); font-weight: 600; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }

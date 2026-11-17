@@ -1,5 +1,5 @@
 // The three bid levels of the held-out backtest (forecast-meta.json `bidLevels`), or null when the calibration is not active.
-import type { BidLevel, BidLevels, ForecastMeta, MeasuredWinCell, WindowBidLevel } from './types';
+import type { BidLevel, BidLevels, ForecastMeta, MeasuredWinCell, MeasuredWinSummary, WindowBidLevel } from './types';
 
 const NAMES = ['cheap', 'balanced', 'safe'] as const;
 
@@ -67,4 +67,18 @@ export function bidWindowData(m: Pick<ForecastMeta, 'distCalibration' | 'bidLeve
   const e = m.bandEdges;
   const edges = Array.isArray(e) && e.length === 4 && e.every(num) && e.every((x, i) => i === 0 || x > e[i - 1]) ? e : null;
   return levels || measured ? { levels, measured, edges } : null;
+}
+
+/** The /method summary of past win rates on filled sections (overall and per round); null when the calibration is not ok or
+ *  the overall rates do not read cleanly. Rounds that do not read cleanly are dropped. */
+export function measuredSummary(m: Pick<ForecastMeta, 'distCalibration' | 'measuredWinSummary'> | null | undefined): MeasuredWinSummary | null {
+  const s = m?.measuredWinSummary;
+  if (m?.distCalibration?.ok !== true || !s || typeof s !== 'object') return null;
+  const ok = (o: unknown): o is Record<(typeof NAMES)[number], number> =>
+    !!o && typeof o === 'object' && NAMES.every((n) => { const v = (o as Record<string, unknown>)[n]; return num(v) && v >= 0 && v <= 1; });
+  if (!ok(s.overall)) return null;
+  const byRound = (Array.isArray(s.byRound) ? s.byRound : []).filter((r) => ok(r) && typeof r.label === 'string' && num(r.nFilled));
+  const t = s.terms;
+  const terms = Array.isArray(t) && t.length === 2 && t.every((x) => typeof x === 'string') ? (t as string[]) : undefined;
+  return { overall: s.overall, byRound, ...(terms ? { terms } : {}) };
 }

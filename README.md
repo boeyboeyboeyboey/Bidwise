@@ -6,7 +6,36 @@ Live site: https://bidwise.pages.dev
 
 Status: friends-only trial. Bidwise is not affiliated with SMU. Forecasts are statistical estimates from past results, not guarantees; check the official BOSS rules and your own timetable before you bid.
 
-## What is in this repository
+## Contents
+
+- [Overview](#overview)
+  - [What is in this repository](#what-is-in-this-repository)
+  - [Tech stack](#tech-stack)
+  - [How the pieces connect](#how-the-pieces-connect)
+- [The forecast model](#the-forecast-model)
+  - [Observations and censoring](#observations-and-censoring)
+  - [Demand](#demand-how-many-bid)
+  - [Bids](#bids-how-much-each-bidder-offers)
+  - [Hierarchical shrinkage and recency](#hierarchical-shrinkage-and-recency)
+  - [Time-slot and Friday adjustments](#time-slot-and-friday-adjustments)
+  - [From the fit to the seven parameters](#from-the-fit-to-the-seven-parameters)
+  - [Simulating the window and the clearing-bid distribution](#simulating-the-window-and-the-clearing-bid-distribution)
+  - [Gradient-boosted correction of the price level](#gradient-boosted-correction-of-the-price-level)
+  - [Fill chance and range](#fill-chance-and-range)
+  - [Bid styles](#bid-styles)
+- [Other estimates](#other-estimates)
+  - [Drop chance](#drop-chance)
+  - [Swap chance](#swap-chance)
+  - [Drop and re-bid](#drop-and-re-bid)
+  - [Planner](#planner-joint-probability-across-courses)
+- [Evaluation](#evaluation)
+- [Limitations](#limitations)
+- [Running locally](#running-locally)
+- [Tests](#tests)
+
+## Overview
+
+### What is in this repository
 
 ```
 site/                 Astro + Svelte website (static build)
@@ -20,7 +49,10 @@ model/
   forecast/fit.py       fits the forecast parameters per section and window; backtests; writes JSON
   forecast/sim.py       Python port of the site's simulator (same random number generator)
   forecast/correction.py  gradient-boosted correction of the fitted price level
-  forecast/distcal.py   gradient-boosted fill chance and range calibration; bid levels
+  forecast/distcal.py   gradient-boosted fill chance and range calibration; bid levels per window group; measured win rates
+  forecast/evalharness.py  rolling no-look-ahead evaluation of the bid styles (writes only to a private folder)
+  forecast/evalscore.py    scoring for the harness: win rate, overpay, bootstrap intervals
+  forecast/promisecal.py   conformal alternative for the bid styles, evaluated only, not shipped
   forecast/drops.py     drop chance
   build_site_data.py    turns a bid-results table plus the fit output into the JSON the site reads
   exams.py              reads final-exam dates into the site data
@@ -31,49 +63,71 @@ docs/                   model-plain.md (plain language) and model-technical.md (
 
 Not in the repository: the bid-results data, the fitted parameter files, the generated site data (`site/src/data/real/`) and any data-gathering code. The model is trained on historical BOSS bid results, and that dataset is not published.
 
-## Tech stack
+### Tech stack
 
-Site (`site/package.json`):
+**Site** (`site/package.json`):
 - Astro 5 with `output: 'static'`, so the site is built to plain files and hosted on Cloudflare Pages. Interactive parts are Svelte 5 components.
 - Observable Plot draws the charts.
 - vitest runs the TypeScript unit tests.
 - TypeScript, checked with `astro check`.
 
-Model:
+**Model:**
 - Python 3.12. The fit (`fit.py`), the simulator (`sim.py`), the drop chance (`drops.py`) and the site-data build (`build_site_data.py`) use only the standard library.
 - The correction (`correction.py`) and the fill chance and range calibration (`distcal.py`) additionally need numpy, pandas and scikit-learn (developed with numpy 2.5.4, pandas 3.1.1, scikit-learn 1.9.1). Both are optional: if the imports fail or any check fails, the build keeps the previous stage (the plain fit, or the corrected fit).
 
-How the pieces connect:
+### How the pieces connect
 
 1. `python -m model.forecast.fit` reads a bid-results CSV and writes, for every section of the current term and every bidding window, seven simulator parameters (`demandMean`, `demandDispersion`, `priceLevelCents`, `priceSigma`, `anchorSigma`, `anchorShare`, `anchorCents`), plus a backtest report, to `model/forecast/out/`.
-2. `python model/build_site_data.py --csv <bids_with_schedule.csv>` reads the same CSV, `site_window.json` and the fit output. It optionally applies the correction and then the fill chance and range calibration (three more parameters per section and window: `fillProb`, `spreadLo`, `spreadHi`), then writes JSON to `site/src/data/real/`: `meta.json`, `index.json`, `browse.json` and per-term shards, `courses/<CODE>.json` (history, current sections, per-window forecast parameters, drop chance, exam dates), `forecast-meta.json`, `accuracy.json` and `highlights.json`. The accuracy figures on the site come from the backtest files, not from typed-in numbers.
+2. `python model/build_site_data.py --csv <bids_with_schedule.csv>` reads the same CSV, `site_window.json` and the fit output.
+   - It optionally applies the correction and then the fill chance and range calibration (three more parameters per section and window: `fillProb`, `spreadLo`, `spreadHi`), then writes JSON to `site/src/data/real/`: `meta.json`, `index.json`, `browse.json` and per-term shards, `courses/<CODE>.json` (history, current sections, per-window forecast parameters, drop chance, exam dates), `forecast-meta.json`, `accuracy.json` and `highlights.json`.
+   - The accuracy figures on the site come from the backtest files, not from typed-in numbers.
 3. `npm run build` bakes those files into the static pages.
-4. In the browser, the forecast is not precomputed. The page takes the seven parameters of the chosen section and window and replays the window 20,000 times (`FORECAST_RUNS`, seed 12345 in `site/src/lib/sim/forecast.ts`). The replay runs in a module Web Worker (`site/src/lib/sim/worker.ts`, started from `client.ts`, with an inline fallback when workers are unavailable), and results are memoised per input (`cache.ts`). The same worker runs the planner optimiser. There are two simulators: Python (`model/forecast/sim.py`) for backtests and data, and TypeScript (`site/src/lib/sim/index.ts`) in the browser. `tests/fixtures/forecast_sim_parity.json` (generated by running the TypeScript with `tests/fixtures/forecast_sim_parity_gen.ts`) is the parity test that keeps them in step.
+4. In the browser, the forecast is not precomputed.
+   - The page takes the seven parameters of the chosen section and window and replays the window 20,000 times (`FORECAST_RUNS`, seed 12345 in `site/src/lib/sim/forecast.ts`).
+   - The replay runs in a module Web Worker (`site/src/lib/sim/worker.ts`, started from `client.ts`, with an inline fallback when workers are unavailable), and results are memoised per input (`cache.ts`). The same worker runs the planner optimiser.
+   - There are two simulators: Python (`model/forecast/sim.py`) for backtests and data, and TypeScript (`site/src/lib/sim/index.ts`) in the browser. `tests/fixtures/forecast_sim_parity.json` (generated by running the TypeScript with `tests/fixtures/forecast_sim_parity_gen.ts`) is the parity test that keeps them in step.
 
-## The prediction model
+## The forecast model
 
-Notation used throughout: $`S`$ seats offered in the window, $`N`$ number of bidders, $`\lambda = E[N]`$, $`r`$ dispersion of the bidder count, $`m`$ median bid level in cents, $`\sigma`$ bid spread, $`q`$ anchor share, $`F`$ the minimum bid in cents (the floor). Amounts are in cents in the code (e\$1 = 100 cents). The facts about BOSS that the model relies on: bidding is blind, winners pay their own bid, the highest bids win, ties at the cutoff are broken randomly, and if a section does not fill every bid at or above the minimum succeeds.
+Notation used throughout: $`S`$ seats offered in the window, $`N`$ number of bidders, $`\lambda = E[N]`$, $`r`$ dispersion of the bidder count, $`m`$ median bid level in cents, $`\sigma`$ bid spread, $`q`$ anchor share, $`F`$ the minimum bid in cents (the floor). Amounts are in cents in the code (e\$1 = 100 cents).
+
+The facts about BOSS that the model relies on:
+
+- Bidding is blind.
+- Winners pay their own bid.
+- The highest bids win.
+- Ties at the cutoff are broken randomly.
+- If a section does not fill every bid at or above the minimum succeeds.
 
 For each section and bidding window a forecast is made in this order:
 
-1. Fit (`fit.py`). Past terms give the number of students who will bid and how high they bid, per course, instructor and window, with recent terms counting more. A section with little history borrows from its course, then its subject, then all courses.
-2. Replay (`sim.py`, and its TypeScript twin in the browser). The window is simulated 20,000 times. If fewer students bid than there are seats the section does not fill and a minimum bid (usually e\$10) wins; otherwise the clearing bid is the lowest winning bid. BOSS is pay-as-bid: a winner pays their own bid, not the clearing bid.
-3. Price correction (`correction.py`, since 9 Nov 2026). A gradient-boosted model trained on earlier terms moves each section's price level, using its history and this term's earlier rounds.
-4. Fill chance and range (`distcal.py`, since 15 Nov 2026). A second gradient-boosted model sets the chance that the section fills, and the spread of the replayed clearing bids is narrowed or widened by factors learned from past terms.
-5. Bid styles (`presets.ts`). Cheap, Balanced and Safe are three points on the replayed distribution of clearing bids.
+| Step | What it does | Code | Since |
+|---|---|---|---|
+| 1. Fit | Past terms give the number of students who will bid and how high they bid, per course, instructor and window, with recent terms counting more. A section with little history borrows from its course, then its subject, then all courses. | `fit.py` | before 9 Nov 2026 |
+| 2. Replay | The window is simulated 20,000 times. If fewer students bid than there are seats the section does not fill and a minimum bid (usually e\$10) wins; otherwise the clearing bid is the lowest winning bid. BOSS is pay-as-bid: a winner pays their own bid, not the clearing bid. | `sim.py`, and its TypeScript twin in the browser | |
+| 3. Price correction | A gradient-boosted model trained on earlier terms moves each section's price level, using its history and this term's earlier rounds. | `correction.py` | 9 Nov 2026 |
+| 4. Fill chance and range | A second gradient-boosted model sets the chance that the section fills, and the spread of the replayed clearing bids is narrowed or widened by factors learned from past terms. | `distcal.py` | 15 Nov 2026 |
+| 5. Bid styles | Cheap, Balanced and Safe are three points on the replayed distribution of clearing bids. How far up it each one sits is set per window group, so that each wins its target share of sections that fill. | `distcal.py` levels, applied in `presets.ts` | |
 
 Chance of a seat, recommended bid, groups, planner and drop and re-bid all read these parameters and run the simulator. Round 1A Window 2 is forecast from 15 Nov 2026.
 
 ### Observations and censoring
 
-One observation is one row of BOSS Overall Results: a section in one bidding window of one term. The seats offered $`S`$ are the vacancy before the window was processed, the number of successful bids is $`B = S - \text{vacancy after}`$, and a section is filled when the vacancy after processing is 0. The results give the minimum and the median of the successful bids, which are the $`S`$-th and the $`\tfrac{S+1}{2}`$-th highest bids.
+One observation is one row of BOSS Overall Results: a section in one bidding window of one term.
+
+- The seats offered $`S`$ are the vacancy before the window was processed.
+- The number of successful bids is $`B = S - \text{vacancy after}`$.
+- A section is filled when the vacancy after processing is 0.
+- The results give the minimum and the median of the successful bids, which are the $`S`$-th and the $`\tfrac{S+1}{2}`$-th highest bids.
 
 Two consequences shape the likelihoods:
 
 - If the section did not fill, every bidder succeeded, so $`N = B`$ exactly, and the clearing bid is the floor $`F`$.
 - If it filled, only $`N \ge S`$ is known (right-censored), and the clearing bid is the minimum successful bid.
 
-The floor is 1000 cents unless a course's lowest observed minimum is 1100 to 2000 cents and at least 3 rows sit within a cent of it. Only Term 1 and Term 2 are used, windows are matched on BOSS's exact label (so each window has its own parameters), and rows from the target term or later are never used for training.
+**Floor.** The floor is 1000 cents unless a course's lowest observed minimum is 1100 to 2000 cents and at least 3 rows sit within a cent of it.
+
+**Data used.** Only Term 1 and Term 2 are used, windows are matched on BOSS's exact label (so each window has its own parameters), and rows from the target term or later are never used for training.
 
 In code: `Obs`, `build_obs`, `course_floors`, `censored_demand` and `actual_cutoff` in `model/forecast/fit.py`.
 
@@ -144,7 +198,9 @@ with $`q_w = 0.3`$ when fewer than 30 such sections exist.
 y_o = \ln \mathrm{min}_o - \sigma_w z_{S,o} - \beta^p \sim N(x, s^2) \quad \text{if } \mathrm{min}_o > F + 200
 ```
 
-If $`\mathrm{min}_o \le F + 200`$ the clearing bid is hidden inside the anchor band, so the term is left-censored: $`w_o \log \Phi\big((y^c_o - x)/s\big)`$ with $`y^c_o = \ln(F + 200) - \sigma_w z_{S,o} - \beta^p`$. The residual standard deviation $`s`$ is the pooled within (course, instructor, window) standard deviation of $`\ln \mathrm{min}_o - \sigma_w z_{S,o}`$, floored at 0.2 (0.4 when there are 10 or fewer degrees of freedom). The posterior over $`x`$ uses the same grid method as demand, on $`x_j = \ln 500 + 0.05\,j`$ for $`j = 0, \dots, 89`$.
+- If $`\mathrm{min}_o \le F + 200`$ the clearing bid is hidden inside the anchor band, so the term is left-censored: $`w_o \log \Phi\big((y^c_o - x)/s\big)`$ with $`y^c_o = \ln(F + 200) - \sigma_w z_{S,o} - \beta^p`$.
+- The residual standard deviation $`s`$ is the pooled within (course, instructor, window) standard deviation of $`\ln \mathrm{min}_o - \sigma_w z_{S,o}`$, floored at 0.2 (0.4 when there are 10 or fewer degrees of freedom).
+- The posterior over $`x`$ uses the same grid method as demand, on $`x_j = \ln 500 + 0.05\,j`$ for $`j = 0, \dots, 89`$.
 
 In code: `Model._fit_price_globals` (fits $`q_w`$, $`\sigma_w`$ and $`s`$), `Model._nhat_z_raw` (the scores $`z_S`$, $`z_{\mathrm{med}}`$, using `nb_tail_mean` for $`E[N \mid N \ge S]`$), `binom_ge`, `Model._y`, and `Model.ppost` (the Tobit posterior) in `model/forecast/fit.py`.
 
@@ -163,7 +219,9 @@ A professor with one past result should not get an extreme estimate. Every obser
 | course | 0.9 | 0.4 |
 | course by instructor | 0.7 | 0.3 |
 
-A group with no observations returns its prior, so a new instructor inherits the course, a new course inherits its subject, and so on. A small $`\tau`$ keeps a group close to its parent. With $`n`$ weighted observations the data's pull behaves roughly like $`n / (n + \kappa)`$.
+- A group with no observations returns its prior, so a new instructor inherits the course, a new course inherits its subject, and so on.
+- A small $`\tau`$ keeps a group close to its parent.
+- With $`n`$ weighted observations the data's pull behaves roughly like $`n / (n + \kappa)`$.
 
 **Recency and term type.** For a target term with index $`t^*`$ and an observation from term index $`t_o`$ (index $`= 2 \cdot \text{start year} + \text{term number} - 1`$):
 
@@ -173,7 +231,9 @@ w_o = \delta^{(t^* - t_o)/2} \cdot \begin{cases} 1 & \text{same term type} \\ c_
 
 The weights multiply each observation's log-likelihood, as fractional counts. Observations with $`w_o \le 0.001`$ are dropped.
 
-In code: `Model.__init__` (weights and the four-level `groups`), `Model.key` and `Model.parent` (the hierarchy), `obs_weight`, `pool_weight` (the $`n/(n+\kappa)`$ form), and `Config` (the $`\tau`$ values, `decay`, `cross_w`) in `model/forecast/fit.py`. The hierarchy is not a strict Bayesian one: a child's prior mean is its parent's posterior, which already contains the child's data, so the child's data is counted at both levels.
+**Caveat.** The hierarchy is not a strict Bayesian one: a child's prior mean is its parent's posterior, which already contains the child's data, so the child's data is counted at both levels.
+
+In code: `Model.__init__` (weights and the four-level `groups`), `Model.key` and `Model.parent` (the hierarchy), `obs_weight`, `pool_weight` (the $`n/(n+\kappa)`$ form), and `Config` (the $`\tau`$ values, `decay`, `cross_w`) in `model/forecast/fit.py`.
 
 ### Time-slot and Friday adjustments
 
@@ -190,9 +250,13 @@ For a slot key with $`n_k`$ contrasts:
 \beta^d_k = \mathrm{round}_{0.1}\Big(2 \cdot \overline{\Delta^d} \cdot \frac{n_k}{n_k + 30}\Big), \qquad \beta^p_k = \overline{\Delta^p} \cdot \frac{n_k}{n_k + 30}
 ```
 
-The factor 2 compensates for the demand proxy being compressed relative to $`\log\lambda`$. Effects are estimated once over all training rows and again per window; a window uses its own value for a key when it has at least 30 contrasts for it, otherwise the pooled value. In fitting, each observation is moved to the mid scale (the shift in the demand likelihood, and $`\beta^p`$ subtracted from $`y_o`$); at prediction the section's own effect is added back.
+- The factor 2 compensates for the demand proxy being compressed relative to $`\log\lambda`$.
+- Effects are estimated once over all training rows and again per window; a window uses its own value for a key when it has at least 30 contrasts for it, otherwise the pooled value.
+- In fitting, each observation is moved to the mid scale (the shift in the demand likelihood, and $`\beta^p`$ subtracted from $`y_o`$); at prediction the section's own effect is added back.
 
-In code: `slot_of`, `slot_key`, `_slot_contrasts`, `estimate_slot_effects`, `estimate_slot_effects_by_window` in `model/forecast/fit.py`; `Model._beta_d`, `Model._beta_p` and `Model._shift` apply them. Calibration keeps the slot effects on unless same-course ordering accuracy drops by more than 2 points or the Brier score worsens by more than 0.0002 (`calibrate`).
+Calibration keeps the slot effects on unless same-course ordering accuracy drops by more than 2 points or the Brier score worsens by more than 0.0002 (`calibrate`).
+
+In code: `slot_of`, `slot_key`, `_slot_contrasts`, `estimate_slot_effects`, `estimate_slot_effects_by_window` in `model/forecast/fit.py`; `Model._beta_d`, `Model._beta_p` and `Model._shift` apply them.
 
 ### From the fit to the seven parameters
 
@@ -206,7 +270,8 @@ For a section of course $`c`$ taught by instructor $`i`$ in window $`w`$ with sl
 r = r_{\text{global}}, \qquad \sigma = \hat\sigma_w, \qquad q = q_w, \qquad s_M = \sqrt{\ell_{sd}^2 + \mathrm{sd}(\ln m \mid ci)^2}, \qquad \text{anchor price} = F
 ```
 
-Demand uses the posterior mean on the natural scale; the price uses the posterior mean on the log scale (a median). $`c_{\text{scale}}`$ is a global price multiplier and $`\ell_{sd}`$ the term-to-term drift of the price level; both are set in calibration (1.350 and 0.1 at the last fit).
+- Demand uses the posterior mean on the natural scale; the price uses the posterior mean on the log scale (a median).
+- $`c_{\text{scale}}`$ is a global price multiplier and $`\ell_{sd}`$ the term-to-term drift of the price level; both are set in calibration (1.350 and 0.1 at the last fit).
 
 In code: `Model.params_for` returns a `SimParams` (`model/forecast/sim.py`) and records which level supplied the estimate (`pooledLevel`). `make_params_json` writes it for every current-term section and window.
 
@@ -226,7 +291,11 @@ After $`R`$ replays, with cutoffs $`C_1, \dots, C_R`$:
 \hat P_{\text{fill}} = \frac{\#\lbrace \text{replays with } N \ge k \rbrace}{R}, \qquad \mathrm{pIn}(b) = \frac{\#\lbrace C_i < b \rbrace + \tfrac{1}{2} \#\lbrace C_i = b \rbrace}{R}
 ```
 
-The cutoff distribution (median, 90th percentile and so on) is read from the sorted cutoffs. $`\mathrm{pIn}`$ is the chance that a bid of $`b`$ gets a seat; a bid equal to a replay's cutoff wins by random draw, as BOSS breaks ties randomly: with $`A`$ rivals bidding more and $`T`$ tied at the cutoff, a group of $`g`$ wins with probability $`\binom{S-A}{g} / \binom{T+g}{g}`$ (one bidder: $`(S-A)/(T+1)`$), and a floor bid wins for certain when seats are left over. It is evaluated on up to 120 grid points from $`F`$ to $`\max(F + 100,\ \lceil 1.15\, p_{99} \rceil)`$ and linearly interpolated. The recommended bid for a target chance (80, 90 or 95%) is the smallest odd-cent bid with $`\mathrm{pIn}(b) \ge`$ target; odd cents avoid ties with round-number bids.
+The cutoff distribution (median, 90th percentile and so on) is read from the sorted cutoffs.
+
+$`\mathrm{pIn}`$ is the chance that a bid of $`b`$ gets a seat; a bid equal to a replay's cutoff wins by random draw, as BOSS breaks ties randomly: with $`A`$ rivals bidding more and $`T`$ tied at the cutoff, a group of $`g`$ wins with probability $`\binom{S-A}{g} / \binom{T+g}{g}`$ (one bidder: $`(S-A)/(T+1)`$), and a floor bid wins for certain when seats are left over. It is evaluated on up to 120 grid points from $`F`$ to $`\max(F + 100,\ \lceil 1.15\, p_{99} \rceil)`$ and linearly interpolated.
+
+The recommended bid for a chance level (the bid styles use the levels in [Bid styles](#bid-styles); without calibration 80, 90 or 95%) is the smallest odd-cent bid with $`\mathrm{pIn}(b) \ge`$ target; odd cents avoid ties with round-number bids.
 
 In code: `simulate`, `sample_cutoffs`, `Rng.neg_bin`, `p_in_at` and `recommend_bid` in `model/forecast/sim.py`, and the same functions (`simulate`, `pInAt`, `recommendBid`) in `site/src/lib/sim/index.ts`, which is what runs in the browser. The fit's backtest calls `sample_cutoffs` through `_sim_one` in `fit.py`.
 
@@ -240,7 +309,13 @@ The fitted price level is pulled toward the course and subject by the shrinkage 
 \hat g = \frac{1}{3} \sum_{\text{seed}=0}^{2} \exp\big(f_{\text{seed}}(x)\big)
 ```
 
-**Features** (83 columns). Every feature of a row uses only terms before that row's term, plus results of strictly earlier windows of its own term, so nothing from the target outcome leaks in. History aggregates are recency-weighted with the same $`\delta`$ and $`c_w`$ as the fit, over eight groupings (course by instructor by window, course by window, subject by window, window, course by instructor, course, instructor, subject): weighted count and weight sum, fill rate, mean log clearing bid (over all rows and over filled rows), mean log seats, mean log of successful bids, and for the two most specific groupings the latest earlier filled clearing bid and how many terms ago it was. Within-term features describe the same section's earlier windows (how many, whether it filled, seats and successes, last filled clearing bid and the gap) and the same course's other sections in earlier windows. The rest are window index and round group, seats offered, log seats, log capacity, the seats-to-capacity ratio, term type, a flag for a course-instructor pair never seen before, and the slot key and subject as categorical features. Training uses terms from 2023-24 Term 1 onward.
+**Features** (83 columns). Every feature of a row uses only terms before that row's term, plus results of strictly earlier windows of its own term, so nothing from the target outcome leaks in.
+
+- History aggregates are recency-weighted with the same $`\delta`$ and $`c_w`$ as the fit, over eight groupings (course by instructor by window, course by window, subject by window, window, course by instructor, course, instructor, subject): weighted count and weight sum, fill rate, mean log clearing bid (over all rows and over filled rows), mean log seats, mean log of successful bids, and for the two most specific groupings the latest earlier filled clearing bid and how many terms ago it was.
+- Within-term features describe the same section's earlier windows (how many, whether it filled, seats and successes, last filled clearing bid and the gap) and the same course's other sections in earlier windows.
+- The rest are window index and round group, seats offered, log seats, log capacity, the seats-to-capacity ratio, term type, a flag for a course-instructor pair never seen before, and the slot key and subject as categorical features.
+
+Training uses terms from 2023-24 Term 1 onward.
 
 **Level factor.** A single factor $`f`$ calibrates the overall level from the previous (up to) two terms, using each term's out-of-sample prediction (each trained only on terms before it):
 
@@ -254,9 +329,20 @@ f = \frac{\sum a}{\sum \hat g} \quad \text{over filled sections of the previous 
 \text{scale} = \frac{f\, \hat g}{b_{50}}, \qquad m_{\text{corrected}} = m \cdot \text{scale}
 ```
 
-Rows with no simulated fill have no level to move and are left alone. A row whose scale is non-finite or outside 0.1 to 10 keeps its fitted price.
+- Rows with no simulated fill have no level to move and are left alone.
+- A row whose scale is non-finite or outside 0.1 to 10 keeps its fitted price.
 
-**Gate.** The correction is dropped entirely, and the site ships the plain fit, if any of these hold: $`f`$ is outside 0.5 to 2; more than 10% of rows are skipped; more than 5% of rows have a scale outside 0.3 to 3 (rows outside 0.3 to 3 but inside 0.1 to 10 are still rescaled, because skipping them cost accuracy on hot sections, but they count toward this limit); numpy, pandas or scikit-learn cannot be imported; or the corrected backtest file is missing, stale or failed its own gate. The corrected backtest must pass the fit's coverage check and beat the baseline's average miss (see Evaluation), must be for the same terms and fit configuration, and must have been made with the same GBM hyperparameters (`corrected_backtest_usable`). `CORRECTION_ENABLED` in `build_site_data.py`, the environment variable `BIDWISE_CORRECTION=0` and `--no-correction` switch it off.
+**Gate.** The correction is dropped entirely, and the site ships the plain fit, if any of these hold:
+
+- $`f`$ is outside 0.5 to 2
+- more than 10% of rows are skipped
+- more than 5% of rows have a scale outside 0.3 to 3 (rows outside 0.3 to 3 but inside 0.1 to 10 are still rescaled, because skipping them cost accuracy on hot sections, but they count toward this limit)
+- numpy, pandas or scikit-learn cannot be imported
+- the corrected backtest file is missing, stale or failed its own gate
+
+The corrected backtest must pass the fit's coverage check and beat the baseline's average miss (see Evaluation), must be for the same terms and fit configuration, and must have been made with the same GBM hyperparameters (`corrected_backtest_usable`).
+
+`CORRECTION_ENABLED` in `build_site_data.py`, the environment variable `BIDWISE_CORRECTION=0` and `--no-correction` switch it off.
 
 In code: `model/forecast/correction.py`. `obs_frame`, `_hist_feats`, `_within_feats` and `features_for` build the features; `train_predict` fits and predicts; `level_factor` computes $`f`$; `rescale_scales` computes the scale per row; `gate_check` applies the gate; `apply_scales` multiplies `priceLevelCents` (keeping the original as `priceLevelCentsBase`); `apply_correction` and `try_apply_correction` run the whole thing (the latter never raises); `backtest_corrected` and `build_corrected_backtest` score it. `maybe_correct` in `model/build_site_data.py` is the caller.
 
@@ -264,22 +350,75 @@ In code: `model/forecast/correction.py`. `obs_frame`, `_hist_feats`, `_within_fe
 
 Two pieces on top of the corrected forecast (`model/forecast/distcal.py`, since 15 Nov 2026). They use the same features and hyperparameters as the correction, so they see this term's earlier rounds.
 
-- Fill chance. A gradient-boosted classifier (`HistGradientBoostingClassifier`, seeds 0, 1 and 2 averaged), trained on every section with seats from terms before the target term, gives the chance that the section fills. It replaces $`\hat P_{\text{fill}}`$ from the replays (`fillProb`).
-- Range. The replayed clearing bids that filled were too wide around their median $`m`$. Each is moved to $`\max(F,\ m\,(c/m)^{s})`$, with an exponent $`s`$ above the median and another below it, learned per cell (forecast level in five bands, times one seat or several) by minimising quantile loss at the 10% and 90% points against real clearing bids (`spreadLo`, `spreadHi`).
+- **Fill chance.** A gradient-boosted classifier (`HistGradientBoostingClassifier`, seeds 0, 1 and 2 averaged), trained on every section with seats from terms before the target term, gives the chance that the section fills. It replaces $`\hat P_{\text{fill}}`$ from the replays (`fillProb`).
+- **Range.** The replayed clearing bids that filled were too wide around their median $`m`$. Each is moved to $`\max(F,\ m\,(c/m)^{s})`$, with an exponent $`s`$ above the median and another below it, learned per cell (forecast level in five bands, times one seat or several) by minimising quantile loss at the 10% and 90% points against real clearing bids (`spreadLo`, `spreadHi`).
 
-Gate: at each refit the pair is kept only if the classifier's Brier score (the mean squared error of the fill chance; lower is better) beats the replays' on both the test term (2025-26 Term 2) and the held-out term (2026-27 Term 1, which the fit and the models never saw), the 80% range on the held-out term covers 75 to 85% of its filled sections, and the mean pinball loss at the 50, 80, 90 and 95% points beats the uncalibrated one. Otherwise, or if anything else fails, the site ships the corrected forecast without either piece, for all sections.
+**Gate.** At each refit the pair is kept only if:
+
+- the classifier's Brier score (the mean squared error of the fill chance; lower is better) beats the replays' on both the test term (2025-26 Term 2) and the held-out term (2026-27 Term 1, which the fit and the models never saw; the bid levels are the exception, see [Bid styles](#bid-styles))
+- the 80% range on the held-out term covers 75 to 85% of its filled sections
+- the mean pinball loss at the 50, 80, 90 and 95% points beats the uncalibrated one.
+
+Otherwise, or if anything else fails, the site ships the corrected forecast without either piece, for all sections.
 
 In code: `learn_spread`, `apply`, `backtest_distcal` and `gate` in `model/forecast/distcal.py`; `maybe_calibrate` in `model/build_site_data.py`; the browser applies the same transform in `site/src/lib/sim/index.ts`.
 
 ### Bid styles
 
-A suggested bid is a point on the replayed distribution of clearing bids, counting replays that did not fill as cleared at the minimum. Cheap, Balanced and Safe are the 90%, 97.5% and 99% points (`bidLevels` in `forecast-meta.json`, read by `site/src/lib/sim/presets.ts`). Cheap is fixed at 90%. Balanced and Safe are the lowest levels, tried in steps of half a point from 90 to 99%, whose bids lost on at most 16% and 10% of sections that filled in the held-out term (`BALANCED_LOSS`, `SAFE_LOSS` in `distcal.py`); Safe's target was not reached, so it sits at 99%. Balanced is the default. A suggestion above the minimum is rounded up to the next whole e\$ plus one cent, because about 3 in 10 real clearing bids are whole e\$ amounts.
+A suggested bid is a point on the replayed distribution of clearing bids, with replays that did not fill counted as clearing at the minimum. At level $`\ell`$ it is the $`\ell`$ quantile of the mixture: probability $`1 - \hat P_{\text{fill}}`$ at $`F`$, and $`\hat P_{\text{fill}}`$ spread over the clearing bids of the replays that filled (`_uq` in `distcal.py`).
+
+Since 17 Nov 2026 (`distcal-a2`) each style targets a win rate on sections that fill: Cheap 70%, Balanced 85% (the default), Safe 90% (`CHEAP_LOSS`, `BALANCED_LOSS`, `SAFE_LOSS` = 0.30, 0.15, 0.10).
+
+**Rounding.** A raw bid is raised to the next odd cent. At the minimum it stays there; above it, it goes up to the next whole e\$ plus one cent, because about 3 in 10 real clearing bids are whole e\$ amounts (`site_round`).
+
+**Choosing a level.** For each level on `LEVEL_GRID` (0.300 to 0.995 in steps of 0.005), every backtest row gets a rounded bid, and `lossFilled` is the share of filled rows whose real clearing bid was above it. A style's level is the lowest one with `lossFilled` at or under its limit (`pick_levels`). If none qualifies, the top of the grid is used and flagged `reached: false`.
+
+**Per window group.** Levels are picked separately for each window group (`GROUPS`, from `evalscore.window_group`):
+
+| Group | Windows |
+|---|---|
+| R1W1 | Round 1 Window 1 |
+| R1A | Round 1A Windows 1 to 3 |
+| R1B | Round 1B Windows 1 and 2 |
+| R2 | Round 2 Windows 1 to 3 |
+| R2A | Round 2A Windows 1 to 3 |
+
+- The rows are those of the test and held-out terms.
+- Each term is scored with the range exponents learned on the other term (cross-fit, `calibrate_levels`).
+- A group with fewer than 100 filled rows (`MIN_CELL`) uses the pooled level.
+- Rounds differ (Round 1A sits lowest, Rounds 2 and 2A highest), which is why one global level under-delivered in the later rounds.
+
+Levels of the 17 Nov 2026 refit:
+
+| Group | Cheap | Balanced | Safe |
+|---|---|---|---|
+| Pooled (fallback) | 0.880 | 0.965 | 0.985 |
+| R1W1 | 0.865 | 0.940 | 0.970 |
+| R1A | 0.800 | 0.925 | 0.965 |
+| R1B | 0.875 | 0.965 | 0.985 |
+| R2 | 0.935 | 0.985 | 0.995 |
+| R2A | 0.990 | 0.995 (not reached) | 0.995 (not reached) |
+
+**Measured win rate.** `measured_win` estimates each style's out-of-sample win rate on filled sections. Levels picked on one term are applied to the other, in both directions, and the two folds are pooled. Rates are kept per window group and forecast band. The band is the conditional median: under e\$15, 15 to 25, 25 to 40, 40 to 60, or 60 and over (`BAND_EDGES`). A cell with fewer than 100 filled rows falls back to its group's rate, and a group without that many falls back to the overall rate.
+
+**On the site.** `window_bid_fields` and `measured_summary` in `build_site_data.py` copy these into `forecast-meta.json` as `bidLevelsByWindow`, `measuredWin`, `bandEdges` and `measuredWinSummary`.
+
+- `suggestBid` in `site/src/lib/sim/presets.ts` uses the window's level. Without one it falls back to the pooled `bidLevels`, and without calibration to 80, 90 and 95%.
+- The course page shows the measured rate for the section's group and band next to each style ("if it fills"). It adds a note when the rate is more than 6 points under the target (`MEASURED_TOLERANCE` in `site/src/lib/sim/windowBids.ts`). Styles that give the same rounded bid share the lowest of their rates.
+- The headline chance of a seat still comes from the replays.
+- A `distcal-a1` file, which has pooled levels only, is still accepted.
+
+## Other estimates
 
 ### Drop chance
 
 For a section that is full now: the chance that seats are offered again by each later window of the same term. A seat dropped in a window opens in that window and can be taken in the same window, so it counts from the first window that offers it.
 
-A case is one class in one past term that was full in the base window $`w_0`$. While a window is open, full means it started the window full (vacancy before processing is 0); between windows, it means the previous window ended full. The two behave differently and are never mixed. For each later window $`k`$, a case counts as a success if any window after $`w_0`$ and up to $`k`$ offered seats again (vacancy before processing above 0). A case that never saw window $`k`$ and had no seat before it is unknown and dropped. The current term is excluded.
+- A case is one class in one past term that was full in the base window $`w_0`$.
+- While a window is open, full means it started the window full (vacancy before processing is 0); between windows, it means the previous window ended full. The two behave differently and are never mixed.
+- For each later window $`k`$, a case counts as a success if any window after $`w_0`$ and up to $`k`$ offered seats again (vacancy before processing above 0).
+- A case that never saw window $`k`$ and had no seat before it is unknown and dropped.
+- The current term is excluded.
 
 Counts are made at three levels (all courses, subject, course), with $`n`$ cases and $`x`$ successes at each. Rates are shrunk toward the parent with $`K = 5`$ pseudo-cases:
 
@@ -307,7 +446,9 @@ A holder of section A asks how likely a swap into section B of the same course i
 v_s = \ln p_{50,s} + 0.25 \ln \frac{\lambda_s}{S_s}, \qquad d_s = v_s - \mathrm{median}_s(v)
 ```
 
-The second term breaks ties between sections that all clear at the minimum bid. In a pre-assigned course (the median share of seats offered in Round 1 Window 1 is under 0.25 over at least 3 historical rows), almost every seat is given out before bidding and the simulator would give every section the minimum, so $`v_s = \ln(\text{price level})`$ from the same window's forecast, with no simulation. A section with no usable forecast falls back to last term's clearing bids relative to the course median.
+- The second term breaks ties between sections that all clear at the minimum bid.
+- In a pre-assigned course (the median share of seats offered in Round 1 Window 1 is under 0.25 over at least 3 historical rows), almost every seat is given out before bidding and the simulator would give every section the minimum, so $`v_s = \ln(\text{price level})`$ from the same window's forecast, with no simulation.
+- A section with no usable forecast falls back to last term's clearing bids relative to the course median.
 
 **Holders and requests.** The number of holders is the seat count $`n`$ (in a pre-assigned course, $`n`$ minus the typical seats offered in bidding, at least 1). Each holder of A applies for B with probability
 
@@ -323,7 +464,11 @@ where $`\sigma_{\text{logistic}}(x) = 1/(1 + e^{-x})`$.
 P(\text{swap}) = E\left[\frac{\min(1 + X,\ Y)}{1 + X}\right] = \sum_{x} \Pr(X = x)\, \frac{1}{x + 1} \sum_{j=1}^{\min(x + 1,\ n_B)} \Pr(Y \ge j)
 ```
 
-using $`E[\min(m, Y)] = \sum_{j=1}^{m} \Pr(Y \ge j)`$, which makes the computation exact and linear in the section sizes. Cycles through three or more sections are ignored. The range shown is the min and max of the chance at $`(r, k) = (0.1, 5.5)`$ and at the four corners $`r \in \lbrace r/1.5,\ 1.5r \rbrace`$, $`k \in \lbrace k/1.25,\ 1.25k \rbrace`$. The label comes from the central chance: likely at 0.75 or more, unlikely below 0.4, otherwise possible.
+using $`E[\min(m, Y)] = \sum_{j=1}^{m} \Pr(Y \ge j)`$, which makes the computation exact and linear in the section sizes.
+
+- Cycles through three or more sections are ignored.
+- The range shown is the min and max of the chance at $`(r, k) = (0.1, 5.5)`$ and at the four corners $`r \in \lbrace r/1.5,\ 1.5r \rbrace`$, $`k \in \lbrace k/1.25,\ 1.25k \rbrace`$.
+- The label comes from the central chance: likely at 0.75 or more, unlikely below 0.4, otherwise possible.
 
 $`r`$ and $`k`$ are judgment settings, chosen so the central chance is about 60 to 70% for equally wanted sections, 80 to 90% when the other section is less wanted, 20 to 40% when it is more wanted and under 15% when it is much more wanted (checked in `swap.test.ts` for two sections of 45 seats).
 
@@ -331,7 +476,11 @@ In code: `requestProb`, `swapChance` (the sum above, with `binomPmf`), `swapResu
 
 ### Drop and re-bid
 
-A student who won a section with a high bid drops it in a later window, gets a refund capped by round, and bids again near the minimum, hoping nobody else takes the freed seat. The refund cap in e\$ is 50 in Rounds 1 and 1A, 40 in 1B, 30 in 2 and 10 in 2A. With $`\text{paid}`$ the original bid and $`b`$ the re-bid:
+A student who won a section with a high bid drops it in a later window, gets a refund capped by round, and bids again near the minimum, hoping nobody else takes the freed seat.
+
+The refund cap in e\$ is 50 in Rounds 1 and 1A, 40 in 1B, 30 in 2 and 10 in 2A.
+
+With $`\text{paid}`$ the original bid and $`b`$ the re-bid:
 
 ```math
 \text{refund} = \min(\text{paid},\, \text{cap}), \qquad \text{net cost if it works} = \text{paid} - \text{refund} + b, \qquad \text{saving} = \text{refund} - b
@@ -343,13 +492,17 @@ The chance that the re-bid wins is the chance that a bid of $`b`$ takes one seat
 P(\text{win}) = \mathrm{pIn}_{S=1,\ g=1}\big(\max(b, F)\big)
 ```
 
-If the re-bid fails, the class is lost and only the refund is kept. "Up to what you paid" is an assumption: the sources give only the cap. The simulation does not know that a freed seat may draw fewer or more bidders than a seat offered at the start of a window.
+- If the re-bid fails, the class is lost and only the refund is kept.
+- "Up to what you paid" is an assumption: the sources give only the cap.
+- The simulation does not know that a freed seat may draw fewer or more bidders than a seat offered at the start of a window.
 
 In code: `refundCapCents`, `refundCents`, `snipeMoney`, `snipeSimInput` (seats 1, group 1, the window's forecast parameters) and `snipeChance` in `site/src/lib/snipe/snipe.ts`.
 
 ### Planner: joint probability across courses
 
-The planner picks one bid per section to maximise the chance of getting what the student needs within an e\$ balance $`B_{\text{bal}}`$. Each item $`i`$ has a bid $`b_i`$ and a chance $`p_i = \mathrm{pIn}_i(b_i)`$ from its own simulation (seats left now, the chosen window's forecast, 20,000 runs); a bid below the minimum has $`p_i = 0`$. Items are required, optional, or members of a one-of group (any one of several sections or courses will do). Treating sections as independent, the chance of getting everything needed is
+The planner picks one bid per section to maximise the chance of getting what the student needs within an e\$ balance $`B_{\text{bal}}`$. Each item $`i`$ has a bid $`b_i`$ and a chance $`p_i = \mathrm{pIn}_i(b_i)`$ from its own simulation (seats left now, the chosen window's forecast, 20,000 runs); a bid below the minimum has $`p_i = 0`$.
+
+Items are required, optional, or members of a one-of group (any one of several sections or courses will do). Treating sections as independent, the chance of getting everything needed is
 
 ```math
 P_{\text{all}} = \prod_{i \in \text{required}} p_i \;\cdot\; \prod_{G \in \text{groups}} \Big(1 - \prod_{i \in G} (1 - p_i)\Big)
@@ -361,7 +514,11 @@ The optimiser maximises
 J = P_{\text{all}} + 0.1 \sum_{i \in \text{optional}} p_i - \kappa(s)\, \frac{\sum_i p_i b_i}{B_{\text{bal}}}, \qquad \kappa(s) = 1.2\,(1 - s)^2, \qquad \sum_i b_i \le B_{\text{bal}}
 ```
 
-where $`s \in [0, 1]`$ is the user's "save e\$" to "be sure" setting and $`\sum_i p_i b_i`$ is the expected spend, since only successful bids are charged. At $`s = 1`$ the spend penalty vanishes. The sum of all bids placed must fit the balance, since any of them might succeed. The search is coordinate ascent over each bid on a 50-cent grid, started from four points (the minimum bids, and each section's bid for 50%, 80% and 95%), followed by a refinement within 49 cents using odd values only.
+where $`s \in [0, 1]`$ is the user's "save e\$" to "be sure" setting and $`\sum_i p_i b_i`$ is the expected spend, since only successful bids are charged.
+
+- At $`s = 1`$ the spend penalty vanishes.
+- The sum of all bids placed must fit the balance, since any of them might succeed.
+- The search is coordinate ascent over each bid on a 50-cent grid, started from four points (the minimum bids, and each section's bid for 50%, 80% and 95%), followed by a refinement within 49 cents using odd values only.
 
 In code: `evaluate` (the products and the optional term), `pAllOf` (the reported joint chance, without optional items), `kappa`, `ascend`, `solve`, `optimise` and `tradeoff` (the trade-off curve over $`s`$) in `site/src/lib/sim/planner.ts`, run in the worker through `runOptimise` and `runTradeoff` in `client.ts`.
 
@@ -369,34 +526,65 @@ In code: `evaluate` (the products and the optional term), `pAllOf` (the reported
 
 **Held-out term backtest.** For a target term the model is fitted only on earlier terms (with the recency weights above), then forecasts every section in every window of the target term as BOSS offered it (the seats actually offered, a group of 1, 1,500 replays), and each forecast is scored against the real outcome $`a`$: the minimum successful bid if the section filled, the floor otherwise. Three terms play different roles:
 
-- 2024-25 Term 2 is the validation term. Calibration (`calibrate` in `fit.py`) picks $`r \in \lbrace 0.4, 1, 2.5 \rbrace`$ by the Brier score of $`\Pr(\text{fill})`$; keeps $`c_w \in \lbrace 0, 1 \rbrace`$ and three alternative $`\tau`$ sets only if the Brier score improves by more than $`10^{-4}`$; scales the price level twice by $`\exp(\mathrm{median} \ln(a / \text{conditional } p_{50}))`$ over filled sections; picks $`\ell_{sd} \in \lbrace 0.1, 0.25, 0.4 \rbrace`$ whose filled-section 80% coverage is closest to 0.8; and decides whether the slot effects stay on. Results: $`r = 0.4`$, $`c_w = 0.5`$, $`\tau`$ as in the table above, price scale 1.350, $`\ell_{sd} = 0.1`$, slot effects on (`model/forecast/out/calibration.json`).
+- 2024-25 Term 2 is the validation term. Calibration (`calibrate` in `fit.py`):
+  - picks $`r \in \lbrace 0.4, 1, 2.5 \rbrace`$ by the Brier score of $`\Pr(\text{fill})`$
+  - keeps $`c_w \in \lbrace 0, 1 \rbrace`$ and three alternative $`\tau`$ sets only if the Brier score improves by more than $`10^{-4}`$
+  - scales the price level twice by $`\exp(\mathrm{median} \ln(a / \text{conditional } p_{50}))`$ over filled sections
+  - picks $`\ell_{sd} \in \lbrace 0.1, 0.25, 0.4 \rbrace`$ whose filled-section 80% coverage is closest to 0.8
+  - decides whether the slot effects stay on
+  - Results: $`r = 0.4`$, $`c_w = 0.5`$, $`\tau`$ as in the table above, price scale 1.350, $`\ell_{sd} = 0.1`$, slot effects on (`model/forecast/out/calibration.json`).
 - 2025-26 Term 2 is the test term, used for the gate.
 - 2026-27 Term 1 is held out: reported, not part of the gate. The corrected model's GBM hyperparameters were also tuned on the test term, so test-term figures for the corrected model are optimistic and the held-out term is the honest one.
 
 **Metrics** (`summarize`, `_agg`, `pair_order` in `fit.py`):
 
-- Average miss $`\overline{|p_{50} - a|}`$ over all forecasts. On sections that filled it uses the median of the replays that filled (conditional $`p_{50}`$), scored on the filled sections the baseline could also forecast.
-- 80% range coverage. Over all forecasts: the share where the randomised probability integral transform $`u = \Pr(C < a) + U \cdot \Pr(C = a)`$ lies in $`[0.1, 0.9]`$ (a literal $`p_{10} \le a \le p_{90}`$ check would read far too high because ties at the floor are common). On filled sections: the share with $`p_{10} \le a \le p_{90}`$. Target: about 80%.
+- Average miss $`\overline{|p_{50} - a|}`$ over all forecasts.
+  - On sections that filled it uses the median of the replays that filled (conditional $`p_{50}`$), scored on the filled sections the baseline could also forecast.
+- 80% range coverage.
+  - Over all forecasts: the share where the randomised probability integral transform $`u = \Pr(C < a) + U \cdot \Pr(C = a)`$ lies in $`[0.1, 0.9]`$ (a literal $`p_{10} \le a \le p_{90}`$ check would read far too high because ties at the floor are common).
+  - On filled sections: the share with $`p_{10} \le a \le p_{90}`$.
+  - Target: about 80%.
 - Brier score of $`\Pr(\text{fill})`$ against the fill outcome, versus a hard baseline and climatology (the weighted fill rate per window).
 - Pair order: for pairs of filled sections of one course, term and window with different slot keys and unequal actual clearing bids, how often the conditional $`p_{50}`$ orders them like the actual bids (ties count half).
 - Baseline, "reuse last term's clearing bid": for the same window, the same section's clearing bid, else the same course and instructor, else the same course, taken from the latest earlier term of the same term type (else the latest earlier term).
 
-**Gate** (`main` in `fit.py`). Forecasts go live only if, on the test term, coverage is in range (0.75 to 0.85 over all forecasts and 0.70 to 0.90 on filled sections) and the model beats the baseline (lower average miss overall and on filled sections, and a Brier score below both baselines). Otherwise the parameter file is written under a `.rejected` name and the site shows no forecasts. Per window, the site marks confidence "low" unless filled-section coverage is within 70 to 90% on at least 50 filled sections (`window_confidence` in `build_site_data.py`).
+**Gate** (`main` in `fit.py`). Forecasts go live only if, on the test term, coverage is in range (0.75 to 0.85 over all forecasts and 0.70 to 0.90 on filled sections) and the model beats the baseline (lower average miss overall and on filled sections, and a Brier score below both baselines).
 
-**Results of the 15 Nov 2026 calibration on 2026-27 Term 1** (from `distcal.json` and `accuracy.json`). 7,894 forecasts, of which 1,902 were for sections that filled. The forecast was made without this term's results and the range exponents were learned on 2025-26 Term 2, but the style levels were chosen with this term's results in view, so a new term may differ.
+Otherwise the parameter file is written under a `.rejected` name and the site shows no forecasts.
 
-- Brier score of $`\Pr(\text{fill})`$: 0.099 with the classifier, 0.121 from the replays.
-- 80% range on filled sections: the real clearing bid fell inside it 78% of the time (90% before), at about half the width (0.54 of the old median width, measured on the terms used to choose the calibration).
+Per window, the site marks confidence "low" unless filled-section coverage is within 70 to 90% on at least 50 filled sections (`window_confidence` in `build_site_data.py`).
+
+**Results of the 15 Nov 2026 calibration on 2026-27 Term 1** (from `distcal.json` and `accuracy.json`). There were 7,894 forecasts, of which 1,902 were for sections that filled. The forecast was made without this term's results, and the range exponents were learned on 2025-26 Term 2.
+
+- Brier score of $`\Pr(\text{fill})`$: 0.099 with the classifier, against 0.121 from the replays.
+- 80% range on filled sections: the real clearing bid fell inside it 78% of the time (90% before), at about half the width. The width is 0.54 of the old median width, measured on the terms used to choose the calibration.
 - Median miss on sections that filled: e\$7.77.
-- Safe missed its 10% target: 10.6% of sections that filled lost.
 
-| Style | Won, sections that filled | Won, all sections |
-|---|---|---|
-| Cheap | 70% | 93% |
-| Balanced | 84% | 96% |
-| Safe | 89% | 97% |
+**Bid styles (17 Nov 2026 refit).** Measured win rate on filled sections, out of sample by cross-fit between 2025-26 Term 2 and 2026-27 Term 1:
 
-**Results on 2026-27 Term 1 before the calibration and before Round 1A Window 2 was forecast (9 Nov 2026), a term excluded from training (a retrospective result, not a prospective one: the correction was chosen with this term's scores in view, so treat it as optimistic)** (from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the "How it works" page on the site shows the current median miss). 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
+| Round | Filled sections | Cheap | Balanced | Safe |
+|---|---|---|---|---|
+| Target | | 70% | 85% | 90% |
+| Round 1 Window 1 | 616 | 72% | 87% | 92% |
+| Round 1A | 1,411 | 71% | 85% | 91% |
+| Round 1B | 551 | 70% | 85% | 87% |
+| Round 2 | 675 | 69% | 84% | 88% |
+| Round 2A | 170 | 49% | 61% | 64% |
+| All | 3,423 | 70% | 84% | 88% |
+
+Round 2A falls short, and the site says so there, showing the measured rate instead of the model's. Its figure is rough and probably pessimistic: neither term alone has 100 filled Round 2A sections, so `measured_win` scored it at least partly at the pooled level (0.88, 0.965, 0.985), lower than the 0.99 to 0.995 the site ships for Round 2A. Each fold also picks its levels with range exponents learned on the term it then tests, so the test is not fully clean, and the table measures the procedure rather than the exact shipped numbers.
+
+**Rolling harness** (`evalharness.py`). This replays the whole procedure with no look-ahead.
+
+Each scored term gets exponents and levels learned only on the two terms before it, and bids are rounded as on the site.
+
+Pooled over the four complete terms it can score, the per-group method won 68.9%, 84.0% and 89.2% of filled sections, at mean bids of e\$20.30, e\$25.14 and e\$28.47.
+
+The previous single global level won 77.1%, 83.6% and 89.6%, at e\$21.87, e\$24.27 and e\$28.40. Its Cheap level was fixed at 90%, so Cheap won well above its 70% aim and cost more; the new Cheap is cheaper by design.
+
+**Not shipped.** `promisecal.py` tried split-conformal multipliers on the conditional price, per window group, seat class and forecast band. It met its targets on average (70.2%, 84.5% and 94.9%), but it failed per round, with Round 2A Cheap at 62.9%. It also bid e\$4 to e\$14 more than the previous single level (+4.1, +8.8 and +13.9 on average), mostly on sections that never fill, because it ignores the fill chance.
+
+**Before the calibration (9 Nov 2026).** Results on 2026-27 Term 1, a term excluded from training, before Round 1A Window 2 was forecast. This is a retrospective result, not a prospective one: the correction was chosen with this term's scores in view, so treat it as optimistic. Figures are from `backtest.json` and `backtest-corrected.json` as of 9 Nov 2026; both are regenerated at each refit, so the "How it works" page on the site shows the current median miss. 7,243 forecasts, of which 1,696 were for sections that filled. Amounts in e\$.
 
 | Measure | Fit only | Fit plus correction | Reuse last term's bid |
 |---|---|---|---|
@@ -407,7 +595,9 @@ In code: `evaluate` (the products and the optional term), `pAllOf` (the reported
 | 80% range coverage, all forecasts | 81.7% | 82.3% | not applicable |
 | Order of same-course sections (1,006 pairs) | 68.4% | 68.6% | not computed |
 
-The Brier score of $`\Pr(\text{fill})`$ is 0.118 on the sections the baseline could forecast, against 0.2255 for a hard last-term baseline and 0.165 for climatology; the correction does not change it (the fill classifier above does). The baseline could forecast 6,989 of the 7,243 sections.
+The Brier score of $`\Pr(\text{fill})`$ is 0.118 on the sections the baseline could forecast, against 0.2255 for a hard last-term baseline and 0.165 for climatology; the correction does not change it (the fill classifier above does).
+
+The baseline could forecast 6,989 of the 7,243 sections.
 
 ## Limitations
 
@@ -422,6 +612,7 @@ The Brier score of $`\Pr(\text{fill})`$ is 0.118 on the sections the baseline co
 - Ties are settled by random draw among the tied bids, but rivals are assumed to bid independently of each other and of the group; a bid exactly equal to the cutoff can therefore read very low for a large group (for example three seats for a group of three against ten rivals all at the floor). The recommended odd-cent bids avoid round-number ties.
 - Seat counts for some sections are estimates from the previous window and can be wrong, for example when reserved seats are released or students drop.
 - The planner treats sections as independent, which is optimistic when students compete for the same seats in correlated ways. It flags timetable clashes but does not model e\$ rollover rules or credit limits.
+- Bid styles promise a win rate only on sections that fill. Their levels come from two terms, and Round 2A (170 filled sections) falls short at 49%, 61% and 64%. That figure is rough and probably pessimistic, because it was measured partly at the pooled level.
 - The swap chance, its settings, and the drop-and-re-bid chance have not been tested against real outcomes; the percentages are rough guides for ranking options. The drop chance counts past cases of the same course, which are correlated within a term.
 
 ## Running locally
@@ -448,7 +639,11 @@ python -m model.forecast.correction backtest --csv <bids_with_schedule.csv> --fi
 python model/build_site_data.py --csv <bids_with_schedule.csv>
 ```
 
-The current term (2026-27 Term 2) and the parameter file name are hard-coded in `fit.py` and `build_site_data.py`. `fit.py` calibrates and backtests on the fixed terms named in the Evaluation section, so it needs several terms of real history; it will not run meaningfully on the synthetic fixture. The site-data build alone works on the fixture, without forecasts:
+The current term (2026-27 Term 2) and the parameter file name are hard-coded in `fit.py` and `build_site_data.py`.
+
+`fit.py` calibrates and backtests on the fixed terms named in the Evaluation section, so it needs several terms of real history; it will not run meaningfully on the synthetic fixture.
+
+The site-data build alone works on the fixture, without forecasts:
 
 ```sh
 python model/build_site_data.py --csv tests/fixtures/site_data_fixture.csv \
@@ -471,6 +666,6 @@ npm test                                    # as the data on disk stands
 BIDWISE_FORCE_BIDLEVELS=calibrated npm test # every test sees calibrated bid levels
 ```
 
-The TypeScript suite passed in both modes on 15 Nov 2026.
+The TypeScript suite passed in both modes on 17 Nov 2026.
 
-More detail: `docs/model-plain.md` for a plain-language summary and `docs/model-technical.md` for a longer technical write-up with a worked example.
+More detail: `docs/model-plain.md` for a plain-language summary and `docs/model-technical.md` for a longer technical write-up with a worked example. Both were written before the 15 Nov 2026 calibration and the bid styles, so this README is the current reference.

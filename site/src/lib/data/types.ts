@@ -182,6 +182,14 @@ export interface ForecastMeta {
   measuredWin?: Record<string, Record<string, MeasuredWinCell>>;
   /** Upper edges, e$ of the conditional median, between the five forecast bands: [15, 25, 40, 60]. */
   bandEdges?: number[];
+  /** For /method: the past win rate on filled sections of each style, overall and per round, and the two terms it was checked on. */
+  measuredWinSummary?: MeasuredWinSummary;
+}
+
+export interface MeasuredWinSummary {
+  overall: Record<BidStyleKey, number>;
+  byRound: Array<Record<BidStyleKey, number> & { group: string; label: string; nFilled: number }>;
+  terms?: string[];
 }
 
 export type BidStyleKey = 'cheap' | 'balanced' | 'safe';

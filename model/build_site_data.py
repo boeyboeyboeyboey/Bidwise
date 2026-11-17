@@ -687,6 +687,66 @@ def maybe_correct(params: dict, backtest: dict, rows: list[dict], term: str, doc
         return params, backtest, "fit"
 
 
+def window_bid_fields(payload: dict) -> dict:
+    """forecast-meta fields built from distcal.json's per-window-group keys, by window name (every window of fit.WINDOWS).
+
+    `levelsByGroup` -> "bidLevelsByWindow" {window: {style: {level, lossFilled[, reached]}}}; `measuredWin` -> "measuredWin"
+    {window: {"0".."4": {cheap, balanced, safe, nFilled}}}; `bandEdges` -> "bandEdges". A key that is absent or malformed is not
+    emitted (the site then falls back to the pooled `bidLevels`). The group of a window comes from evalscore.window_group.
+    """
+    sys.path.insert(0, str(ROOT / "model"))
+    try:
+        from forecast import evalscore, fit  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+
+    def num(v, allow_none=False):
+        if v is None:
+            return allow_none
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf")
+
+    styles = ("cheap", "balanced", "safe")
+    out: dict = {}
+    by_group = payload.get("levelsByGroup")
+    if isinstance(by_group, dict):
+        levels = {}
+        for w in fit.WINDOWS:
+            g = by_group.get(evalscore.window_group(w))
+            if not isinstance(g, dict):
+                continue
+            cell = {}
+            for st in styles:
+                c = g.get(st)
+                if isinstance(c, dict) and num(c.get("level")) and num(c.get("lossFilled"), True):
+                    cell[st] = {"level": c["level"], "lossFilled": c["lossFilled"]}
+                    if isinstance(c.get("reached"), bool):  # False: the level hit its ceiling without meeting the target
+                        cell[st]["reached"] = c["reached"]
+            if len(cell) == len(styles):
+                levels[w] = cell
+        if levels:
+            out["bidLevelsByWindow"] = levels
+    measured = payload.get("measuredWin")
+    if isinstance(measured, dict):
+        table = {}
+        for w in fit.WINDOWS:
+            g = measured.get(evalscore.window_group(w))
+            if not isinstance(g, dict):
+                continue
+            bands = {}
+            for b in "01234":
+                c = g.get(b)
+                if isinstance(c, dict) and all(num(c.get(st), True) for st in styles) and num(c.get("nFilled")):
+                    bands[b] = {**{st: c[st] for st in styles}, "nFilled": c["nFilled"]}
+            if len(bands) == 5:
+                table[w] = bands
+        if table:
+            out["measuredWin"] = table
+    edges = payload.get("bandEdges")
+    if isinstance(edges, list) and len(edges) == 4 and all(num(e) for e in edges) and edges == sorted(edges):
+        out["bandEdges"] = list(edges)
+    return out
+
+
 def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal_path: Path | None) -> tuple[dict, dict]:
     """Distribution calibration (fill probability and spread per section-window) on top of the corrected params.
 
@@ -694,7 +754,7 @@ def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal
     was validated against (its config and terms must match distcal.json), `live` what apply_correction left in live_out.
     Returns (params, meta_fields). Everything is computed before any section changes, and any failure returns `params` untouched
     (all-or-nothing: never a half-calibrated site) with one warning line. meta_fields is {"distCalibration": {...}} plus
-    "bidLevels" when calibrated. The conditional median of a section-window is the correction's own simulated median of the fitted
+    "bidLevels" when calibrated (plus "bidLevelsByWindow", "measuredWin", "bandEdges" when distcal.json has them). The conditional median of a section-window is the correction's own simulated median of the fitted
     params times its rescale factor (the median the corrected params aim at), so no second simulation pass runs.
     """
     def skip(why):
@@ -738,8 +798,13 @@ def maybe_calibrate(params: dict, fit_backtest: dict, live: dict | None, distcal
         if not done:
             return skip("no section-window could be calibrated")
         print(f"distribution calibration: {done} of {len(live['keys'])} corrected section-windows (held-out {terms['heldOut']})")
-        return new, {"distCalibration": {"enabled": True, "ok": True, "heldOutTerm": terms["heldOut"], "createdAt": round_to_hour(payload.get("createdAt"))},
-                     "bidLevels": payload["levels"]}
+        meta_fields = {"distCalibration": {"enabled": True, "ok": True, "heldOutTerm": terms["heldOut"], "createdAt": round_to_hour(payload.get("createdAt"))},
+                       "bidLevels": payload["levels"]}
+        try:
+            meta_fields.update(window_bid_fields(payload))
+        except Exception as e:  # noqa: BLE001 the per-window extras are optional: the pooled bidLevels still ship
+            print(f"WARNING: per-window bid levels skipped: {type(e).__name__}: {e}", file=sys.stderr)
+        return new, meta_fields
     except Exception as e:  # noqa: BLE001 the site build must never fail because of the calibration
         return skip(f"{type(e).__name__}: {e}")
 

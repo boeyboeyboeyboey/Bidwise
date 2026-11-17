@@ -15,6 +15,8 @@
 !/tests/test_site_data_s1.py
 !/tests/test_evalharness.py
 !/tests/test_evalscore.py
+!/tests/test_promisecal.py
+!/tests/test_distcal_levels.py
 !/tests/fixtures/
 /tests/fixtures/*
 !/tests/fixtures/site_data_fixture.csv

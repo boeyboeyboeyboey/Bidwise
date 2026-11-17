@@ -4,7 +4,7 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isLowConfidence, lowConfidence, measuredIfFills, presetFor, suggestBid, underDelivers } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { lowConfidenceLines, styleTipLines } from './bidStyle';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
@@ -82,14 +82,27 @@
   const sim = $derived(res?.r ?? null);
   // After a window or group change the previous result stays (dimmed, under its own window label) until the new one arrives.
   const stale = $derived(!!res && (res.win !== win || res.group !== group));
-  const rec = $derived(sim ? suggestBid(sim, target) : 0);
+  const rec = $derived(sim ? suggestBid(sim, target, res?.win) : 0);
   const lowRel = $derived(!soldOut && isLowConfidence(ctx.meta.byWindow[win]));
   // Calibrated: the chips are the named bid styles, and the headline carries two chances plus the fill chance.
   const calibrated = bidCalibrated();
   const presets = bidPresets();
   const styleTip = styleTipLines(presets);
   const pNow = $derived(sim ? pInAt(sim, rec) : 0);
-  const ifFills = $derived(sim ? chanceIfFills(sim, rec) : null);
+  const modelIfFills = $derived(sim ? chanceIfFills(sim, rec) : null);
+  // For a bid style, "if the section fills" is how often that style's bid won on filled sections like this one in past terms
+  // (same window group and price band), when that is known; a custom bid, a friends group (the measured rate is for one bidder)
+  // and everything else keep the model's own estimate.
+  const styleKey = $derived(calibrated ? (presetFor(target)?.key ?? null) : null);
+  // Styles that suggest the same bid here share one figure, the lowest of theirs, so one bid never carries two claims.
+  const measured = $derived.by(() => {
+    if (!sim || modelIfFills === null || !styleKey || res?.group !== 1) return null;
+    const rates = presets.filter((p) => suggestBid(sim, p.level, res?.win) === rec)
+      .map((p) => measuredIfFills(res?.win, sim, p.key)).filter((x): x is number => x !== null);
+    return rates.length ? Math.min(...rates) : null;
+  });
+  const ifFills = $derived(measured ?? modelIfFills);
+  const measuredLow = $derived(measured !== null && (styleKey === 'cheap' || styleKey === 'balanced' || styleKey === 'safe') && underDelivers(styleKey, measured));
   // Only a bid above the minimum has an "if it fills" chance worth showing (at the minimum it is certain).
   const aboveMin = $derived(minBid !== null && rec > minBid + 1);
   const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win) : []);
@@ -105,7 +118,7 @@
   });
 
   // The three aim bids are the same: the minimum bid already gets the seat.
-  const allSame = $derived(!!sim && TARGETS.every((t) => suggestBid(sim!, t) === suggestBid(sim!, TARGETS[0])));
+  const allSame = $derived(!!sim && TARGETS.every((t) => suggestBid(sim!, t, res?.win) === suggestBid(sim!, TARGETS[0], res?.win)));
 
   function setGroup(g: number) {
     const c = clampGroup(g);
@@ -185,6 +198,7 @@
         {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
         {#if ifFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
       </p>
+      {#if measuredLow && aboveMin}<p class="disc">In past terms this style lost more often on sections like this.</p>{/if}
       <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
       {#if note}<p class="disc">{note}</p>{/if}
       {#if allSame}

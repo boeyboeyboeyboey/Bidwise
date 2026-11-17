@@ -21,7 +21,7 @@ const candidates: ExampleCandidate[] = getCourseIndex()
   .flatMap((c) => {
     const sec = defaultSection(getCourse(c.code)?.sectionsNow ?? [], [], []);
     const input = sec && toPlanSimInput(sec, exWindow, 1);
-    return input ? [{ code: c.code, seats: input.seats, bidCents: suggestBid(simulate(input), DEFAULT_TARGET) }] : [];
+    return input ? [{ code: c.code, seats: input.seats, bidCents: suggestBid(simulate(input), DEFAULT_TARGET, exWindow) }] : [];
   })
   .sort((a, b) => b.bidCents - a.bidCents);
 const example = pickExampleCourses(candidates);

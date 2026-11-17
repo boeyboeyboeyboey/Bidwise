@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { bidLevels } from './bidLevels';
+import { bidLevels, bidWindowData } from './bidLevels';
 import type { BidLevel } from './types';
 
 // This file tests the real loader, so it opts out of the forced-calibrated setup mock (src/test-setup.ts).
@@ -27,5 +27,48 @@ describe('bidLevels', () => {
   it('is null when a level is missing or malformed', () => {
     expect(bidLevels({ ...meta, bidLevels: { ...meta.bidLevels, safe: undefined as unknown as BidLevel } })).toBeNull();
     expect(bidLevels({ ...meta, bidLevels: { ...meta.bidLevels, cheap: { ...meta.bidLevels.cheap, level: 'x' as unknown as number } } })).toBeNull();
+  });
+});
+
+describe('bidWindowData', () => {
+  const lvl = (level: number) => ({ level, lossFilled: 0.2 });
+  const cell = { cheap: 0.7, balanced: 0.8, safe: 0.9, nFilled: 60 };
+  const full = {
+    ...meta,
+    bidLevelsByWindow: { 'Round 1 Window 1': { cheap: lvl(0.5), balanced: lvl(0.7), safe: lvl(0.9) } },
+    measuredWin: { 'Round 1 Window 1': { '0': cell, '1': cell, '2': cell, '3': cell, '4': cell } },
+    bandEdges: [15, 25, 40, 60],
+  };
+  it('reads levels, measured rates and edges', () => {
+    const d = bidWindowData(full);
+    expect(d?.levels?.['Round 1 Window 1'].balanced.level).toBe(0.7);
+    expect(d?.measured?.['Round 1 Window 1']['3'].nFilled).toBe(60);
+    expect(d?.edges).toEqual([15, 25, 40, 60]);
+  });
+  it('passes reached through when present', () => {
+    const d = bidWindowData({ ...full, bidLevelsByWindow: { 'Round 1 Window 1': { cheap: lvl(0.5), balanced: lvl(0.7), safe: { ...lvl(0.995), reached: false } } } });
+    expect(d?.levels?.['Round 1 Window 1'].safe.reached).toBe(false);
+    expect(d?.levels?.['Round 1 Window 1'].cheap).not.toHaveProperty('reached');
+  });
+  it('is null when the keys are absent (the meta today) or the calibration is not ok', () => {
+    expect(bidWindowData(meta)).toBeNull();
+    expect(bidWindowData(undefined)).toBeNull();
+    expect(bidWindowData({ ...full, distCalibration: { enabled: true, ok: false } })).toBeNull();
+  });
+  it('keeps each part independent and drops malformed entries', () => {
+    const lvOnly = bidWindowData({ ...meta, bidLevelsByWindow: full.bidLevelsByWindow });
+    expect(lvOnly?.measured).toBeNull();
+    expect(lvOnly?.edges).toBeNull();
+    const bad = bidWindowData({ ...full, bidLevelsByWindow: { 'Round 1 Window 1': { cheap: lvl(0.5), balanced: lvl(1.2), safe: lvl(0.9) } }, bandEdges: [15, 15, 40, 60] });
+    expect(bad?.levels).toBeNull();
+    expect(bad?.edges).toBeNull();
+    expect(bad?.measured).not.toBeNull();
+    const short = bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': { '0': cell } } });
+    expect(short?.measured).toBeNull();
+    expect(short?.levels).not.toBeNull();
+  });
+  it('accepts null rates and loss', () => {
+    const d = bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, { ...cell, safe: null }])) } });
+    expect(d?.measured?.['Round 1 Window 1']['0'].safe).toBeNull();
   });
 });

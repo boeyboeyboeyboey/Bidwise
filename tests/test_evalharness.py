@@ -119,13 +119,13 @@ class Folds(unittest.TestCase):
         self.assertTrue(settings[self.order[1]]["rolledLevelsInSample"])
         # distcal.json's held-out term is order[2]: its settings look ahead on that term and every earlier one, not on later ones
         for t in self.order[1:3]:
-            self.assertEqual(settings[t]["lookAhead"], {"as_scored": True, "shipped": True, "rolled": False})
-        self.assertEqual(last["lookAhead"], {"as_scored": False, "shipped": False, "rolled": False})
+            self.assertEqual(settings[t]["lookAhead"], {"as_scored": True, "shipped": True, "rolled": False, "promise": False})
+        self.assertEqual(last["lookAhead"], {"as_scored": False, "shipped": False, "rolled": False, "promise": False})
 
-    def test_pooled_report_scores_only_the_rolled_variant(self):
+    def test_pooled_report_scores_only_the_variants_without_look_ahead(self):
         rows, settings = H.eval_rows(self.sim, self.order, self.shipped, {}, 6)
         rep, md = H.build_reports(rows, settings, {**self.shipped, "ok": True}, 50)
-        self.assertEqual(list(rep["pooled"]["variants"]), ["rolled"])
+        self.assertEqual(list(rep["pooled"]["variants"]), ["rolled", "promise"])
         self.assertEqual(set(rep["terms"][self.order[3]]["variants"]), set(H.VARIANTS))
         self.assertIn("look-ahead: as_scored, shipped", md)
         self.assertIn("all variants out-of-sample", md)
@@ -136,8 +136,55 @@ class Folds(unittest.TestCase):
         prev2, prev = self.sim[self.order[1]], self.sim[self.order[2]]
         tab, levels = H.rolled_settings(prev, prev2)
         self.assertEqual(tab, D.learn_spread(prev2 + prev)[0])
-        want = D.pick_levels(D._level_table(prev, D.learn_spread(prev2)[0]))
-        self.assertEqual(levels, {st: want[st]["level"] for st in H.STYLES})
+        # cross-fit: each term's rows scored with the exponents learned on the other
+        _, want, by_group = D.calibrate_levels([(prev, D.learn_spread(prev2)[0]), (prev2, D.learn_spread(prev)[0])])
+        self.assertEqual(levels["pooled"], {st: want[st]["level"] for st in H.STYLES})
+        self.assertEqual(levels["byGroup"], {g: {st: d[st]["level"] for st in H.STYLES} for g, d in by_group.items()})
+
+    def test_rolled_calibrates_on_the_other_terms_exponents_only(self):
+        prev2, prev = self.sim[self.order[1]], self.sim[self.order[2]]
+        made, seen = {}, []
+        real_learn, real_arrays = D.learn_spread, D._arrays
+
+        def learn(rows):
+            res = real_learn(rows)
+            made[id(res[0])] = id(rows)
+            return res
+
+        def arrays(rows, table, use_clf):
+            seen.append((id(rows), made.get(id(table))))
+            return real_arrays(rows, table, use_clf)
+
+        with mock.patch.object(D, "learn_spread", learn), mock.patch.object(D, "_arrays", arrays):
+            H.rolled_settings(prev, prev2)
+        self.assertEqual(sorted(seen), sorted([(id(prev), id(prev2)), (id(prev2), id(prev))]))
+
+    def test_first_fold_without_prev2_calibrates_in_sample_on_prev(self):
+        prev = self.sim[self.order[0]]
+        tab, levels = H.rolled_settings(prev, None)
+        self.assertEqual(tab, D.learn_spread(prev)[0])
+        _, want, _ = D.calibrate_levels([(prev, D.learn_spread(prev)[0])])
+        self.assertEqual(levels["pooled"], {st: want[st]["level"] for st in H.STYLES})
+
+    def test_bids_use_the_levels_of_the_rows_window_group(self):
+        rows = sim_rows("t", 4, 1)
+        rows[1]["window"], rows[2]["window"], rows[3]["window"] = "Round 1A Window 2", "Round 2 Window 1", "Round 2A Window 3"
+        by_group = {"R1W1": {"cheap": 0.9, "balanced": 0.9, "safe": 0.9}, "R1A": {"cheap": 0.5, "balanced": 0.5, "safe": 0.99},
+                    "R2": {"cheap": 0.99, "balanced": 0.99, "safe": 0.5}}  # R2A: not listed -> the pooled level
+        pooled = {"cheap": 0.7, "balanced": 0.7, "safe": 0.7}
+        out = H.bids_for(rows, None, pooled, False, by_group)
+        for st in H.STYLES:
+            for j, lv in enumerate((by_group["R1W1"][st], by_group["R1A"][st], by_group["R2"][st], pooled[st])):
+                one = H.bids_for([rows[j]], None, {s: lv for s in H.STYLES}, False)
+                self.assertEqual(out[st][j], one[st][0], (st, j))
+        self.assertEqual(H.bids_for(rows, None, pooled, False), H.bids_for(rows, None, pooled, False, None))
+
+    def test_old_format_distcal_json_keeps_global_levels(self):
+        rows, settings = H.eval_rows(self.sim, self.order, self.shipped, {}, 1)
+        self.assertEqual(settings[self.order[3]]["levels"]["shipped"], {"cheap": 0.9, "balanced": 0.975, "safe": 0.99})
+        new = {**self.shipped, "levelsByGroup": {"R1W1": {st: {"level": 0.5} for st in H.STYLES}}}
+        _, s2 = H.eval_rows(self.sim, self.order, new, {}, 1)
+        self.assertEqual(s2[self.order[3]]["levels"]["shipped"], {"R1W1": {st: 0.5 for st in H.STYLES}})
 
     def test_as_scored_reproduces_distcal_level_table(self):
         # the harness row's unrounded bids must give exactly distcal._level_table's loss and overpay at the same level
@@ -157,6 +204,11 @@ class Folds(unittest.TestCase):
         self.assertEqual(r0["cq50"], self.sim[self.order[3]][0]["cq"][49])
         for k in ("term", "window", "course", "section", "seats", "band", "p_fill", "filled", "act", "bid_shipped_safe", "lo_rolled"):
             self.assertIn(k, r0)
+        for st in H.STYLES:
+            self.assertIn(f"bid_promise_{st}", r0)
+        self.assertNotIn("lo_promise", r0)  # exponents exist only for the distcal-style variants
+        self.assertNotIn("hi_promise", r0)
+        self.assertIn("hi_rolled", r0)
 
 
 @unittest.skipIf(C.IMPORT_ERROR is not None, "numpy/pandas/scikit-learn unavailable")

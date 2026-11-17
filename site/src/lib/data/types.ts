@@ -176,6 +176,29 @@ export interface ForecastMeta {
   distCalibration?: DistCalibrationMeta;
   /** Bid levels (cheap / balanced / safe) measured on the held-out term; present only when the calibration is active. */
   bidLevels?: BidLevels;
+  /** Per window: the level and share-of-filled-that-lost of each style, from that window's group. Absent: use `bidLevels`. */
+  bidLevelsByWindow?: Record<string, Record<BidStyleKey, WindowBidLevel>>;
+  /** Per window and forecast band ("0".."4"): the past win rate on filled sections of each style's bid. */
+  measuredWin?: Record<string, Record<string, MeasuredWinCell>>;
+  /** Upper edges, e$ of the conditional median, between the five forecast bands: [15, 25, 40, 60]. */
+  bandEdges?: number[];
+}
+
+export type BidStyleKey = 'cheap' | 'balanced' | 'safe';
+
+export interface WindowBidLevel {
+  level: number;
+  lossFilled: number | null;
+  /** False when the level hit its ceiling without meeting the style's target. Absent in older builds. */
+  reached?: boolean;
+}
+
+/** Win rate (0..1, null when unknown) on filled sections for each style, and how many filled sections it rests on. */
+export interface MeasuredWinCell {
+  cheap: number | null;
+  balanced: number | null;
+  safe: number | null;
+  nFilled: number;
 }
 
 export interface DistCalibrationMeta {

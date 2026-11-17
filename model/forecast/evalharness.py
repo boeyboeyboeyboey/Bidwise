@@ -7,15 +7,18 @@ Rolling origin: every term the corrected model can be backtested on is simulated
 terms, GBM features from earlier terms plus earlier windows of the same term) and cached. Each scored term then gets bids under
 three settings ("variants"):
 
-* as_scored  what distcal.json's level table measured: exponents learned on the previous term only, the levels in
-             distcal.json, bids NOT rounded. On the held-out term this reproduces distcal.json's `levels` figures.
-* shipped    what the site ships today: distcal.json's `exponents` and `levels`, bids rounded the site's way.
-* rolled     the production procedure replayed with no look-ahead: exponents learned on the two previous terms, levels picked
-             (distcal.pick_levels) on the previous term with exponents from the term before it, bids rounded.
+* as_scored  exponents learned on the previous term only, the levels in distcal.json (its per-group levels when it has them,
+             else the global ones), bids NOT rounded.
+* shipped    what the site ships today: distcal.json's `exponents` and levels (as above), bids rounded the site's way.
+* rolled     the production procedure replayed with no look-ahead: exponents learned on the two previous terms, levels picked per
+             window group (distcal.calibrate_levels, cross-fit over the two previous terms: each scored with the exponents learned
+             on the other; with one previous term, in-sample on it), bids rounded.
+* promise    Phase 2 candidate (promisecal.py, not shipped): per-group conformal multipliers on the conditional price, set on the
+             two previous terms so each style wins its promised share of filled sections; no look-ahead, bids rounded.
 
 Only `rolled` is out-of-sample on every term. distcal.json's levels were picked on its held-out term and its exponents learned
 on its test and held-out terms, so as_scored and shipped look ahead on every term up to and including that held-out term
-(`settings[term]["lookAhead"]`); they are honest only on later terms. The pooled report therefore scores `rolled` alone.
+(`settings[term]["lookAhead"]`); they are honest only on later terms. The pooled report therefore scores `rolled` and `promise`.
 
 Known approximations (they apply to every variant alike): the fit Config and the GBM hyperparameters are today's (tuned on
 2024-25 Term 2 and 2025-26 Term 2), not re-tuned per fold; a bid is the mixture quantile on the 99-point conditional grid of
@@ -42,35 +45,29 @@ from . import correction as C
 from . import distcal as D
 from . import evalscore as S
 from . import fit
+from . import promisecal as P
 
 np = C.np
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, "out")  # read only
 EVAL_DIR = os.path.join(HERE, "eval")
 STYLES = ("cheap", "balanced", "safe")
-VARIANTS = ("as_scored", "shipped", "rolled")
+DIST_VARIANTS = ("as_scored", "shipped", "rolled")  # distcal-style bids (exponents + levels)
+VARIANTS = DIST_VARIANTS + ("promise",)
 CQ_COLS = (5, 10, 25, 50, 75, 90, 95, 99)  # conditional percentiles kept per row (uncalibrated grid, cents)
 
 
 # ----------------------------------------------------------------------------- bids
-def site_round(raw_cents: float, floor_cents: float) -> int:
-    """The site's calibrated bid from a raw quantile (site/src/lib/sim: recommendBid's oddCents, then presets.ts bidFor):
-    the next odd cent, kept as is at the floor, otherwise raised to the next whole e$ plus 1 cent."""
-    b = int(math.ceil(raw_cents - 1e-9))
-    if b % 2 == 0:
-        b += 1
-    fl = int(floor_cents)
-    if b <= (fl + 1 if fl % 2 == 0 else fl):
-        return b
-    return int(math.ceil((b - 1) / 100)) * 100 + 1
+site_round = D.site_round  # the site's bid rounding; lives in distcal so the refit does not import the harness
 
 
-def bids_for(rows, table, levels: dict, rounded: bool) -> dict:
-    """{style: [bid cents per row]} with distcal's own mixture quantile (p_clf, exponents from `table`)."""
+def bids_for(rows, table, levels: dict, rounded: bool, by_group: dict | None = None) -> dict:
+    """{style: [bid cents per row]} with distcal's own mixture quantile (p_clf, exponents from `table`). `levels` is {style: level};
+    `by_group` ({window group: {style: level}}) overrides it per row by the row's window group."""
     Q, p, floor, _, _ = D._arrays(rows, table, True)
     out = {}
     for st in STYLES:
-        raw = D._uq(Q, p, floor, float(levels[st]))
+        raw = D._uq(Q, p, floor, D.row_levels(rows, by_group, levels, st))
         out[st] = [site_round(b, f) if rounded else float(b) for b, f in zip(raw, floor)]
     return out
 
@@ -80,13 +77,16 @@ def exps_for(rows, table) -> list:
 
 
 def rolled_settings(prev: list, prev2: list | None) -> tuple:
-    """(exponent table, {style: level}) the production procedure would have shipped for a term, from the rows of the term
-    before it (`prev`) and the one before that (`prev2`). With no `prev2` (the first scorable fold) the exponents come from
-    `prev` alone and the levels are picked in-sample on `prev`."""
-    tab_test = D.learn_spread(prev2 if prev2 else prev)[0]
+    """(exponent table, levels) the production procedure would have shipped for a term, from the rows of the term before it
+    (`prev`) and the one before that (`prev2`), as distcal.backtest_distcal would: the levels are calibrated cross-fit on the two
+    terms (each scored with the exponents learned on the other), pooled and per window group (distcal.calibrate_levels); the
+    exponents for the bids are learned on both. `levels` is {"pooled": {style: level}, "byGroup": {group: {style: level}}}.
+    With no `prev2` (the first scorable fold) the exponents come from `prev` alone and the levels are picked in-sample on it."""
     tab_final = D.learn_spread((prev2 or []) + prev)[0]
-    lv = D.pick_levels(D._level_table(prev, tab_test))
-    return tab_final, {st: lv[st]["level"] for st in STYLES}
+    cal = [(prev, D.learn_spread(prev2 or prev)[0])] + ([(prev2, D.learn_spread(prev)[0])] if prev2 else [])
+    _, pooled, by_group = D.calibrate_levels(cal)
+    return tab_final, {"pooled": {st: pooled[st]["level"] for st in STYLES},
+                       "byGroup": {g: {st: d[st]["level"] for st in STYLES} for g, d in by_group.items()}}
 
 
 # ----------------------------------------------------------------------------- inputs and cache
@@ -179,12 +179,14 @@ def simulate_terms(terms, df, tables, all_obs, cfg, key: str, pool=None, log=pri
 
 
 # ----------------------------------------------------------------------------- evaluation rows
-def eval_rows(sim: dict, order: list, shipped: dict, schools: dict, n_terms: int) -> tuple:
+def eval_rows(sim: dict, order: list, shipped: dict, schools: dict, n_terms: int, promise_opts: dict | None = None) -> tuple:
     """(rows, settings): one flat row per section-window of the last `n_terms` scorable terms (a term is scorable when the
-    term before it was simulated), with every variant's bids; settings records what each variant used per term."""
+    term before it was simulated), with every variant's bids; settings records what each variant used per term.
+    `promise_opts` are passed to promisecal.rolled_table (targets, weighted, use_band, k)."""
     have = [t for t in order if t in sim]
     scorable = [t for t in have if order.index(t) > 0 and order[order.index(t) - 1] in sim][-n_terms:]
     ship_levels = {st: shipped["levels"][st]["level"] for st in STYLES}
+    ship_groups = {g: {st: d[st]["level"] for st in STYLES} for g, d in (shipped.get("levelsByGroup") or {}).items()} or None
     held = (shipped.get("terms") or {}).get("heldOut")
     held_i = order.index(held) if held in order else len(order)
     out, settings = [], {}
@@ -194,16 +196,18 @@ def eval_rows(sim: dict, order: list, shipped: dict, schools: dict, n_terms: int
         prev2 = sim.get(order[i - 2]) if i >= 2 else None
         tab_as = D.learn_spread(prev)[0]
         tab_roll, lv_roll = rolled_settings(prev, prev2)
-        use = {"as_scored": (tab_as, ship_levels, False), "shipped": (shipped["exponents"], ship_levels, True),
-               "rolled": (tab_roll, lv_roll, True)}
+        use = {"as_scored": (tab_as, ship_levels, False, ship_groups), "shipped": (shipped["exponents"], ship_levels, True, ship_groups),
+               "rolled": (tab_roll, lv_roll["pooled"], True, lv_roll["byGroup"])}
         rows = sim[t]
-        bids = {v: bids_for(rows, *use[v]) for v in VARIANTS}
-        exps = {v: exps_for(rows, use[v][0]) for v in VARIANTS}
+        bids = {v: bids_for(rows, *use[v]) for v in DIST_VARIANTS}
+        exps = {v: exps_for(rows, use[v][0]) for v in DIST_VARIANTS}
+        ptab = P.rolled_table(prev, prev2, **(promise_opts or {}))
+        bids["promise"] = P.bids(rows, ptab)
         ahead = i <= held_i  # distcal.json's levels and exponents come from this term or later ones
-        settings[t] = {"n": len(rows), "windows": sorted({r["window"] for r in rows}, key=fit.WINDOWS.index), "lookAhead": {"as_scored": ahead, "shipped": ahead, "rolled": False}, "rolledExponentTerms": [x for x in (order[i - 2] if prev2 else None, order[i - 1]) if x],
+        settings[t] = {"n": len(rows), "windows": sorted({r["window"] for r in rows}, key=fit.WINDOWS.index), "lookAhead": {"as_scored": ahead, "shipped": ahead, "rolled": False, "promise": False}, "rolledExponentTerms": [x for x in (order[i - 2] if prev2 else None, order[i - 1]) if x],
                        "rolledLevelsPickedOn": order[i - 1], "rolledLevelsInSample": prev2 is None,
-                       "levels": {"as_scored": ship_levels, "shipped": ship_levels, "rolled": lv_roll},
-                       "globalExponents": {v: use[v][0]["global"] for v in VARIANTS}}
+                       "levels": {"as_scored": ship_groups or ship_levels, "shipped": ship_groups or ship_levels, "rolled": lv_roll},
+                       "globalExponents": {v: use[v][0]["global"] for v in DIST_VARIANTS}, "promise": P.summary(ptab)}
         for j, r in enumerate(rows):
             m = r.get("cond_p50")
             row = {"term": t, "window": r["window"], "course": r["course"], "section": r["section"], "cls": r["cls"],
@@ -213,8 +217,9 @@ def eval_rows(sim: dict, order: list, shipped: dict, schools: dict, n_terms: int
             cq = r.get("cq")
             for c in CQ_COLS:
                 row[f"cq{c:02d}"] = cq[c - 1] if cq else None
-            for v in VARIANTS:
+            for v in DIST_VARIANTS:
                 row[f"lo_{v}"], row[f"hi_{v}"] = exps[v][j]
+            for v in VARIANTS:
                 for st in STYLES:
                     row[f"bid_{v}_{st}"] = bids[v][st][j]
             out.append(row)
@@ -249,11 +254,11 @@ def build_reports(rows, settings: dict, shipped: dict, n_boot: int) -> tuple:
     partial = sorted(t for t, s in settings.items() if len(s["windows"]) < most)  # a term still in progress: early windows only
     for t, s in settings.items():
         s["partial"] = t in partial
-    # rolled is the only variant with no look-ahead on every term; partial terms would tilt the pool towards Round 1
-    pooled = S.build_report([r for r in rows if r["term"] not in partial], ["rolled"], n_boot=n_boot)
+    # rolled and promise have no look-ahead on every term; partial terms would tilt the pool towards Round 1
+    pooled = S.build_report([r for r in rows if r["term"] not in partial], ["rolled", "promise"], n_boot=n_boot)
     rep = {"createdAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "modelVersion": C.MODEL_VERSION, "distcalVersion": D.DISTCAL_VERSION,
            "shippedGateOk": bool(shipped.get("ok")), "settings": settings, "pooledExcludes": partial, "pooled": pooled, "terms": {}}
-    md = [S.render_markdown(pooled, "Complete scored terms pooled, rolled settings only (no look-ahead in exponents or levels; the fit config "
+    md = [S.render_markdown(pooled, "Complete scored terms pooled, rolled and promise settings (no look-ahead in exponents or levels; the fit config "
                             "and GBM hyperparameters are today's, tuned on terms inside the pool; levels differ per term)")]
     if partial:
         md.append(f"Left out of the pool (not all windows have results yet): {', '.join(partial)}.")
@@ -264,7 +269,8 @@ def build_reports(rows, settings: dict, shipped: dict, n_boot: int) -> tuple:
         rep["terms"][t] = tr
         ahead = [v for v in VARIANTS if settings[t]["lookAhead"][v]]
         note = (" (partial term)" if settings[t]["partial"] else "") + (" (held-out term of distcal.json)" if t == held else "") + (f"; look-ahead: {', '.join(ahead)}" if ahead else "; all variants out-of-sample")
-        md.append(S.render_markdown(tr, f"{t}{note}") + "\n\nLevels: as_scored and shipped " + json.dumps(displayed) + "; rolled " + json.dumps(settings[t]["levels"]["rolled"]))
+        md.append(S.render_markdown(tr, f"{t}{note}") + "\n\nLevels: as_scored and shipped " + json.dumps(displayed) + "; rolled " + json.dumps(settings[t]["levels"]["rolled"])
+                  + "; promise global multipliers " + json.dumps(settings[t]["promise"]["global"]))
     return rep, "\n\n".join(md) + "\n"
 
 

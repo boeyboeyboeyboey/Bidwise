@@ -10,7 +10,7 @@ import { simSection } from './sectionSim';
 
 /** A row's bid, as CourseView shows it: the suggested bid for `target`, its chance, and whether the forecast deserves less trust. */
 export function rowBidOf(r: SimResult, target: number, seats: number, win: string): RowBid {
-  const cents = suggestBid(r, target);
+  const cents = suggestBid(r, target, win);
   return { cents, p: pInAt(r, cents), low: rowLowConfidence(seats, win, true).length > 0 };
 }
 

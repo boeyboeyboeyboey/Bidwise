@@ -5,7 +5,7 @@ import { parseSaved } from './degree';
 // Calibrated mode: Cheap 0.90 / Balanced 0.975 / Safe 0.99. Twin of the parseSaved tests in degree.test.ts.
 vi.mock('../../lib/data/bidLevels', () => {
   const lv = (level: number) => ({ level, lossFilled: 0.1, lossAll: 0.07, winAboveFloor: 0.86, meanOverpay: 6.6, reached: true });
-  return { bidLevels: () => ({ cheap: lv(0.9), balanced: lv(0.975), safe: lv(0.99) }) };
+  return { bidLevels: () => ({ cheap: lv(0.9), balanced: lv(0.975), safe: lv(0.99) }), bidWindowData: () => null };
 });
 
 describe('parseSaved, calibrated', () => {

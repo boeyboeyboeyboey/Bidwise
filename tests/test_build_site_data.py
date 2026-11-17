@@ -874,3 +874,81 @@ class SeatDeltas(unittest.TestCase):
         for k in ("sinceOpen", "sinceLast", "history"):
             self.assertNotIn(k, g1)
         self.assertNotIn("openScanAt", json.loads((out / "meta.json").read_text())["seats"])
+
+
+class WindowBidFields(unittest.TestCase):
+    """window_bid_fields: distcal.json's per-window-group keys, spread over the windows of each group (synthetic payloads)."""
+    GROUPS = ("R1W1", "R1A", "R1B", "R2", "R2A")
+
+    @staticmethod
+    def _levels(base):
+        return {"cheap": {"level": base, "lossFilled": 0.29, "nFilled": 120, "own": True, "reached": True},
+                "balanced": {"level": base + 0.05, "lossFilled": 0.14, "nFilled": 120, "own": True, "reached": True},
+                "safe": {"level": base + 0.08, "lossFilled": 0.09, "nFilled": 120, "own": False, "reached": True}}
+
+    def _payload(self):
+        cell = lambda w: {"cheap": w, "balanced": w + 0.15, "safe": w + 0.2, "nFilled": 80, "source": "cell"}
+        return {
+            "levels": {"cheap": {"level": 0.9}},
+            "levelsByGroup": {g: self._levels(0.5 + 0.01 * i) for i, g in enumerate(self.GROUPS)},
+            "measuredWin": {**{g: {str(b): cell(0.6 + 0.01 * b) for b in range(5)} for g in self.GROUPS}, "overall": {"cheap": 0.7}},
+            "bandEdges": [15, 25, 40, 60],
+        }
+
+    def test_every_window_gets_its_groups_values(self):
+        out = bsd.window_bid_fields(self._payload())
+        self.assertEqual(len(out["bidLevelsByWindow"]), 12)
+        lv = out["bidLevelsByWindow"]
+        self.assertEqual(lv["Round 1 Window 1"]["cheap"], {"level": 0.5, "lossFilled": 0.29, "reached": True})
+        # R1A is windows 1-3, R1B 4-5, R2 6-8, R2A 9-11
+        for w in ("Round 1A Window 1", "Round 1A Window 2", "Round 1A Window 3"):
+            self.assertAlmostEqual(lv[w]["balanced"]["level"], 0.56)
+        self.assertAlmostEqual(lv["Round 1B Window 2"]["safe"]["level"], 0.6)
+        self.assertAlmostEqual(lv["Round 2 Window 3"]["cheap"]["level"], 0.53)
+        self.assertAlmostEqual(lv["Round 2A Window 1"]["cheap"]["level"], 0.54)
+        # only level, lossFilled and reached go to the site
+        self.assertEqual(set(lv["Round 2 Window 1"]["safe"]), {"level", "lossFilled", "reached"})
+
+    def test_measured_win_drops_source_and_overall(self):
+        out = bsd.window_bid_fields(self._payload())
+        m = out["measuredWin"]
+        self.assertEqual(len(m), 12)
+        cell = m["Round 2A Window 3"]["3"]
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled"})
+        self.assertAlmostEqual(cell["balanced"], 0.78)
+        self.assertEqual(cell["nFilled"], 80)
+        self.assertEqual(sorted(m["Round 1 Window 1"]), ["0", "1", "2", "3", "4"])
+        self.assertEqual(out["bandEdges"], [15, 25, 40, 60])
+
+    def test_absent_keys_are_not_emitted(self):
+        self.assertEqual(bsd.window_bid_fields({"levels": {}}), {})
+        p = self._payload()
+        del p["measuredWin"], p["bandEdges"]
+        self.assertEqual(set(bsd.window_bid_fields(p)), {"bidLevelsByWindow"})
+
+    def test_malformed_pieces_are_dropped_not_half_emitted(self):
+        p = self._payload()
+        del p["levelsByGroup"]["R2"]["safe"]          # a window group missing a style: those windows get no entry
+        p["measuredWin"]["R1A"].pop("2")               # a band missing: that group's windows get no table
+        p["bandEdges"] = [15, 25, 40]
+        out = bsd.window_bid_fields(p)
+        self.assertNotIn("Round 2 Window 1", out["bidLevelsByWindow"])
+        self.assertIn("Round 2A Window 1", out["bidLevelsByWindow"])
+        self.assertNotIn("Round 1A Window 2", out["measuredWin"])
+        self.assertIn("Round 1B Window 1", out["measuredWin"])
+        self.assertNotIn("bandEdges", out)
+
+    def test_null_loss_and_rate_are_kept(self):
+        p = self._payload()
+        p["levelsByGroup"]["R1W1"]["cheap"]["lossFilled"] = None
+        p["measuredWin"]["R1W1"]["0"]["safe"] = None
+        out = bsd.window_bid_fields(p)
+        self.assertIsNone(out["bidLevelsByWindow"]["Round 1 Window 1"]["cheap"]["lossFilled"])
+        p["levelsByGroup"]["R2A"]["safe"]["reached"] = False
+        self.assertIs(bsd.window_bid_fields(p)["bidLevelsByWindow"]["Round 2A Window 2"]["safe"]["reached"], False)
+        del p["levelsByGroup"]["R2A"]["safe"]["reached"]
+        self.assertNotIn("reached", bsd.window_bid_fields(p)["bidLevelsByWindow"]["Round 2A Window 2"]["safe"])
+        self.assertIsNone(out["measuredWin"]["Round 1 Window 1"]["0"]["safe"])
+
+    def test_json_serialisable(self):
+        json.dumps(bsd.window_bid_fields(self._payload()))

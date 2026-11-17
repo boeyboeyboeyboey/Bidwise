@@ -35,7 +35,7 @@
     const jobs = list.map((s) => simSection(s, w, g));
     Promise.all(jobs.map((j) => j ?? Promise.resolve(null))).then((rs) => {
       if (my !== token) return;
-      sims = new Map(list.map((s, i) => [s.classNumber, rs[i] ? { pFill: rs[i]!.pFill, bid: suggestBid(rs[i]!, t) } : null]));
+      sims = new Map(list.map((s, i) => [s.classNumber, rs[i] ? { pFill: rs[i]!.pFill, bid: suggestBid(rs[i]!, t, w) } : null]));
     });
   });
 

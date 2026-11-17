@@ -3,7 +3,7 @@ import type { ForecastWindow, ForecastWindowMeta, SimParams } from '../data/type
 import type { SimResult } from './index';
 import { suggestBid } from './presets';
 
-export { TARGETS, DEFAULT_TARGET, bidPresets, bidCalibrated, presetFor, normaliseTarget, targetToStored, targetFromStored, suggestBid, chanceIfFills, lowConfidence } from './presets';
+export { TARGETS, DEFAULT_TARGET, bidPresets, bidCalibrated, presetFor, normaliseTarget, targetToStored, targetFromStored, suggestBid, chanceIfFills, measuredIfFills, underDelivers, STYLE_TARGET, lowConfidence } from './presets';
 export type { BidPreset, LowConfidenceReason } from './presets';
 
 export const MAX_FRIENDS_GROUP = 6;
@@ -64,8 +64,8 @@ export function cutoffRange(result: SimResult): { lo: number; p50: number; hi: n
 }
 
 /** Extra e$ (cents) the recommended bid grows by when one more friend joins the group. Never negative. */
-export function marginalPerFriend(atG: SimResult, atGPlusOne: SimResult, targetP: number): number {
-  return Math.max(0, suggestBid(atGPlusOne, targetP) - suggestBid(atG, targetP));
+export function marginalPerFriend(atG: SimResult, atGPlusOne: SimResult, targetP: number, window?: string | null): number {
+  return Math.max(0, suggestBid(atGPlusOne, targetP, window) - suggestBid(atG, targetP, window));
 }
 
 export const isLowConfidence = (m: ForecastWindowMeta | undefined): boolean => !m || m.confidence === 'low';

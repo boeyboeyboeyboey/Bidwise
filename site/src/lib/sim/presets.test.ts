@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { BidWindowData } from '../data/bidLevels';
 import type { BidLevel, BidLevels } from '../data/types';
 import type { SimResult } from './index';
 
@@ -6,9 +7,9 @@ const lv = (level: number, lossFilled: number): BidLevel => ({ level, lossFilled
 const LEVELS: BidLevels = { cheap: lv(0.9, 0.304), balanced: lv(0.975, 0.157), safe: lv(0.99, 0.106) };
 
 /** Fresh copies of the modules with the bid-level loader mocked: calibrated or not. */
-async function load(calibrated: boolean) {
+async function load(calibrated: boolean, windowData: BidWindowData | null = null) {
   vi.resetModules();
-  vi.doMock('../data/bidLevels', () => ({ bidLevels: () => (calibrated ? LEVELS : null) }));
+  vi.doMock('../data/bidLevels', () => ({ bidLevels: () => (calibrated ? LEVELS : null), bidWindowData: () => (calibrated ? windowData : null) }));
   const presets = await import('./presets');
   const sim = await import('./index');
   return { ...presets, recommendBid: sim.recommendBid, pInAt: sim.pInAt };
@@ -16,6 +17,10 @@ async function load(calibrated: boolean) {
 
 afterEach(() => vi.doUnmock('../data/bidLevels'));
 
+const fakeSim = (xs: number[], ys: number[], pFill = 1, start = xs[0]): SimResult => ({
+  runs: 1000, pFill, percentilesCents: { p50: 0, p80: 0, p90: 0, p95: 0, p99: 0 },
+  histogram: { startCents: start, binWidthCents: 100, counts: [] }, curve: { bidCents: xs, pIn: ys },
+});
 const fake = (xs: number[], ys: number[], pFill = 1, start = xs[0]): SimResult => ({
   runs: 1000, pFill, percentilesCents: { p50: 0, p80: 0, p90: 0, p95: 0, p99: 0 },
   histogram: { startCents: start, binWidthCents: 100, counts: [] }, curve: { bidCents: xs, pIn: ys },
@@ -209,5 +214,74 @@ describe('styleName / hasCheaperStyle', () => {
     const m = await load(false);
     expect(m.styleName(0.9)).toBeNull();
     expect(m.hasCheaperStyle(0.95)).toBe(false);
+  });
+});
+
+describe('suggestBid with a window', () => {
+  const r = fake([1000, 1800, 2600, 3500, 6000], [0.05, 0.3, 0.7, 0.93, 1]);
+  const WD: BidWindowData = {
+    levels: { 'Round 1 Window 1': { cheap: { level: 0.6, lossFilled: 0.3 }, balanced: { level: 0.8, lossFilled: 0.15 }, safe: { level: 0.95, lossFilled: 0.1 } } },
+    measured: null, edges: null,
+  };
+  it('without per-window data it gives today\'s answer, with or without a window', async () => {
+    const m = await load(true);
+    for (const t of [0.9, 0.975, 0.99]) {
+      expect(m.suggestBid(r, t, 'Round 1 Window 1')).toBe(m.suggestBid(r, t));
+      expect(m.suggestBid(r, t, null)).toBe(m.suggestBid(r, t));
+    }
+    const off = await load(false);
+    for (const t of [0.8, 0.9, 0.95]) expect(off.suggestBid(r, t, 'Round 1 Window 1')).toBe(off.recommendBid(r, t));
+  });
+  it('with per-window data a known window reads the style at that window\'s level', async () => {
+    const m = await load(true, WD);
+    // the pooled target 0.975 is the Balanced preset; this window's Balanced level is 0.8
+    const s = m.suggestBid(r, 0.975, 'Round 1 Window 1');
+    expect(s).toBe(m.suggestBid(r, 0.8));
+    expect(s).toBeLessThan(m.suggestBid(r, 0.975));
+    expect(m.suggestBid(r, 0.9, 'Round 1 Window 1')).toBe(m.suggestBid(r, 0.6));
+  });
+  it('an unknown window, no window, or a target that is not a preset keeps the pooled level', async () => {
+    const m = await load(true, WD);
+    expect(m.suggestBid(r, 0.975, 'Round 2 Window 1')).toBe(m.suggestBid(r, 0.975));
+    expect(m.suggestBid(r, 0.975)).toBe(m.suggestBid(r, 0.975, undefined));
+    expect(m.suggestBid(r, 0.7, 'Round 1 Window 1')).toBe(m.suggestBid(r, 0.7));
+  });
+  it('not calibrated ignores the window data', async () => {
+    const off = await load(false, WD);
+    expect(off.suggestBid(r, 0.95, 'Round 1 Window 1')).toBe(off.recommendBid(r, 0.95));
+  });
+});
+
+describe('measuredIfFills', () => {
+  const cell = (c: number, b: number, s: number) => ({ cheap: c, balanced: b, safe: s, nFilled: 90 });
+  const WD: BidWindowData = {
+    levels: null,
+    edges: [15, 25, 40, 60],
+    measured: { 'Round 1 Window 1': { '0': cell(0.7, 0.85, 0.9), '1': cell(0.65, 0.8, 0.88), '2': cell(0.6, 0.8, 0.9), '3': cell(0.55, 0.75, 0.85), '4': cell(0.5, 0.7, 0.8) } },
+  };
+  // fill share 0.5: the conditional median is where P(win) = 0.75, here exactly 2000 cents
+  const at = (median: number) => ({ ...fakeSim([1000, median, median + 1000], [0.5, 0.75, 1], 0.5) });
+  it('is null when not calibrated, without data, or for a window it has no cell for', async () => {
+    const off = await load(false, WD);
+    expect(off.measuredIfFills('Round 1 Window 1', at(2000), 'cheap')).toBeNull();
+    const none = await load(true);
+    expect(none.measuredIfFills('Round 1 Window 1', at(2000), 'cheap')).toBeNull();
+    const m = await load(true, WD);
+    expect(m.measuredIfFills('Round 2 Window 1', at(2000), 'cheap')).toBeNull();
+    expect(m.measuredIfFills(undefined, at(2000), 'cheap')).toBeNull();
+    expect(m.measuredIfFills('Round 1 Window 1', at(2000), null)).toBeNull();
+  });
+  it('picks the band of the conditional median and the style\'s rate', async () => {
+    const m = await load(true, WD);
+    const w = 'Round 1 Window 1';
+    expect(m.measuredIfFills(w, at(1000), 'cheap')).toBe(0.7); // e$10: band 0
+    expect(m.measuredIfFills(w, at(2000), 'balanced')).toBe(0.8); // e$20: band 1
+    expect(m.measuredIfFills(w, at(3000), 'safe')).toBe(0.9); // e$30: band 2
+    expect(m.measuredIfFills(w, at(5000), 'cheap')).toBe(0.55); // e$50: band 3
+    expect(m.measuredIfFills(w, at(9000), 'safe')).toBe(0.8); // e$90: band 4
+  });
+  it('is null when the section almost never fills', async () => {
+    const m = await load(true, WD);
+    expect(m.measuredIfFills('Round 1 Window 1', fakeSim([1000, 2000], [0.99, 1], 0.019), 'cheap')).toBeNull();
   });
 });

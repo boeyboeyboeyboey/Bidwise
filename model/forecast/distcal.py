@@ -12,7 +12,9 @@ Two learned pieces change what the simulator reports (the price level stays as c
   transform of the quantile: learning needs only cond_p10/p50/p90, not the replays.
 
 `backtest_distcal` judges the pair on a held-out term (exponents learned on the test term, as correction learns f on
-earlier terms) and writes the figures and the bid levels the site can show. Nothing here is imported by the site build;
+earlier terms) and writes the figures and the bid levels the site can show. The levels (Cheap / Balanced / Safe) are picked
+on both terms cross-fit (each term's rows scored with the exponents learned on the other term), pooled and per window
+group, with an out-of-sample measured win rate per window group x forecast band x style. Nothing here is imported by the site build;
 numpy, pandas and scikit-learn are optional exactly as in correction.py.
 
 Everything is leak-free the same way correction is: the classifier of term T sees only terms before T plus earlier windows
@@ -35,11 +37,18 @@ except Exception:  # noqa: BLE001
 from . import correction as C
 from . import fit
 
+try:  # evalscore needs numpy, which is optional here like in correction.py
+    from . import evalscore as S
+except Exception:  # noqa: BLE001
+    S = None  # type: ignore[assignment]
+
 np, pd = C.np, C.pd
 CorrectionError = C.CorrectionError
 
-DISTCAL_VERSION = "distcal-a1"  # classifier variant A + S4 spread cells
+DISTCAL_VERSION = "distcal-a2"  # classifier variant A + S4 spread cells + per-window-group bid levels
 DISTCAL_FILE = "distcal.json"
+# Payloads the site build still accepts: a1 differs only in having no per-window-group levels (the site then uses the pooled ones).
+COMPATIBLE_VERSIONS = (DISTCAL_VERSION, "distcal-a1")
 
 BAND_EDGES = (15, 25, 40, 60)  # e$ of the conditional median: <15, 15-25, 25-40, 40-60, 60+
 N_BANDS = len(BAND_EDGES) + 1
@@ -47,8 +56,11 @@ MIN_CELL = 100  # filled rows needed for a cell (or a band) to keep its own pair
 GRID_LO, GRID_HI, GRID_STEP = 0.30, 2.00, 0.05
 S_GRID = [round(GRID_LO + i * GRID_STEP, 2) for i in range(int(round((GRID_HI - GRID_LO) / GRID_STEP)) + 1)]
 QLEVELS = (0.5, 0.8, 0.9, 0.95)  # unconditional quantile levels of the pinball metric
-LEVEL_GRID = [round(0.90 + 0.005 * i, 3) for i in range(19)]  # 0.900 .. 0.990 for the bid level table
-BALANCED_LOSS, SAFE_LOSS = 0.16, 0.10  # max share of filled sections the level may lose
+LEVEL_GRID = [round(0.30 + 0.005 * i, 3) for i in range(140)]  # 0.300 .. 0.995 for the bid level table
+CHEAP_LOSS, BALANCED_LOSS, SAFE_LOSS = 0.30, 0.15, 0.10  # max share of filled sections a style may lose (70 / 85 / 90% win)
+STYLE_LOSS = {"cheap": CHEAP_LOSS, "balanced": BALANCED_LOSS, "safe": SAFE_LOSS}
+STYLES = tuple(STYLE_LOSS)
+GROUPS = ("R1W1", "R1A", "R1B", "R2", "R2A")  # window groups (evalscore.window_group) with their own levels
 COVERAGE_RANGE = (0.75, 0.85)
 CQ_U = np.arange(1, 100) / 100.0 if np is not None else None  # percentile of each cq grid column
 
@@ -217,7 +229,8 @@ def _transform(Q, m, floor, lo, hi):
 
 
 def _uq(Q, p, floor, a):
-    """Unconditional quantile at level a of the mixture (1 - p at the floor, p over the conditional grid), linear on the grid."""
+    """Unconditional quantile at level a of the mixture (1 - p at the floor, p over the conditional grid), linear on the grid.
+    `a` is one level or an array with one level per row."""
     nan = np.isnan(Q[:, 0])
     floor_mass = ((1 - p) >= a - 1e-12) | nan | np.isnan(p)
     u = (a - (1 - p)) / np.where(p > 0, p, 1.0)
@@ -260,32 +273,121 @@ def _brier(rows) -> dict:
             "pFill": float(np.mean((np.array([r["pfill"] for r in ok]) - y) ** 2)), "n": len(ok)}
 
 
-def _level_table(rows, table) -> list:
-    Q, p, floor, act, filled = _arrays(rows, table, True)
+def site_round(raw_cents: float, floor_cents: float) -> int:
+    """The site's calibrated bid from a raw quantile (site/src/lib/sim: recommendBid's oddCents, then presets.ts bidFor):
+    the next odd cent, kept as is at the floor, otherwise raised to the next whole e$ plus 1 cent."""
+    b = int(math.ceil(raw_cents - 1e-9))
+    if b % 2 == 0:
+        b += 1
+    fl = int(floor_cents)
+    if b <= (fl + 1 if fl % 2 == 0 else fl):
+        return b
+    return int(math.ceil((b - 1) / 100)) * 100 + 1
+
+
+def _level_table_arr(Q, p, floor, act, filled) -> list:
     out = []
+    fm = filled == 1
     for a in LEVEL_GRID:
         bid = _uq(Q, p, floor, a)
         lose = bid < act
         above = bid > floor
-        fm = filled == 1
         out.append({"level": a,
                     "lossFilled": float(lose[fm].mean()) if fm.any() else None,
-                    "lossAll": float(lose.mean()),
+                    "lossAll": float(lose.mean()) if len(lose) else None,
                     "winAboveFloor": float((~lose[above]).mean()) if above.any() else None,
-                    "meanOverpay": float((np.maximum(bid - act, 0) / 100).mean())})
+                    "meanOverpay": float((np.maximum(bid - act, 0) / 100).mean()) if len(lose) else None})
     return out
 
 
+def _level_table(rows, table) -> list:
+    return _level_table_arr(*_arrays(rows, table, True))
+
+
 def pick_levels(table: list) -> dict:
-    """cheap = 0.90; balanced / safe = the smallest level whose lossFilled is within BALANCED_LOSS / SAFE_LOSS (the highest
-    level, reached False, when none is)."""
-    def at(pred):
+    """Per style, the smallest level of the table whose lossFilled is within the style's STYLE_LOSS (cheap 0.30, balanced 0.15,
+    safe 0.10), reached True; the highest level with reached False when none is."""
+    def at(limit):
         for row in table:
-            if row["lossFilled"] is not None and pred(row):
+            if row["lossFilled"] is not None and row["lossFilled"] <= limit:
                 return {**row, "reached": True}
         return {**table[-1], "reached": False}
-    return {"cheap": {**table[0], "reached": True}, "balanced": at(lambda r: r["lossFilled"] <= BALANCED_LOSS),
-            "safe": at(lambda r: r["lossFilled"] <= SAFE_LOSS)}
+    return {st: at(STYLE_LOSS[st]) for st in STYLES}
+
+
+def _cal_arrays(cal):
+    """(Q, p, floor, act, filled, window group per row) stacked over cal = [(rows, exponent table), ...]; each pair is scored
+    with its own table. A pair with no rows is skipped."""
+    parts = [(_arrays(rs, tab, True), [S.window_group(r["window"]) for r in rs]) for rs, tab in cal if rs]
+    arrs = tuple(np.concatenate([a[i] for a, _ in parts]) for i in range(5))
+    return arrs + (np.array([g for _, gs in parts for g in gs]),)
+
+
+def calibrate_levels(cal) -> tuple:
+    """(level table, pooled levels, levels by group) for cal = [(rows, exponent table), ...] pooled. Pooled levels: pick_levels of
+    the table over all rows ({style: {level, lossFilled, lossAll, winAboveFloor, meanOverpay, reached}}). By group: for each of
+    GROUPS the levels picked on that group's rows when it has at least MIN_CELL filled ones, else the pooled level
+    ({group: {style: {level, lossFilled, reached, nFilled, own}}}; a fallback keeps the pooled lossFilled and reached, own False)."""
+    Q, p, floor, act, filled, grp = _cal_arrays(cal)
+    table = _level_table_arr(Q, p, floor, act, filled)
+    pooled = pick_levels(table)
+    by_group = {}
+    for g in GROUPS:
+        mk = grp == g
+        nf = int(filled[mk].sum())
+        own = nf >= MIN_CELL
+        lv = pick_levels(_level_table_arr(Q[mk], p[mk], floor[mk], act[mk], filled[mk])) if own else pooled
+        by_group[g] = {st: {"level": lv[st]["level"], "lossFilled": lv[st]["lossFilled"], "reached": bool(lv[st]["reached"]),
+                            "nFilled": nf, "own": own} for st in STYLES}
+    return table, pooled, by_group
+
+
+def row_levels(rows, by_group: dict, pooled: dict, style: str):
+    """Level of `style` per row: its window group's level in by_group ({group: {style: level or {"level": ...}}}, None for none),
+    else (a group not in it, or the window outside GROUPS) the pooled one ({style: level or {"level": ...}})."""
+    def lv(x):
+        return float(x["level"] if isinstance(x, dict) else x)
+    base = lv(pooled[style])
+    if not by_group:
+        return np.full(len(rows), base)
+    by = {g: lv(d[style]) for g, d in by_group.items()}
+    return np.array([by.get(S.window_group(r["window"]), base) for r in rows], float)
+
+
+def measured_win(rt, rh, tab_test, tab_held) -> dict:
+    """Out-of-sample win rate on FILLED sections of the per-group procedure, from two folds: levels picked on `rt` (scored with
+    the exponents of the other term, tab_held) applied to `rh` scored with tab_test, and levels picked on `rh` (scored with
+    tab_test) applied to `rt` scored with tab_held. Bids are rounded the way the site rounds them (site_round). Each fold picks on one term, so the MIN_CELL test for a group's own level is stricter than in the shipped two-term pick: a thin group (R2A) may be measured at the pooled level while the site ships its own. Rows of
+    both folds are pooled; per (window group, forecast band) a cell with at least MIN_CELL filled rows uses its own rate, else the
+    group's pooled rate (when the group has MIN_CELL), else the rate over all rows.
+    {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"}}, "overall": {style: rate}}."""
+    grp, band, win = [], [], {st: [] for st in STYLES}
+    for pick_rows, pick_tab, app_rows, app_tab in ((rt, tab_held, rh, tab_test), (rh, tab_test, rt, tab_held)):
+        _, pooled, by_group = calibrate_levels([(pick_rows, pick_tab)])
+        Q, p, floor, act, filled = _arrays(app_rows, app_tab, True)
+        fm = filled == 1
+        grp += [S.window_group(r["window"]) for r, f in zip(app_rows, fm) if f]
+        band += [_band(r["cond_p50"]) if r.get("cond_p50") else 0 for r, f in zip(app_rows, fm) if f]
+        for st in STYLES:
+            raw = _uq(Q, p, floor, row_levels(app_rows, by_group, pooled, st))
+            bid = np.array([site_round(b, f) for b, f in zip(raw[fm], floor[fm])], float)
+            win[st] += list((bid >= act[fm]).astype(float))
+    grp, band = np.array(grp), np.array(band, dtype=int)
+    win = {st: np.array(v) for st, v in win.items()}
+
+    def rate(mk, source):
+        n = int(mk.sum())
+        return {**{st: round(float(win[st][mk].mean()), 4) if n else None for st in STYLES}, "nFilled": n, "source": source}
+    everyone = np.ones(len(grp), dtype=bool)
+    out = {}
+    for g in GROUPS:
+        gm = grp == g
+        out[g] = {}
+        for b in range(N_BANDS):
+            cm = gm & (band == b)
+            out[g][str(b)] = (rate(cm, "cell") if cm.sum() >= MIN_CELL else rate(gm, "group") if gm.sum() >= MIN_CELL else rate(everyone, "all"))
+    out["overall"] = {st: round(float(win[st].mean()), 4) if len(grp) else None for st in STYLES}
+    return out
 
 
 def gate(metrics: dict) -> tuple:
@@ -314,13 +416,17 @@ def _identifiers(cfg) -> dict:
 def backtest_distcal(df, tables, all_obs, cfg, pool, test_term: str, held_term: str, rows=None) -> dict:
     """Gate figures and bid levels for the calibration. Exponents are learned on the TEST term's rows and judged on the HELD-OUT
     term (classifier probability p_clf and the mixture formula, against the uncalibrated pfill + raw grid). `rows` ({term: rows},
-    optional) reuses rows_for_term results instead of simulating again. Final exponents (for live use) are learned on both terms."""
+    optional) reuses rows_for_term results instead of simulating again. Final exponents (for live use) are learned on both terms.
+    The bid levels are calibrated on both terms cross-fit: the held-out rows scored with the test term's exponents and the test
+    rows with the held-out term's, so no row is scored with exponents learned on itself (levels, levelTable: pooled;
+    levelsByGroup: per window group; measuredWin: out-of-sample filled win rate, see measured_win)."""
     C.require_deps()
     t0 = time.time()
     rows = rows or {}
     rt = rows.get(test_term) or rows_for_term(df, tables, all_obs, test_term, cfg, pool)
     rh = rows.get(held_term) or rows_for_term(df, tables, all_obs, held_term, cfg, pool)
     tab_test, size_test = learn_spread(rt)
+    tab_held = learn_spread(rh)[0]
     tab_final, size_final = learn_spread(rt + rh)
     metrics = {"brier": {"test": _brier(rt), "held": _brier(rh)},
                "held": {"n": len(rh), "nFilled": sum(int(r["filled"]) for r in rh),
@@ -332,10 +438,12 @@ def backtest_distcal(df, tables, all_obs, cfg, pool, test_term: str, held_term: 
         metrics[key]["coverage"] = {"calibrated": cal["coverage"], "uncalibrated": unc["coverage"]}
         metrics[key]["pinball"] = {"calibrated": cal["pinball"], "uncalibrated": unc["pinball"]}
     ok, reasons = gate(metrics)
-    lt = _level_table(rh, tab_test)
+    lt, levels, by_group = calibrate_levels([(rh, tab_test), (rt, tab_held)])
     return {"ok": bool(ok), "reasons": reasons, **_identifiers(cfg), "terms": {"test": test_term, "heldOut": held_term},
             "exponents": tab_final, "exponentsTestOnly": tab_test, "cellSizes": size_final, "cellSizesTestOnly": size_test,
-            "metrics": metrics, "levelTable": lt, "levels": pick_levels(lt), "classifier": "HistGradientBoostingClassifier, variant A (probability alone)",
+            "metrics": metrics, "levelTable": lt, "levels": levels, "levelsByGroup": by_group,
+            "measuredWin": measured_win(rt, rh, tab_test, tab_held), "bandEdges": list(BAND_EDGES),
+            "classifier": "HistGradientBoostingClassifier, variant A (probability alone)",
             "seconds": round(time.time() - t0, 1), "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
 
@@ -355,9 +463,12 @@ def build_and_write(keep: dict, backtest: dict, cfg, out_dir: str, log=print) ->
     path = os.path.join(out_dir, DISTCAL_FILE)
     write(path, payload)
     lv = payload["levels"]
+    groups = "; ".join(f"{g} " + "/".join(str(payload["levelsByGroup"][g][st]["level"]) + ("" if payload["levelsByGroup"][g][st]["own"] else "*")
+                                          for st in STYLES) for g in GROUPS)
     log(f"distcal: ok={payload['ok']} held-out coverage={payload['metrics']['held']['coverage']['calibrated']:.3f} "
         f"levels cheap/balanced/safe={lv['cheap']['level']}/{lv['balanced']['level']}/{lv['safe']['level']} "
-        f"({payload['seconds']} s) -> {path}" + ("" if payload["ok"] else f"; gate: {payload['reasons']}"))
+        f"by group ({groups}; * = pooled fallback) ({payload['seconds']} s) -> {path}"
+        + ("" if payload["ok"] else f"; gate: {payload['reasons']}"))
     return payload
 
 
@@ -390,7 +501,7 @@ def invalid_reason(payload, cfg, terms: dict | None = None) -> str | None:
     """None when the payload passed its gate and was made by this model version, config and hyperparameters, else the reason."""
     if not payload:
         return "no distribution calibration"
-    if payload.get("distcalVersion") != DISTCAL_VERSION:
+    if payload.get("distcalVersion") not in COMPATIBLE_VERSIONS:
         return f"distribution calibration is for {payload.get('distcalVersion')!r}, code is {DISTCAL_VERSION!r}"
     if payload.get("modelVersion") != C.MODEL_VERSION:
         return f"distribution calibration is for {payload.get('modelVersion')!r}, code is {C.MODEL_VERSION!r}"

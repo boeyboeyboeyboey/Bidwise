@@ -9,5 +9,6 @@ if (env?.BIDWISE_FORCE_BIDLEVELS === 'calibrated') {
   const lv = (level: number, lossFilled: number) => ({ level, lossFilled, lossAll: 0.07, winAboveFloor: 0.86, meanOverpay: 6.6, reached: true });
   vi.doMock('./lib/data/bidLevels', () => ({
     bidLevels: () => ({ cheap: lv(0.9, 0.304), balanced: lv(0.975, 0.157), safe: lv(0.99, 0.106) }),
+    bidWindowData: () => null,
   }));
 }

@@ -136,7 +136,7 @@
   });
 
   /** One bid per course: other rows of a course are alternatives (BOSS allows one section of a course per window). */
-  const onePer = $derived(oneBidPerCourse(simItems, target));
+  const onePer = $derived(oneBidPerCourse(simItems, target, win));
   const planItems = $derived(onePer.kept);
 
   /** The list in its three parts: Must get rows, one card per Pick one group, Nice to have rows. */
@@ -180,7 +180,7 @@
   const noMust = $derived(okRows.length > 0 && !okRows.some((r) => r.role !== 'optional'));
   const allSimmed = $derived(okRows.length > 0 && simItems.length === okRows.length);
   /** Every row at the course page's recommended bid for the chance you want. */
-  const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0) : null);
+  const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0, win) : null);
   /** The recommended bids add up to more than the balance, so they have to be cut to fit. */
   const needsFit = $derived(!!full && balanceCents !== null && full.bidTotalCents > balanceCents);
   const result = $derived.by(() => {
@@ -190,7 +190,7 @@
   const pending = $derived(okRows.length > 0 && (!allSimmed || (needsFit && fitting)));
   const fullBidOf = (row: PlanRowState) => {
     const c = curves[simKey(row)];
-    return c ? suggestBid(c, target) : null;
+    return c ? suggestBid(c, target, win) : null;
   };
   const over = $derived(hasRequired && balanceCents !== null && overBalance(reqNeedCents, balanceCents));
   const hopeless = $derived(!!result && !pending && result.pAll < 0.05);
@@ -457,7 +457,7 @@
     const timer = setTimeout(() => {
       runOptimise({ budgetCents: budget, items: biddableItems(items, dropOptional), certainty: 1 }).then((fit) => {
         if (my !== fitToken) return;
-        fitted = clampToRecommended(items, fit, t, budget);
+        fitted = clampToRecommended(items, fit, t, budget, win);
         fitting = false;
       });
     }, 200);
@@ -535,7 +535,7 @@
         target,
         reason: reasonOf(r, i),
         clashes: clashLines(clashPairs, r.id),
-        bids: Object.fromEntries(TARGETS.map((t) => [t, c ? suggestBid(c, t) : null])),
+        bids: Object.fromEntries(TARGETS.map((t) => [t, c ? suggestBid(c, t, win) : null])),
       });
     });
     const shown = !!result && !overBudget;

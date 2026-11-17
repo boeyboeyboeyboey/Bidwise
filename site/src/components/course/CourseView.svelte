@@ -291,7 +291,7 @@
           const win = effectiveWindow(chosen, currentName, wins);
           const job = seatsLeftNow(s) > 0 ? simSection(s, win, 1) : null;
           const r = job ? await job : null;
-          const bids = r ? (Object.fromEntries(TARGETS.map((t) => [t, suggestBid(r, t)])) as ReportRow['bids']) : NO_BIDS;
+          const bids = r ? (Object.fromEntries(TARGETS.map((t) => [t, suggestBid(r, t, win)])) as ReportRow['bids']) : NO_BIDS;
           return { ...sectionFacts(code, title, s), window: wins.length ? win : '', bids, note: courseNote(s, wins.length > 0) };
         }),
       );

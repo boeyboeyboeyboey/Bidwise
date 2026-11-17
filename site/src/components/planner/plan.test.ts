@@ -13,7 +13,7 @@ import {
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
-vi.mock('../../lib/data/bidLevels', () => ({ bidLevels: () => null }));
+vi.mock('../../lib/data/bidLevels', () => ({ bidLevels: () => null, bidWindowData: () => null }));
 
 
 const W = 'Round 1A Window 3';

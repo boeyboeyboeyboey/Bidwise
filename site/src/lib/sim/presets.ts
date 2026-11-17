@@ -2,9 +2,12 @@
 // With the distribution calibration active the three presets are Cheap / Balanced / Safe at the levels measured on the
 // held-out term; without it they are today's 80 / 90 / 95% chances, and every helper behaves exactly as before.
 import forecastMeta from '../../data/real/forecast-meta.json';
-import { bidLevels } from '../data/bidLevels';
+import { bidLevels, bidWindowData } from '../data/bidLevels';
 import type { ForecastMeta } from '../data/types';
 import { pInAt, recommendBid, type SimResult } from './index';
+import { levelForWindow, measuredRate, underDelivers } from './windowBids';
+
+export { STYLE_TARGET, underDelivers } from './windowBids';
 
 export interface BidPreset {
   key: string;
@@ -16,6 +19,9 @@ export interface BidPreset {
 }
 
 const levels = bidLevels(forecastMeta as unknown as ForecastMeta);
+// Per-window levels and measured win rates; absent (null) until the refit has produced them. A preset's pooled `level` stays
+// its identity (what screens store and compare); the window only changes the level the bid is read at.
+const windowData = levels ? bidWindowData(forecastMeta as unknown as ForecastMeta) : null;
 
 const PRESETS: readonly BidPreset[] = levels
   ? [
@@ -69,15 +75,25 @@ export function targetFromStored(stored: unknown, fallback: number = DEFAULT_TAR
 }
 
 /**
- * The bid every screen suggests for `target`. Calibrated: a bid above the minimum goes up to the next whole e$ plus one
- * cent, since about 30% of real clearing bids are whole e$ amounts. Not calibrated: exactly recommendBid.
+ * The bid every screen suggests for `target` (a preset's pooled level). Calibrated: a bid above the minimum goes up to the next
+ * whole e$ plus one cent, since about 30% of real clearing bids are whole e$ amounts; with a `window` that has its own levels,
+ * the bid is read at that window's level for the style. No window, or no per-window levels: the pooled level, as before.
+ * Not calibrated: exactly recommendBid.
  */
-export function suggestBid(result: SimResult, target: number): number {
-  const bid = recommendBid(result, target);
+export function suggestBid(result: SimResult, target: number, window?: string | null): number {
+  const bid = recommendBid(result, levelForWindow(windowData, window, levels ? presetFor(target)?.key : null) ?? target);
   if (!levels) return bid;
   const min = result.histogram.startCents;
   if (bid <= (min % 2 === 0 ? min + 1 : min)) return bid;
   return Math.ceil((bid - 1) / 100) * 100 + 1;
+}
+
+/**
+ * How often this style's bid won on sections that filled, in past terms, for sections of this window and size of price
+ * (0..1). Null when not calibrated, the data is missing, or the section almost never fills; callers then keep chanceIfFills.
+ */
+export function measuredIfFills(window: string | null | undefined, result: SimResult, style: string | null | undefined): number | null {
+  return measuredRate(windowData, window, result, style);
 }
 
 /** Chance the bid wins given the section fills; null when it almost never fills (the number would mean nothing). */

@@ -114,7 +114,7 @@ function sectionOption(s: Section, o: CandidateOptions, bid: number, target: num
   if (!input) return base;
   const r = runSim(o.runs ? { ...input, runs: o.runs } : input, o.simulate ?? simulate);
   const minBid = s.minBidCents as number;
-  return { ...base, window: win, bidCents: suggestBid(r, target), chance: bid < minBid ? 0 : pInAt(r, bid), pFill: r.pFill };
+  return { ...base, window: win, bidCents: suggestBid(r, target, win), chance: bid < minBid ? 0 : pInAt(r, bid), pFill: r.pFill };
 }
 
 const clsRank = (c: Candidate) => (c.cls === 'rule' ? 0 : 1);

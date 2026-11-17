@@ -6,7 +6,7 @@ import { bidReason, planNote } from './plan';
 // Calibrated mode: Cheap 0.90 / Balanced 0.975 / Safe 0.99. Twin of the 80 / 90 / 95% CSV tests in csv.test.ts.
 vi.mock('../data/bidLevels', () => {
   const lv = (level: number) => ({ level, lossFilled: 0.1, lossAll: 0.07, winAboveFloor: 0.86, meanOverpay: 6.6, reached: true });
-  return { bidLevels: () => ({ cheap: lv(0.9), balanced: lv(0.975), safe: lv(0.99) }) };
+  return { bidLevels: () => ({ cheap: lv(0.9), balanced: lv(0.975), safe: lv(0.99) }), bidWindowData: () => null };
 });
 
 const section = { id: 'g1', section: 'G1', classNumber: '1234', instructor: 'TAN', meetings: [], seatsTotal: 45, seatsLeft: 10 } as unknown as Section;

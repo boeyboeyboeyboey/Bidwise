@@ -304,8 +304,8 @@ function resultOf(items: PlanItem[], bids: number[], ps: number[], balanceCents:
 }
 
 /** Every row bids exactly the course page's recommended bid for the chance `target`. */
-export function bidsAtTarget(items: PlanItem[], target: number, balanceCents: number): PlanResult {
-  const bids = items.map((it) => suggestBid(it.curve, target));
+export function bidsAtTarget(items: PlanItem[], target: number, balanceCents: number, window?: string | null): PlanResult {
+  const bids = items.map((it) => suggestBid(it.curve, target, window));
   return resultOf(items, bids, bids.map((b, i) => pInAt(items[i].curve, b)), balanceCents);
 }
 
@@ -313,11 +313,11 @@ export function bidsAtTarget(items: PlanItem[], target: number, balanceCents: nu
  * Bids that fit the balance, from the optimiser's answer `fit` (run for the same items): no row bids more than its
  * recommended bid, so the total can only go down. Rows still keep the optimiser's chance where its bid was kept.
  */
-export function clampToRecommended(items: PlanItem[], fit: PlanResult, target: number, balanceCents: number): PlanResult {
+export function clampToRecommended(items: PlanItem[], fit: PlanResult, target: number, balanceCents: number, window?: string | null): PlanResult {
   const bids: number[] = [];
   const ps: number[] = [];
   for (const it of items) {
-    const full = suggestBid(it.curve, target);
+    const full = suggestBid(it.curve, target, window);
     const b = fit.bids[it.key] ?? 0;
     if (b > full) {
       bids.push(full);
@@ -374,13 +374,13 @@ export function belowStyle(target: number, bid: number | null, fullBid: number |
  * extra chances. Of each course only the row with the cheapest recommended bid for `target` is kept (the first on a
  * tie); the others are returned as skipped and must bid e$0 and add no chance.
  */
-export function oneBidPerCourse(items: PlanItem[], target: number): { kept: PlanItem[]; skipped: PlanItem[] } {
+export function oneBidPerCourse(items: PlanItem[], target: number, window?: string | null): { kept: PlanItem[]; skipped: PlanItem[] } {
   // A row the student must get (Must / Pick one) is never displaced by a cheaper Nice to have row of the same course.
   const rank = (r: Role) => (r === 'required' ? 0 : r === 'oneOf' ? 1 : 2);
   const best = new Map<string, PlanItem>();
   for (const it of items) {
     const cur = best.get(it.courseCode);
-    if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && suggestBid(it.curve, target) < suggestBid(cur.curve, target))) {
+    if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && suggestBid(it.curve, target, window) < suggestBid(cur.curve, target, window))) {
       best.set(it.courseCode, it);
     }
   }

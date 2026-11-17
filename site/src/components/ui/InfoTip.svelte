@@ -5,15 +5,17 @@
    * Tap-friendly "How is this calculated?" popover: a button that opens a short note and a link into
    * /method. Opens on click or tap (never on hover), closes on Esc, a click outside, or the link.
    */
-  let { anchor = 'replay', label = 'How is this calculated?', showLabel = false, lines = DEFAULT_LINES, linkText = 'How the forecast works' }: {
+  let { anchor = 'replay', label = 'How is this calculated?', showLabel = false, lines = DEFAULT_LINES, linkText = 'How the forecast works', href = undefined }: {
     /** id of the section on /method to link to. */
     anchor?: string;
     label?: string;
     /** Show the label beside the "?" instead of the icon alone. */
     showLabel?: boolean;
     lines?: string[];
-    /** Text of the link into /method. */
+    /** Text of the link into /method; an empty string shows no link. */
     linkText?: string;
+    /** External address for the link, opened in a new tab, instead of /method#anchor. */
+    href?: string;
   } = $props();
 
   const uid = $props.id();
@@ -94,7 +96,13 @@
   {#if open}
     <div class="pop" class:up id="tip-{uid}" role="region" aria-label={label} style:left="{shift}px" style:max-height={maxH === null ? null : `${maxH}px`} style:overflow-y={maxH === null ? null : 'auto'}>
       {#each lines as l}<p>{l}</p>{/each}
-      <a href="/method#{anchor}" onclick={() => close(false)}>{linkText}</a>
+      {#if linkText}
+        {#if href}
+          <a {href} target="_blank" rel="noopener" onclick={() => close(false)}>{linkText}</a>
+        {:else}
+          <a href="/method#{anchor}" onclick={() => close(false)}>{linkText}</a>
+        {/if}
+      {/if}
     </div>
   {/if}
 </span>

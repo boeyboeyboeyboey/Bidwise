@@ -3,10 +3,13 @@ import Base from '../../layouts/Base.astro';
 import CourseView from '../../components/course/CourseView.svelte';
 import RecordView from '../../components/RecordView.svelte';
 import ResultsNotice from '../../components/ResultsNotice.svelte';
+import Requisites from '../../components/course/Requisites.svelte';
 import { dataMeta, getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
 import { buildRowSeed } from '../../components/course/rowSeed';
 import { DEFAULT_TARGET } from '../../lib/sim/presets';
+import { readRequisites } from '../../lib/requisites/server';
+import { buildRows } from '../../lib/requisites/render';
 import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
 
 export function getStaticPaths() {
@@ -23,12 +26,18 @@ const sections = course.sectionsNow.map(({ forecast: _f, ...s }) => s);
 const forecastMeta = getForecastMeta();
 // Each open section's bid and chance for the build's window, simulated here so they are in the HTML (CourseView uses them while they still apply).
 const rowSeed = await buildRowSeed(course.sectionsNow, forecastMeta.windows, windowName, DEFAULT_TARGET);
+// Requisite rows are rendered here, so the island only gets small, finished props. No data file or no entry: no block.
+const reqData = readRequisites();
+const reqRows = reqData
+  ? buildRows(reqData.courses[course.code], { siteKeys: new Set(getCourseIndex().map((c) => c.code)), names: reqData.names, asOf: reqData.asOf })
+  : [];
 ---
 <Base title={`${course.code} · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
   <header>
     <h1>{course.code}</h1>
     <p>{course.title}</p>
   </header>
+  {reqRows.length > 0 && <Requisites client:idle rows={reqRows} />}
   <!-- A visitor who chose another window sees "Calculating" in the seeded cells until the page has recomputed (CourseView removes the class). -->
   <script is:inline define:vars={{ seedWindow: rowSeed.window }}>
     try {

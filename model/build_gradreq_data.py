@@ -7,6 +7,12 @@ site/src/data/real/gradreq/:
                     plus second majors per home degree and intake
   <view_id>.json    one requirement view, loaded on demand
   requisites.json   current prerequisite / antirequisite rules for the courses in those views
+  course-requisites.json
+                    display data for the course page: for every site course key that is in SMU's public catalogue,
+                    its catalogue id (`cat`) and current prerequisite / corequisite / antirequisite rules (`pre`,
+                    `co`, `anti`) as a small display tree (course codes, and / or, grade, GPA, CU counts, catalogue
+                    conditions, unknown), `unclear` relations, and `names` (catalogue titles of the codes used).
+                    Independent of the views: requisites.json (Plan B) is unchanged.
 Stdlib only.  Run from anywhere:  python3 model/build_gradreq_data.py [--data DIR] [--out DIR] [--site-data DIR]
 
 SCOPE
@@ -56,6 +62,9 @@ basis: intake_basis shortened to stated (handbook_stated, workbook_stated) | inf
   the same word is dropped from group names and shortened to "hb" in group ids.
 
 PRIVACY: only the fields above are written.  No notes, rule text, source ids, files, URLs or course status.
+  The one exception is course-requisites.json: it carries the "Condition n" sentences of SMU's public catalogue (the
+  first sentence of the matching `Condition n:` segment of requisites.conditions, nothing after it) and the public
+  catalogue course id (`cat`, from `smu-course-NNNNNNN`).  No research notes, no other source ids, files or URLs.
 """
 from __future__ import annotations
 
@@ -754,6 +763,324 @@ def build_requisites(rows, keys, resolver):
     return out
 
 
+# ---------------------------------------------------------------- course-page requisites (course-requisites.json)
+
+REQUISITES_AS_OF = "2026-11-08"  # date of the catalogue capture the requisite rows come from
+REL_FIELD = (("prerequisite", "pre"), ("corequisite", "co"), ("antirequisite", "anti"))
+UNKNOWN = {"t": "unknown"}
+_CODE = re.compile(r"(?:COR-)?[A-Z]{2,5}\.?\d{3,4}[A-Z]?(?:_\d+)?")
+_DTOKEN = re.compile(r'\s*("[^"]*"|[(){},]|[^\s(){},"]+)')
+_GRADE = re.compile(r"[A-D][+-]?")
+_GPA_KIND = {"GPA": "GPA", "CGPA": "GPA", "Cumulative GPA": "GPA", "Major GPA": "Major GPA"}
+_COND_SEG = re.compile(r"Condition (\d+):\s*")
+
+
+def condition_text(conditions: str, n: int):
+    """The public-catalogue sentence of `Condition n:` in a requisites.conditions field, else None when there is no
+    such segment.  The field mixes catalogue sentences with research notes (separated by ' | ' or following in the
+    same segment), so only the FIRST sentence of the numbered segment is taken, stopping at the next `Condition m:`.
+    Raises ValueError when the segment cannot be isolated reliably (no sentence end)."""
+    for seg in (conditions or "").split(" | "):
+        m = _COND_SEG.match(seg.strip())
+        if not m or int(m.group(1)) != n:
+            continue
+        text = _COND_SEG.split(seg.strip()[m.end():])[0].strip()  # stop before any later "Condition m:"
+        s = re.match(r"(.+?[.!?])(?=\s|$)", text, re.S)
+        if not s:
+            raise ValueError("condition sentence has no end")
+        sentence = s.group(1).strip()
+        # Our own placeholder wording ("the source does not state a connective", "... stated in the public catalogue")
+        # is not catalogue text: the site's tip then points to the SMU catalogue page instead.
+        return None if _PIPELINE_WORDING.search(sentence) else sentence
+    return None
+
+
+_PIPELINE_WORDING = re.compile(r"\b(?:source|connective|public catalogue)\b", re.I)
+
+
+def _flat(op, items):
+    """[op, ...] with nested same-op groups spliced in and identical siblings dropped.  A course that is both bare
+    and graded keeps the stricter reading: the graded one under and (both must hold), the bare one under or."""
+    out = []
+    for it in items:
+        for x in (it[1:] if isinstance(it, list) and it and it[0] == op else [it]):
+            if x not in out:
+                out.append(x)
+    graded = {x["of"] for x in out if isinstance(x, dict) and x.get("t") == "grade" and isinstance(x.get("of"), str)}
+    if graded and op == "and":
+        out = [x for x in out if not (isinstance(x, str) and x in graded)]
+    elif graded and op == "or":
+        out = [x for x in out if not (isinstance(x, dict) and x.get("t") == "grade" and x.get("of") in out)]
+    return out[0] if len(out) == 1 else [op] + out
+
+
+def _without(node, code):
+    """node with every leaf equal to `code` removed (None when nothing is left)."""
+    if isinstance(node, str):
+        return None if node == code else node
+    if isinstance(node, list):
+        kids = [k for k in (_without(c, code) for c in node[1:]) if k is not None]
+        return _flat(node[0], kids) if kids else None
+    return node
+
+
+def has_unknown(node) -> bool:
+    if isinstance(node, str):
+        return False
+    if isinstance(node, list):
+        return any(has_unknown(c) for c in node[1:])
+    if node.get("t") == "unknown":
+        return True
+    return has_unknown(node["of"]) if node.get("t") == "grade" else False
+
+
+def node_codes(node):
+    """Every course code used in a display node."""
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, list):
+        for c in node[1:]:
+            yield from node_codes(c)
+    elif node.get("t") == "grade":
+        yield from node_codes(node["of"])
+    elif node.get("t") == "cusFrom":
+        yield from node["of"]
+
+
+class _DisplayParser:
+    """Recursive descent over the full expression grammar of requisites.expression."""
+
+    def __init__(self, expr, resolve, cond_text):
+        self.toks, pos, expr = [], 0, (expr or "").rstrip()
+        while pos < len(expr):
+            m = _DTOKEN.match(expr, pos)
+            if not m:
+                raise ValueError("untokenisable")
+            self.toks.append(m.group(1))
+            pos = m.end()
+        self.i = 0
+        self.resolve = resolve
+        self.cond_text = cond_text
+        self.unclear = False
+
+    def peek(self):
+        return self.toks[self.i] if self.i < len(self.toks) else None
+
+    def take(self, want=None):
+        t = self.peek()
+        if t is None or (want is not None and t != want):
+            raise ValueError(f"expected {want}")
+        self.i += 1
+        return t
+
+    def expr(self):
+        items, op = [self.term()], None
+        while self.peek() in ("AND", "OR"):
+            t = self.take()
+            if op not in (None, t):
+                raise ValueError("mixed AND/OR")
+            op = t
+            items.append(self.term())
+        return _flat(op.lower(), items) if op else items[0]
+
+    def skip_args(self):
+        """After a consumed '(': skip to its matching ')'."""
+        depth = 1
+        while depth:
+            t = self.take()
+            depth += (t == "(") - (t == ")")
+
+    def code_set(self):
+        """'{A, B}' -> list of nodes (a code, or UNKNOWN for UNRESOLVED(...))."""
+        self.take("{")
+        out = []
+        while True:
+            t = self.take()
+            if _CODE.fullmatch(t):
+                out.append(self.resolve(t))
+            elif t == "UNRESOLVED":
+                self.take("(")
+                self.skip_args()
+                out.append(UNKNOWN)
+            else:
+                raise ValueError("bad set item")
+            if self.peek() == ",":
+                self.take()
+                continue
+            self.take("}")
+            return out
+
+    def number(self):
+        t = self.take()
+        v = float(t)
+        return int(v) if v == int(v) else v
+
+    def term(self):
+        t = self.take()
+        if t == "(":
+            node = self.expr()
+            self.take(")")
+            return node
+        if _CODE.fullmatch(t):
+            return self.resolve(t)
+        if t == "TRUE":
+            return UNKNOWN
+        if t == "UNRESOLVED":
+            self.take("(")
+            self.skip_args()
+            return UNKNOWN
+        if t == "CONDITION":
+            self.take("(")
+            n = int(self.take())
+            self.take(")")
+            try:
+                return {"t": "cond", "text": self.cond_text(n)}
+            except ValueError:
+                return UNKNOWN
+        if t == "ENROLLED_IN":
+            self.take("(")
+            node = self.expr()
+            self.take(")")
+            return node
+        if t == "UNSPECIFIED":
+            self.take("(")
+            parts = []
+            while True:
+                members = self.code_set()
+                parts.append(members[0] if len(members) == 1 else ["and"] + members)
+                if self.peek() == ",":
+                    self.take()
+                    continue
+                self.take(")")
+                break
+            self.unclear = True
+            return _flat("or", parts)
+        if t == "GRADE":
+            return self.grade()
+        if t in ("AT_LEAST", "CREDITS_AT_LEAST"):
+            self.take("(")
+            n = self.number()
+            self.take(",")
+            if self.peek() == "{":
+                members = self.code_set()
+                node = {"t": "cusFrom", "n": n, "of": members} if t == "CREDITS_AT_LEAST" and \
+                    all(isinstance(m, str) for m in members) else UNKNOWN
+            else:
+                arg = self.take()
+                if arg == "UNRESOLVED":
+                    self.take("(")
+                    self.skip_args()
+                    node = UNKNOWN
+                elif t == "AT_LEAST" and arg.strip('"').lower() == "completed cus":
+                    node = {"t": "cus", "n": n}
+                else:
+                    node = UNKNOWN
+            self.take(")")
+            return node
+        raise ValueError(f"unexpected {t}")
+
+    def grade(self):
+        self.take("(")
+        kind = self.take().strip('"')
+        self.take(",")
+        minv = self.take().strip('"')
+        self.take(",")
+        if self.peek() == "overall":
+            self.take()
+            self.take(")")
+            gk = _GPA_KIND.get(kind)
+            try:
+                return {"t": "gpa", "kind": gk, "min": f"{float(minv.lstrip('>=').strip()):.2f}"} if gk else UNKNOWN
+            except ValueError:
+                return UNKNOWN
+        inner = self.expr()
+        self.take(")")
+        if kind != "Grade":
+            return UNKNOWN
+        if minv == "Pass":
+            return inner
+        return {"t": "grade", "min": minv, "of": inner} if _GRADE.fullmatch(minv) else UNKNOWN
+
+
+def parse_display(expr, resolve, cond_text=lambda n: None):
+    """requisites.expression -> (display node, unclear).  Anything unparseable -> (UNKNOWN, False).
+    resolve: code -> site key.  cond_text: n -> catalogue sentence or None (may raise ValueError)."""
+    try:
+        p = _DisplayParser(expr, resolve, cond_text)
+        node = p.expr()
+        if p.peek() is not None:
+            raise ValueError("trailing tokens")
+        return node, p.unclear
+    except (ValueError, IndexError):
+        return UNKNOWN, False
+
+
+def catalogue_id(row):
+    m = re.search(r"(?:^|;)\s*smu-course-(\d{7})\s*(?:;|$)", (row or {}).get("source_ids", ""))
+    return m.group(1) if m else None
+
+
+def build_course_requisites(rows, courses, site_courses, resolver):
+    """-> course-requisites.json dict (see the module docstring and REQUISITES-SPEC data contract).
+    rows: requisites.csv rows; courses: courses.csv rows; site_courses: {key: ...} of the site's course keys."""
+    by_key = defaultdict(list)  # site key -> catalogue rows that resolve to it
+    for c in courses:
+        by_key[resolver.resolve(c["course_code"])[0]].append(c)
+    keys = sorted(k for k in site_courses if k in by_key or k in resolver.by_code)
+    keyset = set(keys)
+    acc = defaultdict(lambda: defaultdict(lambda: {"nodes": [], "unclear": False}))
+    for r in rows:
+        rel = dict(REL_FIELD).get(r["relation"])
+        if r["is_current"] != "true" or not rel:
+            continue
+        key, _ = resolver.resolve(r["course_code"])
+        if key not in keyset:
+            continue
+        conditions = r.get("conditions", "")
+        node, unclear = parse_display(r["expression"], lambda c: resolver.resolve(c)[0],
+                                      lambda n, cond=conditions: condition_text(cond, n))
+        slot = acc[key][rel]
+        slot["unclear"] |= unclear or r["confidence"] != "confirmed" or has_unknown(node)
+        if node not in slot["nodes"]:
+            slot["nodes"].append(node)
+    out, used = {}, set()
+    for key in keys:
+        entry = {}
+        cands = [by_key.get(key, []), [resolver.by_code[key]] if key in resolver.by_code else []]
+        own = [c for c in cands[0] + cands[1] if c["course_code"] == key]
+        cat = next(filter(None, (catalogue_id(c) for c in own + cands[0])), None)
+        if cat:
+            entry["cat"] = cat
+        unclear = []
+        for _, rel in REL_FIELD:
+            slot = acc.get(key, {}).get(rel)
+            if not slot:
+                continue
+            nodes = slot["nodes"]
+            if len(nodes) > 1:  # two catalogue codes of one key: and for requirements, or for exclusions
+                entry[rel] = _flat("or" if rel == "anti" else "and", nodes)
+                slot["unclear"] = True
+            else:
+                entry[rel] = nodes[0]
+            if rel == "anti":  # combining two catalogue codes can list the course as its own exclusion
+                entry[rel] = _without(entry[rel], key)
+                if entry[rel] is None:
+                    del entry[rel]
+                    continue
+            if slot["unclear"]:
+                unclear.append(rel)
+            used.update(node_codes(entry[rel]))
+        if unclear:
+            entry["unclear"] = unclear
+        out[key] = entry
+    names = {}
+    for code in sorted(used):
+        title, _ = resolver.title_and_cus(code, resolver.resolve(code)[1], "", None)
+        if title:
+            names[code] = title
+    return {"asOf": REQUISITES_AS_OF, "courses": out, "names": names}
+
+
 # ---------------------------------------------------------------- build / main
 
 def load_data(data_dir: Path):
@@ -794,7 +1121,7 @@ def write_json(path: Path, obj):
     os.replace(tmp, path)
 
 
-def write_output(out_dir: Path, index, views, requisites):
+def write_output(out_dir: Path, index, views, requisites, course_requisites=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     marker = out_dir / "index.json"
     if marker.exists():  # only clear files an earlier run of this script wrote
@@ -809,6 +1136,8 @@ def write_output(out_dir: Path, index, views, requisites):
         body = {k: val for k, val in v.items() if not k.startswith("_")}
         write_json(out_dir / f"{v['id']}.json", body)
     write_json(out_dir / "requisites.json", requisites)
+    if course_requisites is not None:
+        write_json(out_dir / "course-requisites.json", course_requisites)
     write_json(out_dir / "index.json", index)
 
 
@@ -858,7 +1187,9 @@ def main(argv=None) -> int:
     data = load_data(args.data)
     site_courses = load_site_keys(args.site_data)
     index, views, requisites, stats, conflicts, orphans = build(data, site_courses)
-    write_output(args.out, index, views, requisites)
+    resolver = Resolver(data["courses"], site_courses, data.get("title_aliases", []))
+    course_requisites = build_course_requisites(data["requisites"], data["courses"], site_courses, resolver)
+    write_output(args.out, index, views, requisites, course_requisites)
     print(summarise(views, stats, site_courses, conflicts, orphans, data))
     return 0
 

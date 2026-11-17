@@ -1,5 +1,5 @@
 // Pure logic for Plan B: the per-course limit, which sections it can buy, and their order. No DOM, no fetch.
-import { parseBalance } from '../planner/plan';
+import { parseBalance, slotsOf } from '../planner/plan';
 import { TARGETS } from '../../lib/sim/forecast';
 import { formatExam } from '../../lib/format/exam';
 import type { Block, Candidate, OfferedCourse, ReqTree, Requisites, SectionOption } from '../../lib/gradreq';
@@ -13,18 +13,8 @@ export const moneyText = (cents: number): string => (cents % 100 === 0 ? String(
 /** "e$40", "e$40.5". */
 export const eText = (cents: number): string => `e$${moneyText(cents)}`;
 
-/** BOSS minimum bid, in cents: each other course still needed has to be able to get at least this much. */
+/** BOSS minimum bid, in cents: e$ left below this can't buy any section. */
 export const MIN_BID_CENTS = 1000;
-
-/**
- * The most one course may cost: e$ left minus the e$10 minimum bid for each of the other courses still needed.
- * null when e$ left is blank (no limit). A result below the minimum bid means e$ left cannot cover the courses (see `capTooLow`).
- */
-export function reserveCap(leftCents: number | null, courses: number): number | null {
-  if (leftCents === null) return null;
-  const n = Math.min(3, Math.max(1, Math.round(courses) || 1));
-  return leftCents - MIN_BID_CENTS * (n - 1);
-}
 
 /** True when a per-course limit is below the minimum bid, so no course could be bid for. */
 export const capTooLow = (capCents: number | null): boolean => capCents !== null && capCents < MIN_BID_CENTS;
@@ -99,6 +89,20 @@ export function noFinalOnly(courses: readonly OfferedCourse[], on: boolean): rea
   const out: OfferedCourse[] = [];
   for (const c of courses) {
     const sectionsNow = c.sectionsNow.filter((s) => formatExam(s.exam) === '');
+    if (sectionsNow.length) out.push({ ...c, sectionsNow });
+  }
+  return out;
+}
+
+/**
+ * Drops sections meeting in any avoided slot ("Mon-08:15", matched on each meeting's day and start time, as in the Bid planner),
+ * then courses left with no section. No slots returns the courses unchanged.
+ */
+export function avoidSlots(courses: readonly OfferedCourse[], avoid: readonly string[]): readonly OfferedCourse[] {
+  if (!avoid.length) return courses;
+  const out: OfferedCourse[] = [];
+  for (const c of courses) {
+    const sectionsNow = c.sectionsNow.filter((s) => !slotsOf(s).some((x) => avoid.includes(x)));
     if (sectionsNow.length) out.push({ ...c, sectionsNow });
   }
   return out;

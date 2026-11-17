@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { affordableRows, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, reserveCap, capTooLow, blockTabs, resolveTab, tabKeyTarget, withNotes } from './logic';
+import { affordableRows, avoidSlots, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, capTooLow, blockTabs, resolveTab, tabKeyTarget, withNotes } from './logic';
 import { candidates, clearCandidateCache } from '../../lib/gradreq';
 import type { Candidate, OfferedCourse, Requisites, SectionOption } from '../../lib/gradreq';
 import type { Section } from '../../lib/data/types';
@@ -12,21 +12,11 @@ const cand = (code: string, sections: SectionOption[]): Candidate => ({
   code, title: 'T' + code, cls: 'rule', mandatory: false, cus: 1, eligibility: 'ok', sections, fullSections: 0, chance: null, bidCents: null,
 });
 
-describe('reserveCap', () => {
-  it('leaves e$10 for each other course still needed', () => {
-    expect(reserveCap(6000, 1)).toBe(6000);
-    expect(reserveCap(6000, 2)).toBe(5000);
-    expect(reserveCap(6000, 3)).toBe(4000);
-  });
+describe('budget helpers', () => {
   it('is no limit when e$ left is blank, and flags a limit under the e$10 minimum bid', () => {
-    expect(reserveCap(null, 3)).toBeNull();
-    expect(capTooLow(reserveCap(null, 3))).toBe(false);
-    expect(capTooLow(reserveCap(2500, 3))).toBe(true);
-    expect(capTooLow(reserveCap(3000, 3))).toBe(false);
-    expect(capTooLow(reserveCap(900, 1))).toBe(true);
-  });
-  it('clamps the number of courses to 1..3', () => {
-    expect([reserveCap(6000, 0), reserveCap(6000, 9)]).toEqual([6000, 4000]);
+    expect(capTooLow(null)).toBe(false);
+    expect(capTooLow(900)).toBe(true);
+    expect(capTooLow(1000)).toBe(false);
   });
   it('writes whole e$ plainly and others with two decimals', () => {
     expect([moneyText(4000), moneyText(4050), moneyText(333), eText(1234)]).toEqual(['40', '40.50', '3.33', 'e$12.34']);
@@ -184,5 +174,22 @@ describe('noFinalOnly', () => {
   });
   it('treats missing, null and unreadable exam data as no exam listed, like Browse', () => {
     expect(noFinalOnly([{ code: 'D', title: 'D', sectionsNow: [osec('D1'), osec('D2', null)] }], true)[0].sectionsNow).toHaveLength(2);
+  });
+});
+
+describe('avoidSlots', () => {
+  const msec = (id: string, ...meet: [string, string][]) =>
+    ({ id, section: id, classNumber: id, instructor: 'P', meetings: meet.map(([day, start]) => ({ day, start, end: '' })), minBidCents: 100 }) as unknown as Section;
+  const courses: OfferedCourse[] = [
+    { code: 'A', title: 'A', sectionsNow: [msec('A1', ['MON', '08:15']), msec('A2', ['TUE', '12:00'])] },
+    { code: 'B', title: 'B', sectionsNow: [msec('B1', ['WED', '15:30'], ['MON', '08:15'])] },
+    { code: 'C', title: 'C', sectionsNow: [msec('C1', ['TBA', ''])] },
+  ];
+  it('returns every course unchanged with no slots', () => {
+    expect(avoidSlots(courses, [])).toBe(courses);
+  });
+  it('drops sections meeting in any avoided slot, then courses left with none', () => {
+    const out = avoidSlots(courses, ['Mon-08:15']);
+    expect(out.map((c) => [c.code, c.sectionsNow.map((s) => s.id)])).toEqual([['A', ['A2']], ['C', ['C1']]]);
   });
 });

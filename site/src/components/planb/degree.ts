@@ -137,6 +137,8 @@ export function isTrackBlock(b: Pick<Block, 'id' | 'viewId'>, views: readonly Lo
 export interface Saved {
   school: string; degree: string; intake: string; major: string; track: string; second: string;
   completed: string[];
+  /** Slots the student can't make ("Mon-08:15"), as in the Bid planner. */
+  avoid: string[];
   /** e$ left, as typed. */
   left: string;
   courses: 1 | 2 | 3;
@@ -145,7 +147,7 @@ export interface Saved {
 }
 
 export const emptySaved = (): Saved => ({
-  school: '', degree: '', intake: '', major: '', track: '', second: '', completed: [], left: '', courses: 1, target: TARGETS[0],
+  school: '', degree: '', intake: '', major: '', track: '', second: '', completed: [], avoid: [], left: '', courses: 1, target: TARGETS[0],
 });
 
 /** Reads the stored text defensively: anything unexpected falls back to the default for that field. */
@@ -162,6 +164,7 @@ export function parseSaved(raw: string | null): Saved {
   const r = o as Record<string, unknown>;
   for (const k of ['school', 'degree', 'intake', 'major', 'track', 'second'] as const) if (typeof r[k] === 'string') out[k] = r[k] as string;
   if (Array.isArray(r.completed)) out.completed = [...new Set(r.completed.filter((c): c is string => typeof c === 'string' && c.length < 20))].slice(0, 300);
+  if (Array.isArray(r.avoid)) out.avoid = [...new Set(r.avoid.filter((a): a is string => typeof a === 'string' && /^(Mon|Tue|Wed|Thu|Fri)-\d\d:\d\d$/.test(a)))].slice(0, 60);
   if (typeof r.left === 'string' && r.left.length < 12) out.left = r.left;
   if (r.courses === 2 || r.courses === 3) out.courses = r.courses;
   out.target = targetFromStored(r.target, TARGETS[0]);

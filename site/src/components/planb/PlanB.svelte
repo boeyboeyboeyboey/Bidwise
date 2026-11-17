@@ -9,18 +9,18 @@
   import { getChosenWindow } from '../../lib/state';
   import { pct } from '../course/fmt';
   import SectionRow from './SectionRow.svelte';
+  import { startTimesOf } from '../planner/plan';
+  import { DAYS } from '../planner/types';
   import {
     LEGACY_STORE_KEY, STORE_KEY, groupBlocks, intakesFor, isTrackBlock, leftText as blockLeftText, majorOptions, parseSaved, secondOptions,
     toSelection, trackOptions,
   } from './degree';
-  import { bidCalibrated, bidPresets, fromCurrent, targetToStored } from '../../lib/sim/forecast';
-  import { hasCheaperStyle, styleName } from '../../lib/sim/presets';
-  import { styleTipLines } from '../course/bidStyle';
-  import InfoTip from '../ui/InfoTip.svelte';
+  import { DEFAULT_TARGET, fromCurrent } from '../../lib/sim/forecast';
+  import { styleName } from '../../lib/sim/presets';
   import {
     ALL_TAB, MIN_BID_CENTS, OTHER_TAB, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
-    moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, reserveCap, resolveTab, tabKeyTarget, withNotes,
-    type CoursesNeeded, type PlanRow,
+    avoidSlots, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, withNotes,
+    type PlanRow,
   } from './logic';
 
   let { builtWindow, windows = [] }: { builtWindow: string; windows?: string[] } = $props();
@@ -39,8 +39,8 @@
   const saved = parseSaved(readStore());
 
   let leftText = $state(saved.left);
-  let courses = $state<CoursesNeeded>(saved.courses);
-  let target = $state<number>(saved.target);
+  // One bid style for the whole list (the site default, Balanced when calibrated); a section's own page offers the others.
+  const target = DEFAULT_TARGET;
 
   let school = $state(saved.school);
   let degree = $state(saved.degree);
@@ -49,9 +49,11 @@
   let track = $state(saved.track);
   let second = $state(saved.second);
   let completed = $state<string[]>(saved.completed);
+  let avoid = $state<string[]>(saved.avoid);
+  const toggleSlot = (slot: string) => (avoid = avoid.includes(slot) ? avoid.filter((a) => a !== slot) : [...avoid, slot]);
 
   $effect(() => {
-    const text = JSON.stringify({ school, degree, intake, major, track, second, completed: [...completed], left: leftText, courses, target: targetToStored(target) });
+    const text = JSON.stringify({ school, degree, intake, major, track, second, completed: [...completed], avoid: [...avoid], left: leftText });
     try {
       localStorage.setItem(STORE_KEY, text);
     } catch {
@@ -62,31 +64,18 @@
   const leftBlank = $derived(leftText.trim() === '');
   const leftCents = $derived(parseMoney(leftText));
   /** The most one course may cost; null = no limit (e$ left is blank). */
-  const capCents = $derived(reserveCap(leftCents, courses));
+  /** The most one course may cost: e$ left; null = no limit (e$ left is blank). */
+  const capCents = $derived(leftCents);
   const leftBad = $derived(!leftBlank && leftCents === null);
   const tooLittle = $derived(!leftBad && capTooLow(capCents));
   const error = $derived(
     leftBad ? 'Enter an amount in e$, for example 60 or 42.50.'
-    : tooLittle ? `${eText(leftCents as number)} isn't enough for ${courses} ${courses === 1 ? 'course' : 'courses'} at the ${eText(MIN_BID_CENTS)} minimum bid.`
+    : tooLittle ? `${eText(leftCents as number)} is below the ${eText(MIN_BID_CENTS)} minimum bid.`
     : null,
   );
 
-  // Results stay hidden until "Show courses" is pressed; after that they follow the inputs.
-  let shown = $state(false);
   /** Keep only sections with no final exam listed. Not saved with the other inputs. */
   let noFinal = $state(false);
-  let resultsEl = $state<HTMLElement | null>(null);
-  async function showCourses() {
-    shown = true;
-    await tick();
-    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!resultsEl) return;
-    // Clear the sticky header at its real height (it wraps to two rows on narrow phones).
-    const head = document.querySelector<HTMLElement>('header.top');
-    const sticky = head && ['sticky', 'fixed'].includes(getComputedStyle(head).position);
-    const offset = (sticky ? head.getBoundingClientRect().bottom : 0) + 16;
-    window.scrollTo({ top: window.scrollY + resultsEl.getBoundingClientRect().top - offset, behavior: still ? 'auto' : 'smooth' });
-  }
 
   // ------------------------------------------------------------ the programme
   let index = $state.raw<GradIndex | null>(null);
@@ -112,6 +101,13 @@
   const hasTracks = $derived(!!degreeObj && ((degreeObj.tracks?.length ?? 0) > 0 || (degreeObj.majors ?? []).some((m) => (m.tracks?.length ?? 0) > 0)));
   // Major, track and second major are each optional; all open once the intake is set.
   const canPick = $derived(!!intake);
+  const showMajor = $derived(!!degreeObj?.majors?.length && (!intake || majors.length > 0));
+  const showTrack = $derived(!!degreeObj && (!intake ? hasTracks : tracks.length > 0));
+  const showMajors = $derived(!!index && (showMajor || showTrack || showSecond));
+  // Step numbers: the optional majors step is left out for degrees with no majors, tracks or second majors.
+  const stepDone = $derived(showMajors ? 3 : 2);
+  const stepBudget = $derived(stepDone + 1);
+  const showSecond = $derived(!degreeObj || (!!degreeObj.secondMajors?.length && (!intake || seconds.length > 0)));
 
   /** Clears any later field whose value is no longer offered, so the chain never holds a stale pick. */
   function reconcile() {
@@ -210,11 +206,17 @@
       .then((r) => (r.ok ? (r.json() as Promise<OfferedCourse[]>) : Promise.reject(new Error(String(r.status)))))
       .then((d) => (offered = d), () => (offeredFailed = true));
   });
+  /** Rows of the can't-make-it grid: every start time this term's sections meet at. */
+  const startTimes = $derived(offered ? startTimesOf(offered.flatMap((c) => c.sectionsNow)) : []);
+  /** Avoided slots still in the grid: a saved slot at a start time no longer offered can't be unticked, so it doesn't filter. */
+  const activeAvoid = $derived(avoid.filter((a) => startTimes.includes(a.slice(4))));
 
   const derived = $derived(loaded ? deriveBlocks(loaded.views, loaded.intake, completed) : null);
   const groups = $derived(derived ? groupBlocks(derived.open, viewLabel) : []);
   const multiView = $derived(new Set(groups.map((g) => g.blocks[0].viewId)).size > 1);
   const degreeActive = $derived(!!pick);
+  // Results follow the inputs as soon as a degree and intake are picked.
+  const shown = $derived(degreeActive);
   const listBlocks = $derived((derived?.open ?? []).filter((b) => b.kind === 'list' && b.members.length + b.hints.length > 0));
 
   /** All affordable sections, then per open requirement block. null until priced. */
@@ -228,7 +230,7 @@
   const MAX_SIM_BID = 1_000_000;
   const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0));
 
-  async function price(tok: number, data: readonly OfferedCourse[], budget: number | null, chance: number, done: string[], blocks: Block[], onlyNoFinal: boolean) {
+  async function price(tok: number, data: readonly OfferedCourse[], budget: number | null, chance: number, done: string[], blocks: Block[], onlyNoFinal: boolean, avoided: string[]) {
     let allReqs: Requisites;
     try {
       allReqs = await fetchRequisites();
@@ -245,7 +247,7 @@
     const stored = getChosenWindow();
     const chosenWindow = stored && fromCurrent(windows, curWindow).includes(stored) ? stored : null;
     const opts = { window: curWindow, chosenWindow, bid: budget ?? MAX_SIM_BID, target: chance, sort: 'cheapest' as const };
-    const pruned = prunedCourses(noFinalOnly(data, onlyNoFinal), budget);
+    const pruned = prunedCourses(avoidSlots(noFinalOnly(data, onlyNoFinal), avoided), budget);
     const byCode = new Map(pruned.map((c) => [c.code, c]));
     // Chunks of courses, so the page stays responsive; every simulation is cached for the requirement blocks below.
     const parts = chunk(pruned, 4);
@@ -277,6 +279,7 @@
     const done = [...completed];
     const blocks = listBlocks;
     const onlyNoFinal = noFinal;
+    const avoided = [...activeAvoid];
     const waiting = degreeActive && !loaded;
     const tok = ++runTok;
     priceFailed = false;
@@ -285,7 +288,7 @@
     progress = 0;
     if (!ready || !data || waiting) return;
     untrack(() => {
-      price(tok, data, budget, chance, done, blocks, onlyNoFinal);
+      price(tok, data, budget, chance, done, blocks, onlyNoFinal, avoided);
     });
   });
 
@@ -294,21 +297,17 @@
 
   /** Each course once, in the first block (in display order) that has it. */
   const deduped = $derived(dedupeBlocks(groups.flatMap((g) => g.blocks).map((b) => ({ key: keyOf(b), rows: blockRows[keyOf(b)] ?? [] }))));
-  const calibrated = bidCalibrated();
-  const presets = bidPresets();
-  const styleTip = styleTipLines(presets);
-  const style = $derived(styleName(target));
+  const style = styleName(target);
   /** The row label and the sentences below name the style when calibrated, else the chance ("Bid for 80%"). */
-  const bidLabel = $derived(style ? `${style} bid` : `Bid for ${pct(target)}`);
-  const atText = $derived(style ? `a ${style} bid` : pct(target));
+  const bidLabel = style ? `${style} bid` : `Bid for ${pct(target)}`;
+  const atText = style ? `a ${style} bid` : pct(target);
   const otherList = $derived(allRows && derived ? otherRows(allRows, blockCodes(listBlocks)) : []);
   const noneText = $derived(
     leftCents === null || capCents === null
       ? `No open sections at ${atText}.`
-      : `Nothing fits ${eText(leftCents)} left for ${courses} ${courses === 1 ? 'course' : 'courses'} (up to ${eText(capCents)} each) at ${atText}.`,
+      : `Nothing fits ${eText(leftCents)} at ${atText}.`,
   );
-  const lowerAdvice = $derived(style ? (hasCheaperStyle(target) ? 'a cheaper bid style' : null) : 'a lower chance');
-  const noneAdvice = $derived((capCents === null ? '' : ` Try ${lowerAdvice ? `${lowerAdvice} or fewer courses` : 'fewer courses'}.`) + (noFinal ? ' Or untick the final exam filter.' : ''));
+  const noneAdvice = $derived((noFinal ? ' Try unticking the final exam filter.' : '') + (activeAvoid.length ? ' Try freeing up some times.' : ''));
 
   // Requirement tabs: only with a degree. A block tab lists every section of that block (no dedupe), cheapest first.
   const tabBlocks = $derived(groups.flatMap((g) => g.blocks.map((b) => ({ b, heading: g.label }))).filter((x) => listBlocks.includes(x.b)));
@@ -345,38 +344,8 @@
 {/snippet}
 
 <div class="wrap">
-  <section class="step" aria-labelledby="pb-s1">
-    <h2 id="pb-s1">1. Budget</h2>
-    <div class="inputs">
-      <label>e$ left (optional)
-        <input class="field num" type="text" inputmode="decimal" autocomplete="off" aria-invalid={leftBad || tooLittle} aria-describedby={error ? 'pb-err' : undefined} placeholder="e.g. 60"
-          value={leftText} oninput={(e) => (leftText = e.currentTarget.value)} />
-      </label>
-
-      <div class="grp" role="group" aria-label="Courses still needed">
-        <span class="lbl">Courses still needed</span>
-        <div class="seg count">
-          {#each [1, 2, 3] as n (n)}
-            <button type="button" class="num" aria-pressed={courses === n} onclick={() => (courses = n as CoursesNeeded)}>{n}</button>
-          {/each}
-        </div>
-      </div>
-
-      <div class="aimrow" role="group" aria-label={calibrated ? 'Bid style' : 'Chance you want'}>
-        <span class="lbl aimlab" aria-hidden="true">{calibrated ? 'Bid style' : 'Chance you want:'}</span>
-        {#if calibrated && styleTip.length}<InfoTip label="About the bid styles" lines={styleTip} />{/if}
-        <div class="seg aim">
-          {#each presets as pr (pr.key)}
-            <button type="button" class:num={!calibrated} aria-pressed={target === pr.level} onclick={() => (target = pr.level)}>{calibrated ? pr.label : pct(pr.level)}</button>
-          {/each}
-        </div>
-      </div>
-    </div>
-    {#if error}<p id="pb-err" class="small err" role="alert">{error}</p>{/if}
-  </section>
-
-  <section class="step" aria-labelledby="pb-s2">
-    <h2 id="pb-s2">2. Your degree</h2>
+  <section class="step" aria-labelledby="pb-degree">
+    <h2 id="pb-degree">1. Your degree</h2>
     {#if indexFailed}
       <p class="note">Could not load the programme list. Reload the page to try again.</p>
     {:else if !index}
@@ -401,24 +370,33 @@
             {#each intakes as i (i)}<option value={i}>{i}</option>{/each}
           </select>
         </label>
-        {#if degreeObj?.majors?.length && (!intake || majors.length)}
-          <label>Major (optional)
+      </div>
+      {#if !shown}<p class="note">Pick your school, degree and intake year to see courses.</p>{/if}
+    {/if}
+  </section>
+
+  {#if showMajors}
+    <section class="step" aria-labelledby="pb-majors">
+      <h2 id="pb-majors">2. Majors (optional)</h2>
+      <div class="fields">
+        {#if showMajor}
+          <label>Major
             <select class="field" value={major} disabled={!canPick} onchange={(e) => set('major', e.currentTarget.value)}>
               <option value="">None</option>
               {#each majors as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
             </select>
           </label>
         {/if}
-        {#if degreeObj && (!intake ? hasTracks : tracks.length)}
-          <label>Track (optional)
+        {#if showTrack}
+          <label>Track
             <select class="field" value={track} disabled={!canPick} onchange={(e) => set('track', e.currentTarget.value)}>
               <option value="">None</option>
               {#each tracks as t (t.value)}<option value={t.value}>{t.label}</option>{/each}
             </select>
           </label>
         {/if}
-        {#if !degreeObj || (degreeObj.secondMajors?.length && (!intake || seconds.length))}
-          <label>Second major (optional)
+        {#if showSecond}
+          <label>Second major
             <select class="field" value={second} disabled={!canPick} onchange={(e) => set('second', e.currentTarget.value)}>
               <option value="">None</option>
               {#each seconds as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
@@ -426,11 +404,11 @@
           </label>
         {/if}
       </div>
-    {/if}
-  </section>
+    </section>
+  {/if}
 
-  <section class="step done-box" aria-labelledby="pb-s3">
-    <h2 id="pb-s3">3. Courses already done (optional)</h2>
+  <section class="step done-box" aria-labelledby="pb-done">
+    <h2 id="pb-done">{stepDone}. Courses already done (optional)</h2>
     <label class="sr" for="done-q">Search courses already done</label>
     <div class="pickbox">
       <input id="done-q" class="field" type="search" placeholder="Search by code or title" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={q}
@@ -453,11 +431,39 @@
     <p class="small">Saved on this device only.</p>
   </section>
 
-  <button type="button" class="btn btn-primary show" disabled={error !== null} onclick={showCourses}>Show courses</button>
+  <section class="step" aria-labelledby="pb-budget">
+    <h2 id="pb-budget">{stepBudget}. Budget (optional)</h2>
+    <div class="inputs">
+      <label>e$ left
+        <input class="field num" type="text" inputmode="decimal" autocomplete="off" aria-invalid={leftBad || tooLittle} aria-describedby={error ? 'pb-err' : undefined} placeholder="e.g. 60"
+          value={leftText} oninput={(e) => (leftText = e.currentTarget.value)} />
+      </label>
+    </div>
+    {#if error}<p id="pb-err" class="small err" role="alert">{error}</p>{/if}
+  </section>
+
+  {#if startTimes.length}
+    <section class="step" aria-labelledby="pb-times">
+      <h2 id="pb-times">{stepBudget + 1}. Times I can't make it (optional)</h2>
+      <div class="avoid" role="group" aria-labelledby="pb-times">
+        <span></span>
+        {#each DAYS as d (d)}<span class="avh">{d}</span>{/each}
+        {#each startTimes as t (t)}
+          <span class="avh num">{t}</span>
+          {#each DAYS as d (d)}
+            {@const slot = `${d}-${t}`}
+            <button type="button" class="slot" class:on={avoid.includes(slot)} aria-pressed={avoid.includes(slot)} aria-label="Can't make {d} {t}" onclick={() => toggleSlot(slot)}
+            ><span aria-hidden="true">{avoid.includes(slot) ? '×' : ''}</span></button>
+          {/each}
+        {/each}
+      </div>
+    </section>
+  {/if}
+
 
   <!-- ------------------------------------------------------------ results -->
   {#if shown && error === null}
-    <div class="results" class:pending={!allRows || (degreeActive && !derived)} bind:this={resultsEl}>
+    <div class="results" class:pending={!allRows || (degreeActive && !derived)}>
       <label class="chk"><input type="checkbox" checked={noFinal} onchange={() => (noFinal = !noFinal)} /><span>No final exam listed</span></label>
       {#if offeredFailed || viewsFailed || priceFailed}
         <p class="note">Could not load the data. Reload the page to try again.</p>
@@ -597,9 +603,8 @@
   .step { display: grid; gap: var(--s3); min-width: 0; }
   .step h2 { font-size: var(--fs-lg); font-weight: 600; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .show { justify-self: start; }
   .results { display: grid; gap: var(--s4); min-width: 0; }
-  /* While pricing, keep the page tall enough that scrolling to the results can bring them to the top. */
+  /* While pricing, keep the results area tall so the page doesn't jump as they re-price. */
   .results.pending { min-height: 80vh; align-content: start; }
   .chk {
     display: flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 var(--s3); font-size: var(--fs-sm); cursor: pointer; justify-self: start; max-width: 100%;
@@ -618,21 +623,16 @@
   .note { font-size: var(--fs-sm); }
   .err { color: var(--danger); }
   .foot { padding-top: var(--s2); border-top: 1px solid var(--rule); }
-  label, .lbl { display: grid; gap: var(--s1); font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
+  label { display: grid; gap: var(--s1); font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
 
   .inputs { display: grid; gap: var(--s3); grid-template-columns: minmax(0, 1fr); }
-  @media (min-width: 560px) { .inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .aimrow { grid-column: 1 / -1; } }
-  .grp { display: grid; gap: var(--s1); min-width: 0; }
-  .count { display: flex; }
-  .count > button { flex: 1 1 0; min-height: 44px; }
-  .aimrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); }
-  .aimlab { white-space: nowrap; display: inline; }
-  .aim { display: flex; flex: 1 1 320px; }
-  .aim > button { flex: 1 1 0; min-height: 44px; padding: 0 var(--s2); white-space: nowrap; font-size: var(--fs-sm); }
-  /* Selected chance, as on the course page: light tint, green edge, dark text. */
-  .seg > button[aria-pressed='true'] { color: var(--text); background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 600; }
-  .seg > button[aria-pressed='true']:hover { background: var(--accent-soft); }
+  @media (min-width: 560px) { .inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+  .avoid { width: 100%; max-width: 300px; display: grid; grid-template-columns: 44px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
+  .avh { font-size: 13px; color: var(--muted); text-align: center; }
+  .slot { min-height: 44px; padding: 0; border-radius: var(--r-sm); border: 1px solid var(--rule-strong); background: var(--surface); color: var(--accent); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .slot.on { background: var(--accent-soft); border-color: var(--accent); }
+  .slot:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .fields { display: grid; gap: var(--s3); grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 560px) { .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   select.field { font-weight: 400; text-overflow: ellipsis; }

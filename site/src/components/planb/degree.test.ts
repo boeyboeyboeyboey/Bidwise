@@ -56,6 +56,10 @@ describe('parseSaved', () => {
     expect(parseSaved('{"completed":[1,"A",{}],"left":"60","courses":2,"target":0.9}')).toMatchObject({ completed: ['A'], left: '60', courses: 2, target: 0.9 });
     expect(parseSaved('{"courses":7,"target":0.5}')).toMatchObject({ courses: 1, target: 0.8 });
   });
+  it('keeps only well-formed avoided slots, once each', () => {
+    expect(parseSaved('{"avoid":["Mon-08:15","Mon-08:15","Sat-08:15","Mon-morning",3]}').avoid).toEqual(['Mon-08:15']);
+    expect(parseSaved('{"avoid":"Mon-08:15"}').avoid).toEqual([]);
+  });
 });
 
 describe('result helpers', () => {

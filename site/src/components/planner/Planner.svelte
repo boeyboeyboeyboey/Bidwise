@@ -743,7 +743,7 @@
       <CourseAdd onadd={onAdd} inPlan={rows.map((r) => r.course)} dropUp={wide} prominent />
     {:else}
       <section class="start" aria-label="Start">
-        <CourseAdd onadd={onAdd} inPlan={[]} label="Add a course" placeholder="Course code or title" />
+        <CourseAdd onadd={onAdd} inPlan={[]} label="Add a course" placeholder="Code, title or nickname" />
         {#if example.length >= 3}
           <div class="go">
             <button type="button" class="btn btn-primary" onclick={tryExample}>Try an example plan</button>

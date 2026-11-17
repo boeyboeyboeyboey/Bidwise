@@ -242,7 +242,7 @@
   <div class="cs">
     <div class="card">
       <div class="qrow">
-        <label class="sr" for="b-q">Search by course code, title or professor</label>
+        <label class="sr" for="b-q">Search by course code, title, nickname or professor</label>
         <div class="search">
           <svg class="mag" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.7 12.7 17 17" /></svg>
           <input id="b-q" class="field" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"

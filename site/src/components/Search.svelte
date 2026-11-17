@@ -1,34 +1,15 @@
 <script lang="ts">
   import type { SearchEntry } from '../lib/data/types';
+  import { flatText, isExactCode, rankCourses } from '../lib/search/courseSearch';
 
   /** `suffix` is appended to every result link (e.g. '?mode=swap' to open course pages in Swap mode). */
   let { index, suffix = '' }: { index: SearchEntry[]; suffix?: string } = $props();
   const LIMIT = 12;
-  const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
   let query = $state('');
-  // Ranked: exact code, code prefix, word-start in title, then any substring. Offered-now courses come before all
-  // not-offered ones (those sit in a collapsed group at the end); within a tier, code order (the index is pre-sorted).
-  const matches = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    const qf = flat(q);
-    if (!qf) return [];
-    const words = q.split(/\s+/);
-    const hits: { e: SearchEntry; rank: number }[] = [];
-    for (const e of index) {
-      const full = flat(e[0]);
-      const bare = flat(e[0].slice(e[0].indexOf('-') + 1));
-      const title = e[1].toLowerCase();
-      let tier = -1;
-      if (full === qf || bare === qf) tier = 0;
-      else if (full.startsWith(qf) || bare.startsWith(qf)) tier = 1;
-      else if (words.every((w) => new RegExp(`(^|[^a-z0-9])${w.replace(/[^a-z0-9]/g, '')}`).test(title) && flat(w))) tier = 2;
-      else if (full.includes(qf) || words.every((w) => title.includes(w))) tier = 3;
-      if (tier < 0) continue;
-      hits.push({ e, rank: tier });
-    }
-    return hits.sort((a, b) => a.rank - b.rank).map((h) => h.e);
-  });
+  // Ranked by courseRank (code, nickname, title). Offered-now courses come before all not-offered ones (those sit in a
+  // collapsed group at the end); within a tier, code order (the index is pre-sorted).
+  const matches = $derived(rankCourses(index, query, (e) => [e[0], e[1]]));
   const offered = $derived(matches.filter((e) => e[2] > 0));
   const notOffered = $derived(matches.filter((e) => e[2] <= 0));
   let showAll = $state(false);
@@ -51,9 +32,8 @@
       active = (active + (e.key === 'ArrowDown' ? 1 : results.length - 1)) % results.length;
       document.getElementById(`q-opt-${active}`)?.scrollIntoView({ block: 'nearest' });
     } else if (e.key === 'Enter') {
-      const qf = flat(query);
-      if (!qf) return;
-      const exact = moved ? undefined : index.find((e) => flat(e[0]) === qf || flat(e[0].slice(e[0].indexOf('-') + 1)) === qf);
+      if (!flatText(query)) return;
+      const exact = moved ? undefined : index.find((e) => isExactCode(e[0], query));
       const target = exact ?? results[active];
       if (target) location.href = `/course/${target[0]}${suffix}`;
     }
@@ -61,14 +41,14 @@
 </script>
 
 <div class="search">
-  <label class="find" for="q">Search for a course by code or title</label>
+  <label class="find" for="q">Search for a course by code, title or nickname</label>
   <div class="box">
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M11 4a7 7 0 1 0 4.2 12.6l4.1 4.1 1.4-1.4-4.1-4.1A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" fill="currentColor" fill-rule="evenodd" /></svg>
     <input
       id="q"
       class="field"
       type="search"
-      placeholder="Course code or title"
+      placeholder="Code, title or nickname"
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { fetchIndex } from '../../lib/data/client';
+  import { rankCourses } from '../../lib/search/courseSearch';
 
   let { onadd, inPlan = [], label = 'Add course', placeholder = 'Add course', dropUp = false, prominent = false }: {
     /** byKey: picked with Enter, so the caller keeps the cursor in the box. */
@@ -17,16 +18,7 @@
   onMount(() => {
     fetchIndex().then((i) => (index = i.filter((c) => c.offeredNow && c.sectionCount > 0)), () => (failed = true));
   });
-  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const results = $derived.by(() => {
-    const s = q.trim().toLowerCase();
-    const f = norm(s);
-    if (!f) return [];
-    return index
-      .filter((c) => norm(c.code).includes(f) || c.title.toLowerCase().includes(s))
-      .sort((a, b) => Number(norm(b.code).startsWith(f)) - Number(norm(a.code).startsWith(f)))
-      .slice(0, 6);
-  });
+  const results = $derived(rankCourses(index, q, (c) => [c.code, c.title]).slice(0, 6));
   const free = $derived(results.filter((c) => !inPlan.includes(c.code)));
   function pick(code: string, byKey = false) {
     onadd(code, byKey);

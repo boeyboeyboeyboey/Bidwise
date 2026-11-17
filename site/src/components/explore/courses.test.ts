@@ -63,6 +63,11 @@ describe('filterCourses', () => {
     expect(codes(f({ q: 'old seminar' }))).toEqual(['ZZZ900']);
     expect(f({ q: 'zzz999' })).toEqual([]);
   });
+  it('finds nicknames and titles typed without punctuation, exact nickname first', () => {
+    const extra = groupCourses([], [{ code: 'FA100', title: '' }, { code: 'X1', title: 'Modeling & Data Analytics' }, { code: 'ACCT101', title: 'Financial Accounting' }]);
+    expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'FA' }))).toEqual(['ACCT101', 'FA100']);
+    expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'modeling and data' }))).toEqual(['X1']);
+  });
   it('puts courses whose code starts with the text first', () => {
     const extra = groupCourses([], [{ code: 'IS2140', title: '' }, { code: 'COR-IS214', title: 'x' }, { code: 'IS214', title: 'Y' }]);
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'IS214' }))).toEqual(['IS214', 'IS2140', 'COR-IS214']);

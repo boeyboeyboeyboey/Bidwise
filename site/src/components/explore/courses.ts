@@ -1,6 +1,7 @@
 // Browse: courses with this term's sections, filters, term list per course and URL state. Pure and DOM-free, so it is unit tested (courses.test.ts).
 // Section-level data only, never anything about an individual student.
 import { DAYS, DAY_IDS, R, bitsToIds, idsToBits, subjectOf, type ClassRow } from '../classes/logic';
+import { aliasesOf, flatText, queryTokens } from '../../lib/search/courseSearch';
 
 export interface CourseEntry {
   code: string;
@@ -59,15 +60,13 @@ export const sectionFilterOn = (f: Pick<BrowseState, 'days' | 'times' | 'seats' 
 export const activeFilterCount = (f: Pick<BrowseState, 'sub' | 'days' | 'times' | 'seats' | 'nofinal'>): number =>
   (f.sub ? 1 : 0) + (f.days ? 1 : 0) + (f.times.length ? 1 : 0) + (f.seats ? 1 : 0) + (f.nofinal ? 1 : 0);
 
-const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-
-/** Every word of `q` must appear in `hay`. "econ 111" and "econ111" both find ECON111. */
+/** Every word of `q` must appear in `hay`, punctuation ignored ("&" reads as "and"). "econ 111" and "econ111" both find ECON111. */
 export function matchesWords(hay: string, q: string): boolean {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  // Text with no letters or digits ("&", "-") counts as no search text.
+  const words = /[a-z0-9]/i.test(q) ? queryTokens(q) : [];
   if (!words.length) return true;
-  const h = hay.toLowerCase();
-  const hf = flat(h);
-  return words.every((w) => h.includes(w) || (flat(w) !== '' && hf.includes(flat(w))));
+  const hf = flatText(hay);
+  return words.every((w) => hf.includes(w));
 }
 
 export function sectionMatches(r: ClassRow, f: Pick<BrowseState, 'days' | 'times' | 'seats' | 'nofinal'>): boolean {
@@ -86,20 +85,20 @@ export interface CourseHit {
   sections: ClassRow[];
 }
 
-/** Courses matching the search text (code, title or a professor of this term) and subject, with at least one section passing the section filters when any is set. Courses whose code starts with the text come first. */
+/** Courses matching the search text (code, title, nickname or a professor of this term) and subject, with at least one section passing the section filters when any is set. An exact nickname comes first, then courses whose code starts with the text. */
 export function filterCourses(courses: readonly CourseEntry[], f: BrowseState): CourseHit[] {
   const on = sectionFilterOn(f);
   const hits: CourseHit[] = [];
   for (const c of courses) {
     if (f.sub && c.subject !== f.sub) continue;
-    if (!matchesWords(`${c.code} ${c.title} ${c.professors.join(' ')}`, f.q)) continue;
+    if (!matchesWords(`${c.code} ${c.title} ${c.professors.join(' ')} ${aliasesOf(c.code).join(' ')}`, f.q)) continue;
     const sections = on ? c.sections.filter((r) => sectionMatches(r, f)) : c.sections;
     if (on && !sections.length) continue;
     hits.push({ course: c, sections });
   }
-  const q = flat(f.q);
+  const q = flatText(f.q);
   if (q) {
-    const rank = (h: CourseHit) => (flat(h.course.code).startsWith(q) ? 0 : 1);
+    const rank = (h: CourseHit) => (aliasesOf(h.course.code).includes(q) ? 0 : flatText(h.course.code).startsWith(q) ? 1 : 2);
     return hits.map((h, i) => [h, i] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
   }
   return hits;

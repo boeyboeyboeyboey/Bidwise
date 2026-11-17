@@ -17,11 +17,15 @@
 !/tests/test_evalscore.py
 !/tests/test_promisecal.py
 !/tests/test_distcal_levels.py
+!/tests/test_forecast_bid_parity.py
 !/tests/fixtures/
 /tests/fixtures/*
 !/tests/fixtures/site_data_fixture.csv
 !/tests/fixtures/forecast_sim_parity.json
 !/tests/fixtures/forecast_sim_parity_gen.ts
+!/tests/fixtures/forecast_bid_parity.json
+!/tests/fixtures/forecast_bid_parity_gen.ts
+!/tests/fixtures/forecast_bid_parity_gen.config.ts
 
 # Local data and rebuildable outputs.
 /data/

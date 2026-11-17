@@ -109,7 +109,7 @@ For each section and bidding window a forecast is made in this order:
 | 4. Fill chance and range | A second gradient-boosted model sets the chance that the section fills, and the spread of the replayed clearing bids is narrowed or widened by factors learned from past terms. | `distcal.py` | 15 Nov 2026 |
 | 5. Bid styles | Cheap, Balanced and Safe are three points on the replayed distribution of clearing bids. How far up it each one sits is set per window group, so that each wins its target share of sections that fill. | `distcal.py` levels, applied in `presets.ts` | |
 
-Chance of a seat, recommended bid, groups, planner and drop and re-bid all read these parameters and run the simulator. Round 1A Window 2 is forecast from 15 Nov 2026.
+Chance of a seat, recommended bid, groups, planner and drop and re-bid all read these parameters and run the simulator. Each window from the current one onward is forecast; past windows of the term keep their plain fitted parameters.
 
 ### Observations and censoring
 
@@ -271,7 +271,7 @@ r = r_{\text{global}}, \qquad \sigma = \hat\sigma_w, \qquad q = q_w, \qquad s_M 
 ```
 
 - Demand uses the posterior mean on the natural scale; the price uses the posterior mean on the log scale (a median).
-- $`c_{\text{scale}}`$ is a global price multiplier and $`\ell_{sd}`$ the term-to-term drift of the price level; both are set in calibration (1.350 and 0.1 at the last fit).
+- $`c_{\text{scale}}`$ is a global price multiplier and $`\ell_{sd}`$ the term-to-term drift of the price level; both are set in calibration (1.380 and 0.1 at the last fit, 17 Nov 2026).
 
 In code: `Model.params_for` returns a `SimParams` (`model/forecast/sim.py`) and records which level supplied the estimate (`pooledLevel`). `make_params_json` writes it for every current-term section and window.
 
@@ -355,7 +355,7 @@ Two pieces on top of the corrected forecast (`model/forecast/distcal.py`, since 
 
 **Gate.** At each refit the pair is kept only if:
 
-- the classifier's Brier score (the mean squared error of the fill chance; lower is better) beats the replays' on both the test term (2025-26 Term 2) and the held-out term (2026-27 Term 1, which the fit and the models never saw; the bid levels are the exception, see [Bid styles](#bid-styles))
+- the classifier's Brier score (the mean squared error of the fill chance; lower is better) beats the replays' on both the test term (2025-26 Term 2) and the held-out term (2026-27 Term 1, which the fit, the correction and the classifier never saw; the shipped range exponents and the bid levels are learned on it too, so only the classifier and the gate's own scoring are clean on that term, see [Bid styles](#bid-styles))
 - the 80% range on the held-out term covers 75 to 85% of its filled sections
 - the mean pinball loss at the 50, 80, 90 and 95% points beats the uncalibrated one.
 
@@ -532,7 +532,7 @@ In code: `evaluate` (the products and the optional term), `pAllOf` (the reported
   - scales the price level twice by $`\exp(\mathrm{median} \ln(a / \text{conditional } p_{50}))`$ over filled sections
   - picks $`\ell_{sd} \in \lbrace 0.1, 0.25, 0.4 \rbrace`$ whose filled-section 80% coverage is closest to 0.8
   - decides whether the slot effects stay on
-  - Results: $`r = 0.4`$, $`c_w = 0.5`$, $`\tau`$ as in the table above, price scale 1.350, $`\ell_{sd} = 0.1`$, slot effects on (`model/forecast/out/calibration.json`).
+  - Results: $`r = 0.4`$, $`c_w = 0.5`$, $`\tau`$ as in the table above, price scale 1.380, $`\ell_{sd} = 0.1`$, slot effects on (`model/forecast/out/calibration.json`).
 - 2025-26 Term 2 is the test term, used for the gate.
 - 2026-27 Term 1 is held out: reported, not part of the gate. The corrected model's GBM hyperparameters were also tuned on the test term, so test-term figures for the corrected model are optimistic and the held-out term is the honest one.
 
@@ -560,7 +560,7 @@ Per window, the site marks confidence "low" unless filled-section coverage is wi
 - 80% range on filled sections: the real clearing bid fell inside it 78% of the time (90% before), at about half the width. The width is 0.54 of the old median width, measured on the terms used to choose the calibration.
 - Median miss on sections that filled: e\$7.77.
 
-**Bid styles (17 Nov 2026 refit, 21:36).** Measured win rate on filled sections, out of sample by cross-fit between 2025-26 Term 2 and 2026-27 Term 1:
+**Bid styles (17 Nov 2026 refit, 21:36).** Measured win rate on filled sections, by cross-fit between 2025-26 Term 2 and 2026-27 Term 1. This flatters the method a little: one fold tests an earlier term with levels picked on a later one, and each pick uses range exponents learned on the term it then tests. The no-look-ahead figures under Rolling harness are the honest ones, and on the last complete term (2026-27 Term 1) the method won 61.7%, 79.8% and 85.5%; term-to-term drift of this size is the largest open risk (see Limitations).
 
 | Round | Filled sections | Cheap | Balanced | Safe |
 |---|---|---|---|---|
@@ -602,7 +602,7 @@ The baseline could forecast 6,989 of the 7,243 sections.
 ## Limitations
 
 - Past results only. The model has no information about this term's drops, released seats, quota changes, a new instructor or rule changes. Later windows offer only newly freed seats, and the data records that a seat was offered again but not why.
-- Before the fill classifier of 15 Nov 2026, the chance of filling was over-confident in the middle of the range: on the 2025-26 Term 2 backtest, forecasts of 30 to 40% filled 19% of the time (`calibration` in `backtest-corrected.json`). Its Brier score is better (0.099 against 0.121 on 2026-27 Term 1), but that calibration table has not been redone.
+- Before the fill classifier of 15 Nov 2026, the chance of filling was over-confident in the middle of the range: on the 2025-26 Term 2 backtest, forecasts of 30 to 40% filled 19% of the time (`calibration` in `backtest-corrected.json`). Its Brier score is better (0.099 against 0.121 on 2026-27 Term 1), and the rolling harness rechecked its calibration on 17 Nov 2026: well calibrated overall (expected calibration error 0.010), but a little overconfident in the upper middle (forecasts of 0.6 to 0.7 filled 59% of the time, 0.7 to 0.8 filled 70%), and the term's overall fill rate drifts (2026-27 Term 1: 21.1% predicted, 24.1% actual).
 - The 80% range of filled sections stayed within the 70 to 90% band in both test terms, but windows from Round 2 Window 3 onward have few filled sections and are marked low confidence. Forecasts for windows further ahead are less certain than the held-out figures, which score each window with earlier-window results of the same term in the corrected model.
 - The price model is one lognormal plus a spike at the minimum. Bidders who copy "last median plus a dollar or two" and round-number bids are not modelled beyond the anchor share.
 - Demand and price are fitted per window with no link between windows. $`\sigma`$, $`q`$ and $`s`$ are shared by all courses in a window, and $`s`$ is shared across windows and ignores the slot effect.
@@ -612,6 +612,7 @@ The baseline could forecast 6,989 of the 7,243 sections.
 - Ties are settled by random draw among the tied bids, but rivals are assumed to bid independently of each other and of the group; a bid exactly equal to the cutoff can therefore read very low for a large group (for example three seats for a group of three against ten rivals all at the floor). The recommended odd-cent bids avoid round-number ties.
 - Seat counts for some sections are estimates from the previous window and can be wrong, for example when reserved seats are released or students drop.
 - The planner treats sections as independent, which is optimistic when students compete for the same seats in correlated ways. It flags timetable clashes but does not model e\$ rollover rules or credit limits.
+- The evaluation reads bids from a 99-point grid that stops at the 99th conditional percentile, so at level 0.995 (Round 2 and 2A Safe) it scores a slightly cheaper bid than the site shows on sections likely to fill (`tests/test_forecast_bid_parity.py`). With every replay kept, the 17 Nov 2026 review measured the effect at under 0.5 points of win rate and up to e\$1.9 of bid on filled sections.
 - Bid styles promise a win rate only on sections that fill. Their levels come from two terms, and Round 2A (170 filled sections) falls short at 64%, 79% and 79%; that figure is rough. Every round drifts between terms: on 2026-27 Term 1 the shipped procedure won 62%, 80% and 86% of filled sections overall, against about 72%, 86% and 91% measured on the two terms before it.
 - The swap chance, its settings, and the drop-and-re-bid chance have not been tested against real outcomes; the percentages are rough guides for ranking options. The drop chance counts past cases of the same course, which are correlated within a term.
 

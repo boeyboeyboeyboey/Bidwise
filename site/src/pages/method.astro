@@ -141,7 +141,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Seats on offer, and each bidding window</li>
         <li>Little history on a professor: it leans on the course, then the subject, then all courses</li>
         <li>Recent terms count more</li>
-        <li>This term’s earlier rounds: prices are moved up or down to match how the term is going</li>
+        <li>This term’s earlier rounds: a section’s and its course’s earlier results this term move its price up or down</li>
       </ul>
     </div>
     {calibrated ? (<>
@@ -162,8 +162,8 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <h2>Bid styles</h2>
       <ul class="bul">
         <li>Cheap, Balanced and Safe aim to win a seat {aims[0]}, {aims[1]} and {aims[2]} of the time when the section fills. When it doesn’t fill, any bid at the minimum gets in.</li>
-        <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in the last two terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
-        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, similar forecast price), and says so where it fell well short.</li>
+        <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in two recent terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
+        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise the whole round), and says so where it fell well short.</li>
         <li>The headline chance also counts the times the section doesn’t fill, so it is usually higher than the “if it fills” figure.</li>
         <li>Groups: every member needs a seat</li>
       </ul>
@@ -216,7 +216,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     {measured ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty rounds">
-      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, so a new term may differ.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A has few filled sections, so its figures are rough.</caption>
+      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, which flatters the results a little. Tested strictly forward, using only terms before it, the styles won 62%, 80% and 86% in 2026-27 Term 1, the last complete term, so a new term can fall several points short.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A has few filled sections, so its figures are rough.</caption>
       <thead><tr><th scope="col"><span class="sr-only">Round</span></th>{KEYS.map((k) => <th scope="col" class="r">{LABEL[k]}</th>)}</tr></thead>
       <tbody>
         <tr class="aim"><th scope="row">Aim</th>{aims.map((a) => <td class="r">{a}</td>)}</tr>

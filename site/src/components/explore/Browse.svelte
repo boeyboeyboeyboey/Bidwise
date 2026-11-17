@@ -3,6 +3,10 @@
   import { APPROX_NOTE, scanDayText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
   import MultiSelect from '../ui/MultiSelect.svelte';
+  import Requisites from '../course/Requisites.svelte';
+  import { buildRows } from '../../lib/requisites/render';
+  import { fetchRequisites } from '../../lib/requisites/client';
+  import type { RequisitesFile } from '../../lib/requisites/types';
   import { R, seatText, type ClassRow, type ClassesPayload } from '../classes/logic';
   import { fmtBid, fmtSeats, fullWindow, pastSections, seatsTaken, type BrowseRow, type CourseTerms } from './browse';
   import { fetchCourseTerms, fetchManifest, fetchTerm } from './browseClient';
@@ -31,6 +35,15 @@
   const filtered = $derived(sectionFilterOn(bs));
   const scanText = $derived(scanDayText(scannedAt));
   const open = $derived(bs.course ? courses.find((c) => c.code === bs.course) : undefined);
+  // Requisites of the open course, as on its course page; loaded the first time a course is opened.
+  let reqData = $state<RequisitesFile | null>(null);
+  let pageKeys = $state<ReadonlySet<string>>(new Set());
+  $effect(() => {
+    if (open && !reqData) fetchRequisites().then((d) => (reqData = d));
+  });
+  const reqRows = $derived(
+    open && reqData ? buildRows(reqData.courses[open.code], { siteKeys: pageKeys, names: reqData.names, asOf: reqData.asOf }) : [],
+  );
 
   function load() {
     status = 'loading';
@@ -39,6 +52,7 @@
       fetch('/data/classes.json').then((r) => (r.ok ? (r.json() as Promise<ClassesPayload>) : Promise.reject(new Error(String(r.status))))),
     ]).then(([index, d]) => {
       courses = groupCourses(d.rows, index);
+      pageKeys = new Set(index.map((c) => c.code));
       currentTerm = d.term;
       scannedAt = d.scannedAt;
       if (bs.course && !courses.some((c) => c.code === bs.course)) bs = { ...bs, course: '', term: '', sec: '' };
@@ -148,6 +162,7 @@
   <div class="course">
     <button type="button" class="btn back" onclick={back}>← Results</button>
     <h2><span class="code">{open.code}</span>{#if open.title}<span class="ttl">{open.title}</span>{/if}</h2>
+    {#if reqRows.length}<div class="reqs"><Requisites rows={reqRows} /></div>{/if}
 
     {#if choices.length}
       <div class="terms" role="group" aria-label="Term">
@@ -354,6 +369,7 @@
   .back { justify-self: start; }
   h2 { font-size: var(--fs-lg); font-weight: 600; display: flex; flex-wrap: wrap; gap: 0 var(--s3); overflow-wrap: anywhere; }
   h2 .ttl { font-weight: 400; }
+  .reqs :global(.req) { margin: 0; }
   .terms { display: flex; flex-wrap: wrap; gap: var(--s2); }
   .secs { border-top: 1px solid var(--rule); }
   .secs li { border-bottom: 1px solid var(--rule); }

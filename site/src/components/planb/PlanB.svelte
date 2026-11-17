@@ -134,6 +134,10 @@
     btnEls[id]?.focus();
   }
   const majorsCount = $derived([major, track, second].filter(Boolean).length);
+  /** Names what is picked ("Major + Track") rather than a count, which read as "two majors" for a major and a track. */
+  const majorsLabel = $derived(
+    [major && 'Major', second && '2nd major', track && 'Track'].filter(Boolean).join(' + ') || 'Majors',
+  );
 
   /** Clears any later field whose value is no longer offered, so the chain never holds a stale pick. */
   function reconcile() {
@@ -445,10 +449,10 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="filters" bind:this={filtersEl} onkeydown={onFiltersKey}>
       <div class="fbar">
-        {#if showMajors}{@render fbtn('majors', countLabel('Majors', majorsCount), majorsCount > 0)}{/if}
+        {#if showMajors}{@render fbtn('majors', majorsLabel, majorsCount > 0)}{/if}
         {@render fbtn('done', countLabel('Cleared', completed.length), completed.length > 0)}
         {@render fbtn('budget', budgetLabel(leftCents), !leftBlank && !error, error !== null)}
-        {#if startTimes.length}{@render fbtn('times', countLabel('Times', activeAvoid.length), activeAvoid.length > 0)}{/if}
+        {#if startTimes.length}{@render fbtn('times', countLabel('Busy times', activeAvoid.length), activeAvoid.length > 0)}{/if}
         <button type="button" class="btn fbtn" class:on={noFinal} aria-pressed={noFinal} onclick={() => (noFinal = !noFinal)}>No final exam</button>
       </div>
 
@@ -515,7 +519,8 @@
           </div>
         </div>
       {:else if openPanel === 'times' && startTimes.length}
-        <div class="fpanel" id="pb-p-times" role="group" aria-label="Times I can't make it">
+        <div class="fpanel" id="pb-p-times" role="group" aria-labelledby="pb-times-h">
+          <p class="plabel" id="pb-times-h">Tap the times you can't make</p>
           <div class="avoid">
             <span></span>
             {#each DAYS as d (d)}<span class="avh">{d}</span>{/each}
@@ -707,7 +712,9 @@
   .avoid { width: 100%; max-width: 300px; display: grid; grid-template-columns: 44px repeat(5, minmax(0, 1fr)); gap: var(--s1); align-items: center; }
   .avh { font-size: 13px; color: var(--muted); text-align: center; }
   .slot { min-height: 44px; padding: 0; border-radius: var(--r-sm); border: 1px solid var(--rule-strong); background: var(--surface); color: var(--accent); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
-  .slot.on { background: var(--accent-soft); border-color: var(--accent); }
+  /* Blocked out: grey fill and a dark ×, so it reads as "can't make", not as a picked (green) slot. */
+  .slot.on { background: var(--rule-strong); border-color: var(--muted); color: var(--text); }
+  .plabel { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
   .slot:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .fields { display: grid; gap: var(--s3); grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 560px) { .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

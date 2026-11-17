@@ -4,7 +4,7 @@ Bidwise helps SMU students plan their BOSS course bids. For a section and a bidd
 
 Live site: https://bidwise.pages.dev
 
-Status: friends-only trial. Bidwise is not affiliated with SMU. Forecasts are statistical estimates from past results, not guarantees; check the official BOSS rules and your own timetable before you bid.
+Bidwise is not affiliated with SMU. Forecasts are statistical estimates from past results, not guarantees; check the official BOSS rules and your own timetable before you bid.
 
 ## Contents
 

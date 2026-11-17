@@ -149,6 +149,8 @@ class EndToEndTests(unittest.TestCase):
             for i in range(3):  # hot courses: fill, clear around e$40
                 rows.append(row(t, w, f"HOT{i}", "G1", f"{t[:4]}h{i}", "P", 30, 0, 38.0 + i, 44.0 + i))
                 rows.append(row(t, w, f"COLD{i}", "G1", f"{t[:4]}c{i}", "Q", 30, 28, 10.0, 10.0))  # 2 bidders
+            for j, other in enumerate(x for x in fit.WINDOWS if x != w):  # one filler row per other window: the term counts as complete
+                rows.append(row(t, other, "FILL1", "G1", f"{t[:4]}f{j}", "Z", 30, 28, 10.0, 10.0))
         for i in range(3):
             rows.append(row("2026-27 Term 2", "Round 1 Window 1", f"HOT{i}", "G1", f"cur-h{i}", "P", 30, 30))
             rows.append(row("2026-27 Term 2", "Round 1 Window 1", f"COLD{i}", "G1", f"cur-c{i}", "Q", 30, 30))
@@ -161,12 +163,13 @@ class EndToEndTests(unittest.TestCase):
                 wr.writerows(rows)
             cfg = Config(use_slot=False)
             (out / "calibration.json").write_text(json.dumps({"config": {**cfg.__dict__}}))
-            rc = fit.main(["--csv", str(src), "--out", str(out), "--reuse-calibration", "--procs", "1"])
+            rc = fit.main(["--csv", str(src), "--out", str(out), "--reuse-calibration", "--procs", "1",
+                           "--current-term", "2026-27 Term 2"])
             self.assertEqual(rc, 0)
             bt = json.loads((out / "backtest.json").read_text())
             for k in ("coverage80", "maeCents", "samples", "byWindow", "calibration", "baseline", "forecasts_ok"):
                 self.assertIn(k, bt)
-            self.assertEqual(bt["samples"], 6)
+            self.assertEqual(bt["samples"], 6 + len(fit.WINDOWS) - 1)  # 6 hot/cold + one filler per other window
             self.assertGreater(bt["baseline"]["samples"], 0)
             name = "params-2026-27-term-2.json" if bt["forecasts_ok"] else "params-2026-27-term-2.rejected.json"
             params = json.loads((out / name).read_text())
@@ -180,6 +183,80 @@ class EndToEndTests(unittest.TestCase):
             self.assertEqual(set(params["classes"]["cur-h0"]["windows"]), set(fit.WINDOWS))
             self.assertEqual(sorted(k for k in hot if k not in ("pooledLevel", "nObs")),
                              sorted(["demandMean", "demandDispersion", "priceLevelCents", "priceSigma", "anchorSigma", "anchorShare", "anchorCents"]))
+
+
+
+ROOT = Path(__file__).resolve().parent.parent
+TODAY_CSV = ROOT / "data/derived-captures-20261112T135954/bids_with_schedule.csv"
+
+
+def full(*terms, windows=None):
+    return {(t, w) for t in terms for w in (windows or fit.WINDOWS)}
+
+
+class DeriveRolesTests(unittest.TestCase):
+    def test_current_term_type_2_skips_term_1_and_terms_after_current(self):
+        tw = full("2027-28 Term 1", "2026-27 Term 2", "2026-27 Term 1", "2025-26 Term 2", "2025-26 Term 1", "2024-25 Term 2", "2024-25 Term 1")
+        self.assertEqual(fit.derive_roles(tw, "2026-27 Term 2"),
+                         {"heldOut": "2026-27 Term 1", "test": "2025-26 Term 2", "validation": "2024-25 Term 2"})
+
+    def test_current_term_type_1(self):
+        tw = full("2026-27 Term 1", "2025-26 Term 2", "2025-26 Term 1", "2024-25 Term 2", "2024-25 Term 1", "2023-24 Term 1")
+        self.assertEqual(fit.derive_roles(tw, "2026-27 Term 1"),
+                         {"heldOut": "2025-26 Term 2", "test": "2025-26 Term 1", "validation": "2024-25 Term 1"})
+
+    def test_held_out_of_the_current_type_is_not_reused_as_test(self):
+        tw = full("2025-26 Term 2", "2025-26 Term 1", "2024-25 Term 2", "2023-24 Term 2")
+        self.assertEqual(fit.derive_roles(tw, "2026-27 Term 2"),
+                         {"heldOut": "2025-26 Term 2", "test": "2024-25 Term 2", "validation": "2023-24 Term 2"})
+
+    def test_incomplete_term_and_term_3_are_skipped(self):
+        short = [w for w in fit.WINDOWS if w != fit.WINDOWS[-1]]  # 11 windows
+        tw = (full("2026-27 Term 1", "2024-25 Term 2", "2023-24 Term 2") | full("2025-26 Term 2", windows=short)
+              | full("2025-26 Term 3A", "2025-26 Term 3B"))
+        self.assertEqual(fit.derive_roles(tw, "2026-27 Term 2"),
+                         {"heldOut": "2026-27 Term 1", "test": "2024-25 Term 2", "validation": "2023-24 Term 2"})
+
+    def test_input_order_does_not_matter(self):
+        tw = sorted(full("2026-27 Term 1", "2025-26 Term 2", "2024-25 Term 2"), reverse=True)
+        self.assertEqual(fit.derive_roles(tw, "2026-27 Term 2")["validation"], "2024-25 Term 2")
+
+    def test_errors_when_a_role_cannot_be_filled(self):
+        with self.assertRaises(ValueError):
+            fit.derive_roles(set(), "2026-27 Term 2")
+        with self.assertRaises(ValueError):  # no second complete Term 2 for validation
+            fit.derive_roles(full("2026-27 Term 1", "2025-26 Term 2"), "2026-27 Term 2")
+        with self.assertRaises(ValueError):
+            fit.derive_roles(full("2025-26 Term 2"), "2026-27 Term 3A")
+
+
+class CurrentTermTests(unittest.TestCase):
+    def test_term_and_params_names_from_site_window_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "site_window.json"
+            p.write_text(json.dumps({"currentTerm": "2027-28 Term 1"}))
+            term = fit.site_window_term(str(p))
+        self.assertEqual(term, "2027-28 Term 1")
+        self.assertEqual(fit.params_names(term), ("params-2027-28-term-1.json", "params-2027-28-term-1.rejected.json"))
+        self.assertEqual(fit.params_names("2026-27 Term 2")[0], "params-2026-27-term-2.json")
+
+    def test_site_build_reads_the_file_the_refit_writes(self):
+        import importlib.util  # noqa: PLC0415
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location("bsd_params", root / "model/build_site_data.py")
+        bsd = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bsd)
+        for term in ("2026-27 Term 2", "2027-28 Term 1"):
+            self.assertEqual(bsd.default_params_path(term).name, fit.params_names(term)[0])
+
+
+@unittest.skipUnless(TODAY_CSV.exists(), "private dataset not present")
+class TodaysDataTests(unittest.TestCase):
+    def test_roles_on_the_2026_11_12_dataset(self):
+        obs = fit.build_obs(fit.load_rows(str(TODAY_CSV)))
+        self.assertEqual(fit.derive_roles({(o.term, o.window) for o in obs}, "2026-27 Term 2"),
+                         {"heldOut": "2026-27 Term 1", "test": "2025-26 Term 2", "validation": "2024-25 Term 2"})
+
 
 
 if __name__ == "__main__":

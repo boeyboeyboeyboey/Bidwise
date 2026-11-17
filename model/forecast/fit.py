@@ -687,17 +687,57 @@ def pit_shift(rows):
 
 
 # ----------------------------------------------------------------------------- calibration on the validation term
-VALIDATION_TERM = "2024-25 Term 2"
-TEST_TERM = "2025-26 Term 2"
-HELD_OUT_TERM = "2026-27 Term 1"
+SITE_WINDOW = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "site_window.json")
 
 
-def calibrate(all_obs, pool, log=print):
+def site_window_term(path: str = SITE_WINDOW) -> str:
+    """currentTerm from model/site_window.json (the same key scheduler.py, refresh.py and build_site_data.py read)."""
+    with open(path) as f:
+        return json.load(f)["currentTerm"]
+
+
+def term_slug(term: str) -> str:
+    """'2026-27 Term 2' -> '2026-27-term-2' (the params file name part; same rule as refresh.term_slug)."""
+    return term.lower().replace(" ", "-")
+
+
+def params_names(term: str) -> tuple:
+    """(accepted, rejected) params file names for the current term."""
+    slug = term_slug(term)
+    return f"params-{slug}.json", f"params-{slug}.rejected.json"
+
+
+def derive_roles(term_windows, current_term: str) -> dict:
+    """Term roles for calibration and backtests from which (term, window) pairs the data holds.
+
+    A term is complete when it covers all of WINDOWS; only regular "YYYY-YY Term 1/2" terms strictly before current_term count
+    (3A/3B never do).  held-out = latest complete term; test = latest complete term of the current term's type (Term 1 or 2) other
+    than held-out; validation = the next earlier complete term of that type.  Raises ValueError when a role cannot be filled."""
+    cur = term_index(current_term)
+    if cur is None:
+        raise ValueError(f"current term {current_term!r} is not a regular 'YYYY-YY Term 1/2' term")
+    seen = defaultdict(set)
+    for term, window in term_windows:
+        ti = term_index(term)
+        if ti is not None and ti[0] < cur[0]:
+            seen[term].add(window)
+    complete = sorted((t for t, ws in seen.items() if set(WINDOWS) <= ws), key=lambda t: term_index(t)[0], reverse=True)
+    if not complete:
+        raise ValueError(f"no complete term (all {len(WINDOWS)} windows) before {current_term}")
+    held = complete[0]
+    same_type = [t for t in complete[1:] if term_index(t)[1] == cur[1]]
+    if len(same_type) < 2:
+        raise ValueError(f"need 2 complete Term {cur[1]} terms before {current_term} besides held-out {held} (test, validation); "
+                         f"found {same_type}; complete terms: {complete}")
+    return {"heldOut": held, "test": same_type[0], "validation": same_type[1]}
+
+
+def calibrate(all_obs, pool, validation_term, log=print):
     cfg = Config(runs=500)
     trace = []
 
     def run(c, tag):
-        res, _ = backtest(all_obs, VALIDATION_TERM, c, pool)
+        res, _ = backtest(all_obs, validation_term, c, pool)
         trace.append({"tag": tag, "brier": res["brier"], "cov": res["coverage80"], "covFilled": res["coverage80Filled"],
                       "maeFilledCond": res["maeFilledCondCents"], "pairOrder": res["pairOrder"], "shift": round(pit_shift(res["_rows"]), 3)})
         log("  calib", trace[-1])
@@ -778,7 +818,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=default_csv())
     ap.add_argument("--out", required=True)
-    ap.add_argument("--current-term", default="2026-27 Term 2")
+    ap.add_argument("--current-term", default=None, help="default: currentTerm in model/site_window.json")
     ap.add_argument("--reuse-calibration", action="store_true")
     ap.add_argument("--procs", type=int, default=os.cpu_count() or 1)
     a = ap.parse_args(argv)
@@ -787,6 +827,9 @@ def main(argv=None):
     floors = course_floors(rows)
     all_obs = build_obs(rows, floors)
     print(f"{len(rows)} csv rows -> {len(all_obs)} usable observations", flush=True)
+    a.current_term = a.current_term or site_window_term()
+    roles = derive_roles({(o.term, o.window) for o in all_obs}, a.current_term)
+    print(f"current term {a.current_term}; roles {roles}", flush=True)
     calp = os.path.join(a.out, "calibration.json")
     with Pool(a.procs) as pool:
         if a.reuse_calibration and os.path.exists(calp):
@@ -794,14 +837,14 @@ def main(argv=None):
                 blob = json.load(fh)
             cfg = Config(**{**blob["config"], "tau_d": tuple(blob["config"]["tau_d"]), "tau_p": tuple(blob["config"]["tau_p"])})
         else:
-            cfg, info = calibrate(all_obs, pool)
-            blob = {"validationTerm": VALIDATION_TERM, "config": asdict(cfg), "info": info}
+            cfg, info = calibrate(all_obs, pool, roles["validation"])
+            blob = {"validationTerm": roles["validation"], "config": asdict(cfg), "info": info}
             _dump(calp, blob, indent=1)
         cfg = replace(cfg, runs=1500)
         print("config", cfg, flush=True)
-        test, _ = backtest(all_obs, TEST_TERM, cfg, pool)
-        held, _ = backtest(all_obs, HELD_OUT_TERM, cfg, pool)
-        alt, _ = backtest(all_obs, TEST_TERM, replace(cfg, use_slot=not cfg.use_slot), pool)
+        test, _ = backtest(all_obs, roles["test"], cfg, pool)
+        held, _ = backtest(all_obs, roles["heldOut"], cfg, pool)
+        alt, _ = backtest(all_obs, roles["test"], replace(cfg, use_slot=not cfg.use_slot), pool)
     for r in (test, held, alt):
         r.pop("_rows", None)
     b = test["baseline"]
@@ -813,7 +856,7 @@ def main(argv=None):
         "forecasts_ok": ok, "coverageInRange": covered, "beatsBaseline": beats,
         "coverage80": test["coverage80"], "maeCents": test["maeCents"], "pairOrder": test["pairOrder"], "medianAbsErrCents": test["medianAbsErrCents"],
         "samples": test["samples"], "byWindow": test["byWindow"], "calibration": test["calibration"],
-        "baseline": test["baseline"], "term": TEST_TERM, "config": asdict(cfg),
+        "baseline": test["baseline"], "term": roles["test"], "config": asdict(cfg),
         "overall": {k: v for k, v in test.items() if k not in ("byWindow", "calibration")},
         "heldOut": held, "slotAlternative": {"useSlot": not cfg.use_slot, "result": {k: v for k, v in alt.items() if k not in ("byWindow", "calibration")}},
         "calibrationInfo": blob.get("info"),
@@ -821,8 +864,9 @@ def main(argv=None):
     _dump(os.path.join(a.out, "backtest.json"), report, indent=1)
     classes, _ = make_params_json(rows, all_obs, cfg, a.current_term, floors)
     payload = {"forecasts_ok": ok, "term": a.current_term, "windows": WINDOWS, "config": asdict(cfg), "classes": classes}
-    name = "params-2026-27-term-2.json" if ok else "params-2026-27-term-2.rejected.json"
-    for stale in ("params-2026-27-term-2.json", "params-2026-27-term-2.rejected.json"):
+    names = params_names(a.current_term)
+    name = names[0] if ok else names[1]
+    for stale in names:
         if stale != name and os.path.exists(os.path.join(a.out, stale)):
             os.remove(os.path.join(a.out, stale))
     _dump(os.path.join(a.out, name), payload)

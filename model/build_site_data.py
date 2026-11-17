@@ -2,7 +2,7 @@
 """Build the static JSON the site ships from bids_with_schedule.csv.
 
 Writes meta.json, index.json, browse.json (+ browse/<term>.json), courses/<CODE>.json, forecast-meta.json and highlights.json under
-site/src/data/real/. With --params (default: the 2026-27 Term 2 fit, if forecasts_ok) each current
+site/src/data/real/. With --params (default: the current term's fit, if forecasts_ok) each current
 section also carries its per-window forecast parameters, and highlights.json is simulated here.
 Stdlib only. Run from anywhere:  python3 model/build_site_data.py
 To move the "current window" on (e.g. to 1B W1), edit "current" in model/site_window.json.
@@ -46,7 +46,12 @@ DEFAULT_CSV = _default_csv()
 DEFAULT_AVAILABILITY = _default_availability()
 DEFAULT_OUT = ROOT / "site/src/data/real"
 DEFAULT_CONFIG = ROOT / "model/site_window.json"
-DEFAULT_PARAMS = ROOT / "model/forecast/out/params-2026-27-term-2.json"
+FORECAST_OUT = ROOT / "model/forecast/out"
+
+
+def default_params_path(term: str) -> Path:
+    """The refit's accepted params file for a term; same name rule as model.forecast.fit.params_names."""
+    return FORECAST_OUT / f"params-{term.lower().replace(' ', '-')}.json"
 DEFAULT_BACKTEST = ROOT / "model/forecast/out/backtest.json"
 DEFAULT_BACKTEST_CORRECTED = ROOT / "model/forecast/out/backtest-corrected.json"
 DEFAULT_DISTCAL = ROOT / "model/forecast/out/distcal.json"
@@ -1268,8 +1273,9 @@ def main(argv=None) -> int:
     ap.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--window-config", type=Path, default=DEFAULT_CONFIG)
-    ap.add_argument("--params", type=Path, default=DEFAULT_PARAMS,
-                    help="forecast params JSON (skipped if missing or forecasts_ok is false)")
+    ap.add_argument("--params", type=Path, default=None,
+                    help="forecast params JSON (default: the current term's file in model/forecast/out; skipped if missing "
+                         "or forecasts_ok is false)")
     ap.add_argument("--backtest", type=Path, default=DEFAULT_BACKTEST)
     ap.add_argument("--backtest-corrected", type=Path, default=DEFAULT_BACKTEST_CORRECTED,
                     help="backtest of the corrected model (model/forecast/correction.py backtest); the correction needs it")
@@ -1288,6 +1294,7 @@ def main(argv=None) -> int:
     try:
         cfg = load_window_config(args.window_config, args.current_term, _parse_when(args.now) if args.now else None)
         term = cfg["currentTerm"]
+        args.params = args.params or default_params_path(term)
         rows = load_rows(args.csv)
         index, docs = build(rows, term)
         live, seats_summary = load_live_seats(args.availability, term)

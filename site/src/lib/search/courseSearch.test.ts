@@ -62,6 +62,13 @@ describe('rankCourses', () => {
   });
 });
 
+describe('shared nicknames', () => {
+  it('finds every course that shares a nickname', () => {
+    const index: [string, string][] = [['CS206', 'Software Product Management'], ['IS212', 'Software Project Management'], ['IS213', 'Enterprise Solution Development']];
+    expect(rankCourses(index, 'spm', (e) => e).map((e) => e[0])).toEqual(['CS206', 'IS212']);
+  });
+});
+
 describe('isExactCode', () => {
   it('matches the code with or without its prefix only', () => {
     expect(isExactCode('COR-STAT1202', 'stat1202')).toBe(true);

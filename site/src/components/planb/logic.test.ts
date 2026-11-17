@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { affordableRows, avoidSlots, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, capTooLow, blockTabs, resolveTab, tabKeyTarget, withNotes } from './logic';
+import { affordableRows, avoidSlots, budgetLabel, countLabel, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, capTooLow, blockTabs, resolveTab, tabKeyTarget, unmetLast, withNotes } from './logic';
+import type { PlanRow } from './logic';
 import { candidates, clearCandidateCache } from '../../lib/gradreq';
 import type { Candidate, OfferedCourse, Requisites, SectionOption } from '../../lib/gradreq';
 import type { Section } from '../../lib/data/types';
@@ -93,31 +94,56 @@ describe('prerequisites with and without courses marked done', () => {
     { code: 'ACCT301', title: 'Needs a tree', sectionsNow: [section('2')] },
     { code: 'FREE100', title: 'No rule', sectionsNow: [section('3')] },
     { code: 'VAGUE', title: 'Uncertain, no tree', sectionsNow: [section('4')] },
+    { code: 'EXCL100', title: 'Excluded by ACCT101', sectionsNow: [section('5')] },
   ];
   const reqs: Requisites = {
     ACCT201: { prereq: 'ACCT101' },
     ACCT301: { prereq: ['and', ['or', 'A', 'B'], 'C'] },
     VAGUE: { uncertain: true },
+    EXCL100: { antireq: 'ACCT101' },
   };
   const run = (done: string[]) => {
     clearCandidateCache();
     const hasDone = done.length > 0;
     const out = candidates(pseudoBlock(courses), new Map(courses.map((c) => [c.code, c])), done, effectiveRequisites(reqs, hasDone), { window: W, bid: 5000, target: 0.8, runs: 300 });
-    return withNotes(affordableRows(out.candidates, 5000), reqs, hasDone).map((r) => `${r.code}:${r.note ?? ''}`);
+    return unmetLast(withNotes(affordableRows(out.candidates, 5000), reqs, new Set(done))).map((r) => `${r.code}:${r.note ?? ''}`);
   };
 
-  it('with nothing done, hides nothing and tags courses that have prerequisites', () => {
-    expect(run([])).toEqual(['ACCT201:Needs ACCT101', 'ACCT301:Has prerequisites', 'FREE100:', 'VAGUE:'].sort());
+  it('with nothing cleared, hides nothing and tags courses that have prerequisites', () => {
+    expect(run([])).toEqual(['ACCT201:Needs ACCT101', 'ACCT301:Has prerequisites', 'EXCL100:', 'FREE100:', 'VAGUE:'].sort());
   });
-  it('with something done, hides courses whose prerequisite is not met and keeps the rest untagged', () => {
-    expect(run(['OTHER'])).toEqual(['FREE100:', 'VAGUE:']);
-    expect(run(['ACCT101'])).toEqual(['ACCT201:', 'FREE100:', 'VAGUE:']);
+  it('with something cleared, keeps courses with an unmet prerequisite, tagged and after the others', () => {
+    expect(run(['OTHER'])).toEqual(['EXCL100:', 'FREE100:', 'VAGUE:', 'ACCT201:Needs ACCT101', 'ACCT301:Needs (A or B) and C']);
   });
-  it('words the tag for flat and, or lists and gives up on deeper trees', () => {
-    const r: Requisites = { A: { prereq: ['and', 'X', 'Y'] }, B: { prereq: ['or', 'X', 'Y'] }, C: { prereq: ['and', 'W', 'X', 'Y', 'Z'] }, D: { prereq: ['and', ['or', 'X', 'Y'], 'Z'] } };
-    expect(['A', 'B', 'C', 'D', 'NONE'].map((c) => noteFor(c, 'ok', r, false))).toEqual(['Needs X and Y', 'Needs X or Y', 'Has prerequisites', 'Has prerequisites', null]);
-    expect(noteFor('A', 'check', r, true)).toBe('Check prerequisites on BOSS');
-    expect(noteFor('A', 'ok', r, true)).toBeNull();
+  it('drops the tag once the prerequisite is cleared, and still hides a course excluded by a cleared one', () => {
+    expect(run(['ACCT101'])).toEqual(['ACCT201:', 'FREE100:', 'VAGUE:', 'ACCT301:Needs (A or B) and C']);
+  });
+  it('names only the unmet part of a prerequisite', () => {
+    const r: Requisites = {
+      A: { prereq: ['and', 'X', 'Y'] }, B: { prereq: ['or', 'X', 'Y'] }, C: { prereq: ['and', 'X', ['or', 'Y', 'Z']] },
+      D: { prereq: ['and', 'W', 'X', 'Y', 'Z', 'V', 'U', 'T'] }, E: { prereq: ['and', ['or', 'X', 'Y'], 'Z'] },
+    };
+    const note = (c: string, done: string[]) => noteFor(c, r, new Set(done));
+    expect(note('A', ['Q'])).toBe('Needs X and Y');
+    expect(note('A', ['X'])).toBe('Needs Y');
+    expect(note('B', ['Q'])).toBe('Needs X or Y');
+    expect(note('B', ['Y'])).toBeNull();
+    expect(note('C', ['X'])).toBe('Needs Y or Z');
+    expect(note('C', ['Q'])).toBe('Needs X and (Y or Z)');
+    expect(note('E', ['Y'])).toBe('Needs Z');
+    expect(note('D', ['Q'])).toBe('Has prerequisites');
+    const f: Requisites = { F: { prereq: ['or', ['and', 'X', 'Y'], 'Z'] } };
+    expect(noteFor('F', f, new Set(['X']))).toBe('Needs Y or Z');
+  });
+  it('keeps the older wording with nothing cleared and warns on an uncertain rule that is met', () => {
+    const r: Requisites = { A: { prereq: ['and', 'X', 'Y'] }, C: { prereq: ['and', 'W', 'X', 'Y', 'Z'] }, U: { prereq: 'X', uncertain: true } };
+    expect(['A', 'C', 'NONE'].map((c) => noteFor(c, r, new Set()))).toEqual(['Needs X and Y', 'Has prerequisites', null]);
+    expect(noteFor('U', r, new Set(['X']))).toBe('Check prerequisites on BOSS');
+    expect(noteFor('A', r, new Set(['X', 'Y']))).toBeNull();
+  });
+  it('sorts unmet rows last and keeps the order otherwise', () => {
+    const row = (code: string, unmet?: boolean) => ({ code, unmet }) as PlanRow;
+    expect(unmetLast([row('A', true), row('B'), row('C', true), row('D')]).map((r) => r.code)).toEqual(['B', 'D', 'A', 'C']);
   });
 });
 
@@ -191,5 +217,17 @@ describe('avoidSlots', () => {
   it('drops sections meeting in any avoided slot, then courses left with none', () => {
     const out = avoidSlots(courses, ['Mon-08:15']);
     expect(out.map((c) => [c.code, c.sectionsNow.map((s) => s.id)])).toEqual([['A', ['A2']], ['C', ['C1']]]);
+  });
+});
+
+describe('filter button labels', () => {
+  it('shows the count only when something is set', () => {
+    expect(countLabel('Cleared', 0)).toBe('Cleared');
+    expect(countLabel('Majors', 2)).toBe('Majors (2)');
+  });
+  it('shows the budget in e$, or just the name when it does not parse', () => {
+    expect(budgetLabel(null)).toBe('Budget');
+    expect(budgetLabel(2000)).toBe('Budget e$20');
+    expect(budgetLabel(4250)).toBe('Budget e$42.50');
   });
 });

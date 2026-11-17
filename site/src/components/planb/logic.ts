@@ -13,6 +13,11 @@ export const moneyText = (cents: number): string => (cents % 100 === 0 ? String(
 /** "e$40", "e$40.5". */
 export const eText = (cents: number): string => `e$${moneyText(cents)}`;
 
+/** Filter-bar button text: the name, with the count when something is set ("Cleared (4)"). */
+export const countLabel = (name: string, n: number): string => (n > 0 ? `${name} (${n})` : name);
+/** Budget button text: "Budget e$20" once an amount parses, otherwise just "Budget". */
+export const budgetLabel = (cents: number | null): string => (cents === null ? 'Budget' : `Budget ${eText(cents)}`);
+
 /** BOSS minimum bid, in cents: e$ left below this can't buy any section. */
 export const MIN_BID_CENTS = 1000;
 
@@ -29,6 +34,8 @@ export interface PlanRow {
   section: SectionOption;
   /** One small line under the row about prerequisites (see `noteFor`), or null. */
   note?: string | null;
+  /** The cleared courses leave a prerequisite unmet: the row stays, tagged, and sorts after the others. */
+  unmet?: boolean;
 }
 
 /** Cheapest bid first; more seats first on a tie; then code and section so the order never shuffles. */
@@ -125,10 +132,52 @@ export const chunk = <T>(xs: readonly T[], n: number): T[][] => {
 };
 
 /**
- * The requisite rules to filter by. With no course marked done every course with a prerequisite would count as blocked,
- * so nothing is hidden then (the rows carry a tag instead); once something is done, unmet prerequisites hide courses.
+ * The requisite rules that hide a course. With no course marked cleared nothing is hidden (rows carry a tag instead).
+ * Once something is cleared, only exclusions hide courses (an antirequisite that is met); an unmet prerequisite
+ * no longer hides a course, it becomes a "Needs ..." tag (see `noteFor`).
  */
-export const effectiveRequisites = (reqs: Requisites, hasDone: boolean): Requisites => (hasDone ? reqs : {});
+export const effectiveRequisites = (reqs: Requisites, hasDone: boolean): Requisites => {
+  if (!hasDone) return {};
+  const out: Requisites = {};
+  for (const [code, r] of Object.entries(reqs)) if (r.antireq !== undefined) out[code] = { antireq: r.antireq };
+  return out;
+};
+
+/** The part of a requisite tree the cleared courses do not meet; null when it is met. An "or" with any met branch is met. */
+export function unmetTree(t: ReqTree, done: ReadonlySet<string>): ReqTree | null {
+  if (typeof t === 'string') return done.has(t) ? null : t;
+  const [op, ...rest] = t;
+  if (op === 'and') {
+    const unmet = rest.map((x) => unmetTree(x, done)).filter((x): x is ReqTree => x !== null);
+    return unmet.length === 0 ? null : unmet.length === 1 ? unmet[0] : ['and', ...unmet];
+  }
+  if (op === 'or') {
+    const unmet = rest.map((x) => unmetTree(x, done));
+    if (unmet.some((x) => x === null)) return null;
+    return unmet.length === 1 ? (unmet[0] as ReqTree) : ['or', ...(unmet as ReqTree[])];
+  }
+  return t;
+}
+
+const MAX_TAG_CODES = 6;
+const leafCount = (t: ReqTree): number => (typeof t === 'string' ? 1 : t.slice(1).reduce((n, x) => n + leafCount(x), 0));
+
+/** "A", "A and B", "A or (B and C)": nested lists of the other kind get brackets. */
+function treeText(t: ReqTree, inside?: string): string {
+  if (typeof t === 'string') return t;
+  const [op, ...rest] = t as [string, ...ReqTree[]];
+  const text = rest.map((x) => treeText(x, op)).join(` ${op} `);
+  return inside && inside !== op ? `(${text})` : text;
+}
+
+/** "Needs IS111 and IS112" for the unmet part of a prerequisite; "Has prerequisites" when that is too long to list. */
+const needsText = (t: ReqTree): string => (leafCount(t) <= MAX_TAG_CODES ? `Needs ${treeText(t)}` : 'Has prerequisites');
+
+/** The unmet prerequisite of a course given the cleared courses (null with nothing cleared, no rule, or a met rule). */
+export function unmetPrereq(code: string, reqs: Requisites, done: ReadonlySet<string>): ReqTree | null {
+  const prereq = reqs[code]?.prereq;
+  return done.size === 0 || prereq === undefined ? null : unmetTree(prereq, done);
+}
 
 /** "A", "A and B", "A or B" for a flat tree of up to 3 course codes; null for anything more involved. */
 function simpleTree(t: ReqTree | undefined): string | null {
@@ -140,21 +189,28 @@ function simpleTree(t: ReqTree | undefined): string | null {
 }
 
 /**
- * The line under a row. With nothing marked done: "Needs ACCT101" for a simple prerequisite, "Has prerequisites" otherwise
- * (a rule that is only flagged uncertain, with no parsed tree, says nothing). With something done, the courses that are
- * still shown are met on paper, so only the uncertain-parse warning remains.
+ * The line under a row. With nothing cleared: "Needs ACCT101" for a simple prerequisite, "Has prerequisites" otherwise
+ * (a rule that is only flagged uncertain, with no parsed tree, says nothing). With something cleared: "Needs ..." naming
+ * only the unmet part of the prerequisite; if it is met, a warning when the parse is flagged uncertain.
  */
-export function noteFor(code: string, eligibility: 'ok' | 'check', reqs: Requisites, hasDone: boolean): string | null {
-  if (hasDone) return eligibility === 'check' ? 'Check prerequisites on BOSS' : null;
-  const prereq = reqs[code]?.prereq;
-  if (prereq === undefined) return null;
-  const simple = simpleTree(prereq);
-  return simple ? `Needs ${simple}` : 'Has prerequisites';
+export function noteFor(code: string, reqs: Requisites, done: ReadonlySet<string>): string | null {
+  const r = reqs[code];
+  if (done.size === 0) {
+    if (r?.prereq === undefined) return null;
+    const simple = simpleTree(r.prereq);
+    return simple ? `Needs ${simple}` : 'Has prerequisites';
+  }
+  const unmet = unmetPrereq(code, reqs, done);
+  if (unmet !== null) return needsText(unmet);
+  return r?.uncertain && (r.prereq !== undefined || r.antireq !== undefined) ? 'Check prerequisites on BOSS' : null;
 }
 
-export function withNotes(rows: readonly PlanRow[], reqs: Requisites, hasDone: boolean): PlanRow[] {
-  return rows.map((r) => ({ ...r, note: noteFor(r.code, r.eligibility, reqs, hasDone) }));
+export function withNotes(rows: readonly PlanRow[], reqs: Requisites, done: ReadonlySet<string>): PlanRow[] {
+  return rows.map((r) => ({ ...r, note: noteFor(r.code, reqs, done), unmet: unmetPrereq(r.code, reqs, done) !== null }));
 }
+
+/** Rows with an unmet prerequisite after the others, each group keeping its order. */
+export const unmetLast = (rows: readonly PlanRow[]): PlanRow[] => [...rows.filter((r) => !r.unmet), ...rows.filter((r) => r.unmet)];
 
 export interface BlockRows { key: string; rows: PlanRow[] }
 export interface DedupedRows { rows: PlanRow[]; /** Courses of this block that are already listed in an earlier block. */ also: string[] }

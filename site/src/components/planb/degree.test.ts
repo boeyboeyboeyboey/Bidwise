@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { groupBlocks, isTrackBlock, leftText, parseSaved, secondOptions, splitSecond, toSelection } from './degree';
+import { degreeLabel, groupBlocks, isTrackBlock, leftText, parseSaved, secondOptions, splitSecond, toSelection } from './degree';
 import { group, loaded, view } from '../../lib/gradreq/fixtures';
 import type { Block, GradIndex } from '../../lib/gradreq';
 
@@ -92,5 +92,15 @@ describe('sibling names from the real id shape', () => {
     expect(secondOptions(idx, 'd', INTAKE).map((o) => o.label)).toEqual([
       'Social Science: Global Asia', 'Social Science: Global Asia (SMT)', 'Social Science: XYZ', 'Social Science: XYZ (SMT)',
     ]);
+  });
+});
+
+describe('degreeLabel', () => {
+  it('drops a trailing SkillsFuture Work-Study Degree, whatever its case', () => {
+    expect(degreeLabel('Bachelor of Science (Software Engineering) SkillsFuture Work-Study Degree')).toBe('Bachelor of Science (Software Engineering)');
+    expect(degreeLabel('Bachelor of Science (Software Engineering) skillsfuture work-study degree ')).toBe('Bachelor of Science (Software Engineering)');
+  });
+  it('leaves any other name unchanged', () => {
+    expect(degreeLabel('Bachelor of Science (Information Systems)')).toBe('Bachelor of Science (Information Systems)');
   });
 });

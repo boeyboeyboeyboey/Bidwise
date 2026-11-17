@@ -13,14 +13,14 @@
   import { startTimesOf } from '../planner/plan';
   import { DAYS } from '../planner/types';
   import {
-    LEGACY_STORE_KEY, STORE_KEY, groupBlocks, intakesFor, isTrackBlock, leftText as blockLeftText, majorOptions, parseSaved, secondOptions,
+    LEGACY_STORE_KEY, STORE_KEY, degreeLabel, groupBlocks, intakesFor, isTrackBlock, leftText as blockLeftText, majorOptions, parseSaved, secondOptions,
     toSelection, trackOptions,
   } from './degree';
   import { DEFAULT_TARGET, fromCurrent } from '../../lib/sim/forecast';
   import { styleName } from '../../lib/sim/presets';
   import {
     ALL_TAB, MIN_BID_CENTS, OTHER_TAB, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
-    avoidSlots, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, withNotes,
+    avoidSlots, budgetLabel, countLabel, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, unmetLast, withNotes,
     type PlanRow,
   } from './logic';
 
@@ -105,10 +105,35 @@
   const showMajor = $derived(!!degreeObj?.majors?.length && (!intake || majors.length > 0));
   const showTrack = $derived(!!degreeObj && (!intake ? hasTracks : tracks.length > 0));
   const showMajors = $derived(!!index && (showMajor || showTrack || showSecond));
-  // Step numbers: the optional majors step is left out for degrees with no majors, tracks or second majors.
-  const stepDone = $derived(showMajors ? 3 : 2);
-  const stepBudget = $derived(stepDone + 1);
   const showSecond = $derived(!degreeObj || (!!degreeObj.secondMajors?.length && (!intake || seconds.length > 0)));
+
+  const degreeSet = $derived(!!(school && degree && intake));
+  /** Change mode: the three selects stay open until Done, so picking in them never folds the block mid-edit. */
+  let editing = $state(false);
+  const folded = $derived(degreeSet && !editing && !!degreeObj);
+  const summary = $derived([degreeObj ? degreeLabel(degreeObj.name) : '', school, intake].filter(Boolean).join(' · '));
+
+  // Filter bar: one panel open at a time, directly under the bar.
+  type PanelId = 'majors' | 'done' | 'budget' | 'times';
+  let openPanel = $state<PanelId | null>(null);
+  const btnEls: Partial<Record<PanelId, HTMLButtonElement | null>> = {};
+  let filtersEl = $state<HTMLElement | null>(null);
+  /** Opening a panel puts focus on its first control (the first enabled select, the search or e$ input, or the first time slot). */
+  async function togglePanel(id: PanelId) {
+    openPanel = openPanel === id ? null : id;
+    if (openPanel !== id) return;
+    await tick();
+    filtersEl?.querySelector<HTMLElement>(`#pb-p-${id} select:not(:disabled), #pb-p-${id} input, #pb-p-${id} .slot`)?.focus();
+  }
+  /** Escape closes the open panel wherever focus is in the filter bar or the panel, and returns focus to the panel's button. */
+  function onFiltersKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !openPanel) return;
+    e.stopPropagation();
+    const id = openPanel;
+    openPanel = null;
+    btnEls[id]?.focus();
+  }
+  const majorsCount = $derived([major, track, second].filter(Boolean).length);
 
   /** Clears any later field whose value is no longer offered, so the chain never holds a stale pick. */
   function reconcile() {
@@ -170,7 +195,7 @@
       },
     );
   });
-  const viewLabel = (id: string) => loaded?.views.find((v) => v.view.id === id)?.view.label ?? '';
+  const viewLabel = (id: string) => degreeLabel(loaded?.views.find((v) => v.view.id === id)?.view.label ?? '');
 
   // ------------------------------------------------------------ courses already done
   const poolCourses = $derived.by(() => {
@@ -197,6 +222,22 @@
   }
   const removeDone = (code: string) => (completed = completed.filter((c) => c !== code));
 
+  /** The course just marked cleared from a result row: its status line offers Undo. Only the latest one. */
+  let lastCleared = $state<string | null>(null);
+  let undoEl = $state<HTMLButtonElement | null>(null);
+  async function markCleared(code: string) {
+    addDone(code);
+    lastCleared = code;
+    await tick();
+    undoEl?.focus({ preventScroll: true });
+  }
+  async function undoCleared(code: string) {
+    removeDone(code);
+    lastCleared = null;
+    await tick();
+    btnEls.done?.focus({ preventScroll: true });
+  }
+
   // ------------------------------------------------------------ sections to price
   let offered = $state.raw<OfferedCourse[] | null>(null);
   let offeredFailed = $state(false);
@@ -222,6 +263,8 @@
   let allRows = $state.raw<PlanRow[] | null>(null);
   let blockRows = $state.raw<Record<string, PlanRow[]>>({});
   let progress = $state(0);
+  let resultsEl = $state<HTMLElement | null>(null);
+  let heldHeight = $state(0);
   let priceFailed = $state(false);
   let runTok = 0;
   const keyOf = (b: Pick<Block, 'viewId' | 'id'>) => `${b.viewId}\u0000${b.id}`;
@@ -237,8 +280,9 @@
       if (tok === runTok) priceFailed = true;
       return;
     }
-    // Nothing marked done: hide nothing for prerequisites (rows carry a tag instead). Otherwise unmet ones are hidden.
+    // Nothing cleared: hide nothing (rows may carry a tag). Otherwise only exclusions hide courses; unmet prerequisites tag the row and sort it last.
     const hasDone = done.length > 0;
+    const doneSet = new Set(done);
     const reqs = effectiveRequisites(allReqs, hasDone);
     const liveW = liveWindow();
     const curWindow = liveW ? `Round ${liveW.round} Window ${liveW.window}` : builtWindow;
@@ -258,11 +302,11 @@
       await yieldToUi();
     }
     if (tok !== runTok) return;
-    const rows = withNotes(affordableRows(cands, budget), allReqs, hasDone);
+    const rows = unmetLast(withNotes(affordableRows(cands, budget), allReqs, doneSet));
     const perBlock: Record<string, PlanRow[]> = {};
     for (const b of blocks) {
       if (tok !== runTok) return;
-      perBlock[keyOf(b)] = withNotes(affordableRows(candidates(b, byCode, done, reqs, opts).candidates, budget), allReqs, hasDone);
+      perBlock[keyOf(b)] = unmetLast(withNotes(affordableRows(candidates(b, byCode, done, reqs, opts).candidates, budget), allReqs, doneSet));
       await yieldToUi();
     }
     if (tok !== runTok) return;
@@ -281,6 +325,10 @@
     const avoided = [...activeAvoid];
     const waiting = degreeActive && !loaded;
     const tok = ++runTok;
+    // Re-pricing empties the list for a moment; holding its last height keeps the scroll position (cleared only once priced again).
+    untrack(() => {
+      if (allRows) heldHeight = resultsEl?.offsetHeight ?? 0;
+    });
     priceFailed = false;
     allRows = null;
     blockRows = {};
@@ -306,7 +354,7 @@
       ? `No open sections at ${atText}.`
       : `Nothing fits ${eText(leftCents)} at ${atText}.`,
   );
-  const noneAdvice = $derived((noFinal ? ' Try unticking the final exam filter.' : '') + (activeAvoid.length ? ' Try freeing up some times.' : ''));
+  const noneAdvice = $derived((noFinal ? ' Try turning off No final exam.' : '') + (activeAvoid.length ? ' Try freeing up some times.' : ''));
 
   // Requirement tabs: only with a degree. A block tab lists every section of that block (no dedupe), cheapest first.
   const tabBlocks = $derived(groups.flatMap((g) => g.blocks.map((b) => ({ b, heading: g.label }))).filter((x) => listBlocks.includes(x.b)));
@@ -332,6 +380,14 @@
   const noQuantityTrack = (b: Block) => (loaded ? isTrackBlock(b, loaded.views) : false);
 </script>
 
+{#snippet candRow(r: PlanRow)}
+  <li class="cand">
+    <SectionRow row={r} bidLabel={bidLabel} />
+    {#if r.note}<small class="tag">{r.note}</small>{/if}
+    <button type="button" class="btn clr" onclick={() => markCleared(r.code)}>I've cleared this<span class="sr"> ({r.code})</span></button>
+  </li>
+{/snippet}
+
 {#snippet blockHead(b: Block)}
   <div class="bh"><h4>{b.name}</h4>{#if blockLeftText(b)}<span class="num left">{blockLeftText(b)}</span>{/if}</div>
   {#if noQuantityTrack(b)}<p class="small">All from one track</p>{/if}
@@ -342,13 +398,23 @@
   {/if}
 {/snippet}
 
+{#snippet fbtn(id: PanelId, label: string, on: boolean, bad: boolean = false)}
+  <button type="button" class="btn fbtn" class:on class:bad id={`pb-f-${id}`} aria-expanded={openPanel === id} aria-controls={`pb-p-${id}`} bind:this={btnEls[id]}
+    onclick={() => togglePanel(id)}>{label}</button>
+{/snippet}
+
 <div class="wrap">
   <section class="step" aria-labelledby="pb-degree">
-    <h2 id="pb-degree">1. Your degree</h2>
+    <h2 id="pb-degree" class:sr={folded}>Your degree</h2>
     {#if indexFailed}
       <p class="note">Could not load the programme list. Reload the page to try again.</p>
     {:else if !index}
       <p class="note">Loading…</p>
+    {:else if folded}
+      <div class="sum">
+        <p class="sum-text">{summary}</p>
+        <button type="button" class="btn" onclick={() => (editing = true)}>Change</button>
+      </div>
     {:else}
       <div class="fields">
         <label>School
@@ -360,7 +426,7 @@
         <label>Degree
           <select class="field" value={degree} disabled={!school} onchange={(e) => set('degree', e.currentTarget.value)}>
             <option value="">Select</option>
-            {#each degrees as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
+            {#each degrees as d (d.id)}<option value={d.id}>{degreeLabel(d.name)}</option>{/each}
           </select>
         </label>
         <label>Intake year
@@ -370,101 +436,113 @@
           </select>
         </label>
       </div>
-      {#if !shown}<p class="note">Pick your school, degree and intake year to see courses.</p>{/if}
+      {#if editing}<div><button type="button" class="btn" disabled={!degreeSet} onclick={() => (editing = false)}>Done</button></div>{/if}
+      {#if !shown}<p class="note">Pick your degree to see open courses that still count toward it.</p>{/if}
     {/if}
   </section>
 
-  {#if showMajors}
-    <section class="step" aria-labelledby="pb-majors">
-      <h2 id="pb-majors">2. Majors (optional)</h2>
-      <div class="fields">
-        {#if showMajor}
-          <label>Major
-            <select class="field" value={major} disabled={!canPick} onchange={(e) => set('major', e.currentTarget.value)}>
-              <option value="">None</option>
-              {#each majors as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
-            </select>
-          </label>
-        {/if}
-        {#if showTrack}
-          <label>Track
-            <select class="field" value={track} disabled={!canPick} onchange={(e) => set('track', e.currentTarget.value)}>
-              <option value="">None</option>
-              {#each tracks as t (t.value)}<option value={t.value}>{t.label}</option>{/each}
-            </select>
-          </label>
-        {/if}
-        {#if showSecond}
-          <label>Second major
-            <select class="field" value={second} disabled={!canPick} onchange={(e) => set('second', e.currentTarget.value)}>
-              <option value="">None</option>
-              {#each seconds as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
-            </select>
-          </label>
-        {/if}
+  {#if shown}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="filters" bind:this={filtersEl} onkeydown={onFiltersKey}>
+      <div class="fbar">
+        {#if showMajors}{@render fbtn('majors', countLabel('Majors', majorsCount), majorsCount > 0)}{/if}
+        {@render fbtn('done', countLabel('Cleared', completed.length), completed.length > 0)}
+        {@render fbtn('budget', budgetLabel(leftCents), !leftBlank && !error, error !== null)}
+        {#if startTimes.length}{@render fbtn('times', countLabel('Times', activeAvoid.length), activeAvoid.length > 0)}{/if}
+        <button type="button" class="btn fbtn" class:on={noFinal} aria-pressed={noFinal} onclick={() => (noFinal = !noFinal)}>No final exam</button>
       </div>
-    </section>
-  {/if}
 
-  <section class="step done-box" aria-labelledby="pb-done">
-    <h2 id="pb-done">{stepDone}. Courses already done (optional)</h2>
-    <label class="sr" for="done-q">Search courses already done</label>
-    <div class="pickbox">
-      <input id="done-q" class="field" type="search" placeholder="Code, title or nickname" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={q}
-        onkeydown={(e) => e.key === 'Enter' && matches[0] && addDone(matches[0][0])} />
-      {#if matches.length}
-        <ul class="matches">
-          {#if matchSet.close}<li class="hint">No exact match. Close matches:</li>{/if}
-          {#each matches as [code, title] (code)}
-            <li><button type="button" onclick={() => addDone(code)}><b>{code}</b> <span>{title}</span></button></li>
-          {/each}
-        </ul>
+      {#if openPanel === 'majors' && showMajors}
+        <div class="fpanel" id="pb-p-majors" role="group" aria-label="Majors">
+          <div class="fields">
+            {#if showMajor}
+              <label>Major
+                <select class="field" value={major} disabled={!canPick} onchange={(e) => set('major', e.currentTarget.value)}>
+                  <option value="">None</option>
+                  {#each majors as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
+                </select>
+              </label>
+            {/if}
+            {#if showTrack}
+              <label>Track
+                <select class="field" value={track} disabled={!canPick} onchange={(e) => set('track', e.currentTarget.value)}>
+                  <option value="">None</option>
+                  {#each tracks as t (t.value)}<option value={t.value}>{t.label}</option>{/each}
+                </select>
+              </label>
+            {/if}
+            {#if showSecond}
+              <label>Second major
+                <select class="field" value={second} disabled={!canPick} onchange={(e) => set('second', e.currentTarget.value)}>
+                  <option value="">None</option>
+                  {#each seconds as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
+                </select>
+              </label>
+            {/if}
+          </div>
+        </div>
+      {:else if openPanel === 'done'}
+        <div class="fpanel" id="pb-p-done" role="group" aria-label="Courses I've already cleared">
+          <label class="sr" for="done-q">Search courses I've already cleared</label>
+          <div class="pickbox">
+            <input id="done-q" class="field" type="search" placeholder="Code, title or nickname" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={q}
+              onkeydown={(e) => e.key === 'Enter' && matches[0] && addDone(matches[0][0])} />
+            {#if matches.length}
+              <ul class="matches">
+                {#if matchSet.close}<li class="hint">No exact match. Close matches:</li>{/if}
+                {#each matches as [code, title] (code)}
+                  <li><button type="button" onclick={() => addDone(code)}><b>{code}</b> <span>{title}</span></button></li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          {#if completed.length}
+            <ul class="picks">
+              {#each completed as code (code)}
+                <li><button type="button" class="pick-chip" onclick={() => removeDone(code)} aria-label={`Remove ${code}`}>{code}<span aria-hidden="true">×</span></button></li>
+              {/each}
+            </ul>
+          {/if}
+          <p class="small">Saved on this device only.</p>
+        </div>
+      {:else if openPanel === 'budget'}
+        <div class="fpanel" id="pb-p-budget" role="group" aria-label="Budget">
+          <div class="inputs">
+            <label>e$ left
+              <input class="field num" type="text" inputmode="decimal" autocomplete="off" aria-invalid={leftBad || tooLittle} aria-describedby={error ? 'pb-err' : undefined} placeholder="e.g. 60"
+                value={leftText} oninput={(e) => (leftText = e.currentTarget.value)} />
+            </label>
+          </div>
+        </div>
+      {:else if openPanel === 'times' && startTimes.length}
+        <div class="fpanel" id="pb-p-times" role="group" aria-label="Times I can't make it">
+          <div class="avoid">
+            <span></span>
+            {#each DAYS as d (d)}<span class="avh">{d}</span>{/each}
+            {#each startTimes as t (t)}
+              <span class="avh num">{t}</span>
+              {#each DAYS as d (d)}
+                {@const slot = `${d}-${t}`}
+                <button type="button" class="slot" class:on={avoid.includes(slot)} aria-pressed={avoid.includes(slot)} aria-label="Can't make {d} {t}" onclick={() => toggleSlot(slot)}
+                ><span aria-hidden="true">{avoid.includes(slot) ? '×' : ''}</span></button>
+              {/each}
+            {/each}
+          </div>
+        </div>
       {/if}
-    </div>
-    {#if completed.length}
-      <ul class="picks">
-        {#each completed as code (code)}
-          <li><button type="button" class="pick-chip" onclick={() => removeDone(code)} aria-label={`Remove ${code}`}>{code}<span aria-hidden="true">×</span></button></li>
-        {/each}
-      </ul>
-    {/if}
-    <p class="small">Saved on this device only.</p>
-  </section>
-
-  <section class="step" aria-labelledby="pb-budget">
-    <h2 id="pb-budget">{stepBudget}. Budget (optional)</h2>
-    <div class="inputs">
-      <label>e$ left
-        <input class="field num" type="text" inputmode="decimal" autocomplete="off" aria-invalid={leftBad || tooLittle} aria-describedby={error ? 'pb-err' : undefined} placeholder="e.g. 60"
-          value={leftText} oninput={(e) => (leftText = e.currentTarget.value)} />
-      </label>
-    </div>
-    {#if error}<p id="pb-err" class="small err" role="alert">{error}</p>{/if}
-  </section>
-
-  {#if startTimes.length}
-    <section class="step" aria-labelledby="pb-times">
-      <h2 id="pb-times">{stepBudget + 1}. Times I can't make it (optional)</h2>
-      <div class="avoid" role="group" aria-labelledby="pb-times">
-        <span></span>
-        {#each DAYS as d (d)}<span class="avh">{d}</span>{/each}
-        {#each startTimes as t (t)}
-          <span class="avh num">{t}</span>
-          {#each DAYS as d (d)}
-            {@const slot = `${d}-${t}`}
-            <button type="button" class="slot" class:on={avoid.includes(slot)} aria-pressed={avoid.includes(slot)} aria-label="Can't make {d} {t}" onclick={() => toggleSlot(slot)}
-            ><span aria-hidden="true">{avoid.includes(slot) ? '×' : ''}</span></button>
-          {/each}
-        {/each}
+      {#if error}<p id="pb-err" class="small err" role="alert">{error}</p>{/if}
+      <div class="undo" role="status">
+        {#if lastCleared && completed.includes(lastCleared)}
+          <span>Cleared {lastCleared}.</span>
+          <button type="button" class="undo-btn" bind:this={undoEl} onclick={() => undoCleared(lastCleared as string)}>Undo</button>
+        {/if}
       </div>
-    </section>
+    </div>
   {/if}
-
 
   <!-- ------------------------------------------------------------ results -->
   {#if shown && error === null}
-    <div class="results" class:pending={!allRows || (degreeActive && !derived)}>
-      <label class="chk"><input type="checkbox" checked={noFinal} onchange={() => (noFinal = !noFinal)} /><span>No final exam listed</span></label>
+    <div class="results" bind:this={resultsEl} style:min-height={!allRows && heldHeight ? `${heldHeight}px` : undefined}>
       {#if offeredFailed || viewsFailed || priceFailed}
         <p class="note">Could not load the data. Reload the page to try again.</p>
       {:else if !allRows || (degreeActive && !derived)}
@@ -472,14 +550,12 @@
       {:else if allRows.length === 0}
         <p class="note">{noneText}{noneAdvice}</p>
       {:else}
-        {#if completed.length === 0}<p class="small">Add courses you've done to hide ones you can't take yet.</p>{/if}
-
         {#if !derived}
           <section class="grp-list">
             <h3>Courses you can afford</h3>
             <ul class="cands">
               {#each expanded.all ? allRows : allRows.slice(0, TOP_LIST) as r (r.section.classNumber)}
-                <li><SectionRow row={r} bidLabel={bidLabel} /></li>
+                {@render candRow(r)}
               {/each}
             </ul>
             {#if allRows.length > TOP_LIST}
@@ -526,7 +602,7 @@
                         {#if rows.length > 0}
                           <ul class="cands">
                             {#each expanded[k] ? rows : rows.slice(0, TOP_PER_BLOCK) as r (r.section.classNumber)}
-                              <li><SectionRow row={r} bidLabel={bidLabel} /></li>
+                              {@render candRow(r)}
                             {/each}
                           </ul>
                           {#if rows.length > TOP_PER_BLOCK}
@@ -545,7 +621,7 @@
                   <h3>Other courses (free electives)</h3>
                   <ul class="cands">
                     {#each expanded.other ? otherList : otherList.slice(0, TOP_LIST) as r (r.section.classNumber)}
-                      <li><SectionRow row={r} bidLabel={bidLabel} /></li>
+                      {@render candRow(r)}
                     {/each}
                   </ul>
                   {#if otherList.length > TOP_LIST}
@@ -571,7 +647,7 @@
             {:else if tab === OTHER_TAB}
               <ul class="cands">
                 {#each otherList as r (r.section.classNumber)}
-                  <li><SectionRow row={r} bidLabel={bidLabel} /></li>
+                  {@render candRow(r)}
                 {/each}
               </ul>
             {:else if tabBlock}
@@ -583,7 +659,7 @@
                 {:else}
                   <ul class="cands">
                     {#each rows as r (r.section.classNumber)}
-                      <li><SectionRow row={r} bidLabel={bidLabel} /></li>
+                      {@render candRow(r)}
                     {/each}
                   </ul>
                 {/if}
@@ -603,16 +679,7 @@
   .step { display: grid; gap: var(--s3); min-width: 0; }
   .step h2 { font-size: var(--fs-lg); font-weight: 600; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .results { display: grid; gap: var(--s4); min-width: 0; }
-  /* While pricing, keep the results area tall so the page doesn't jump as they re-price. */
-  .results.pending { min-height: 80vh; align-content: start; }
-  .chk {
-    display: flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 var(--s3); font-size: var(--fs-sm); cursor: pointer; justify-self: start; max-width: 100%;
-    background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-md);
-  }
-  .chk:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-  .chk:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-  .chk input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+  .results { display: grid; align-content: start; gap: var(--s4); min-width: 0; }
   .panel { display: grid; gap: var(--s4); min-width: 0; }
   .tabs { display: flex; gap: var(--s1); overflow-x: auto; overscroll-behavior-x: contain; border-bottom: 1px solid var(--rule); min-width: 0; }
   .tabs > button { flex: none; min-height: 44px; padding: 0 var(--s3); white-space: nowrap; font: inherit; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer; }
@@ -624,6 +691,15 @@
   .err { color: var(--danger); }
   .foot { padding-top: var(--s2); border-top: 1px solid var(--rule); }
   label { display: grid; gap: var(--s1); font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
+
+  .sum { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); }
+  .sum-text { margin: 0; font-size: var(--fs-md); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .filters { display: grid; gap: var(--s3); min-width: 0; }
+  .fbar { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .fbtn.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+  .fbtn.bad { color: var(--danger); border-color: var(--danger); }
+  .fbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .fpanel { display: grid; gap: var(--s3); min-width: 0; padding: var(--s3); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md); }
 
   .inputs { display: grid; gap: var(--s3); grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 560px) { .inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -654,7 +730,7 @@
   .warn.risk { border-left-color: var(--danger); }
   .grp-list { display: grid; gap: var(--s4); }
   h3 { font-size: var(--fs-md); font-weight: 600; padding-top: var(--s3); border-top: 1px solid var(--rule); }
-  h3.view { font-size: var(--fs-lg); font-weight: 600; padding-top: var(--s4); border-top: 2px solid var(--rule-strong); }
+  h3.view { font-size: var(--fs-lg); font-weight: 600; padding-top: var(--s4); }
   h3.sub { font-size: var(--fs-sm); }
   .block { display: grid; gap: var(--s2); min-width: 0; }
   /* Requirement (basket) header: a tinted band so it reads as a heading, not another row */
@@ -663,7 +739,28 @@
   .left { margin-left: auto; font-size: var(--fs-sm); color: var(--text); }
   .plain { display: grid; gap: var(--s1); font-size: var(--fs-sm); }
   .cands { display: block; }
-  .cands > li:first-child :global(.row-link) { border-top: 1px solid var(--rule); }
+  .cands > li:first-child { border-top: 1px solid var(--rule); }
+  /* The rule moves from the link to the row, so the button sits above it. Phone: button under the link; wider: at the right end. */
+  .cand { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--rule); }
+  .cand :global(.row-link) { border-bottom: 0; margin-right: 0; }
+  .tag { grid-column: 1; margin: calc(var(--s2) * -1) 0 var(--s3); font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
+  .clr { justify-self: start; margin-bottom: var(--s3); padding: 0 var(--s3); font-size: var(--fs-xs); font-weight: 400; }
+  @media (min-width: 640px) {
+    .cand { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); }
+    .clr { grid-column: 2; grid-row: 1 / span 2; margin-bottom: 0; }
+  }
+  /* A bar fixed at the bottom left, level with the help button's baseline and clear of it, so marking a course never moves the list. Empty: no box, still in the accessibility tree. */
+  .undo {
+    position: fixed; z-index: 12; width: fit-content;
+    left: max(var(--gutter), calc((100vw - 1000px) / 2));
+    bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 2 * var(--gutter) - 44px - var(--s2));
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s3); padding: 0 var(--s3); font-size: var(--fs-sm);
+    background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md);
+  }
+  .undo:empty { padding: 0; border: 0; }
+  .undo-btn { min-height: 44px; padding: 0 var(--s2); font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; text-decoration: underline; cursor: pointer; }
+  .undo-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .more { justify-self: start; }
   summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: var(--fs-sm); font-weight: 600; }
   details ul { margin-top: var(--s1); }

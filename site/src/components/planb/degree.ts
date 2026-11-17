@@ -6,6 +6,9 @@ import type { Block, GradIndex, IndexDegree, IndexTrack, Intake, LoadedView, Sel
 
 export interface Option { value: string; label: string }
 
+/** A degree's name as shown: without the trailing "SkillsFuture Work-Study Degree". Display only; ids and data are untouched. */
+export const degreeLabel = (name: string): string => name.replace(/\s*SkillsFuture Work-Study Degree\s*$/i, '').trim();
+
 export const STORE_KEY = 'bidwise.planb';
 /** The key the earlier home-page panel used; read once if the new one is empty, so a saved degree carries over. */
 export const LEGACY_STORE_KEY = 'bidwise.take';

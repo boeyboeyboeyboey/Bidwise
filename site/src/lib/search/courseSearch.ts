@@ -16,6 +16,11 @@ const ALIASES_BY_CODE = new Map(
   Object.entries(COURSE_ALIASES).map(([code, names]) => [code, [...new Set(names.map(flatText).filter(Boolean))]]),
 );
 
+/** Nicknames of a course as written, for display (e.g. a suggestion label); empty when it has none. */
+export function nicknamesOf(code: string): readonly string[] {
+  return COURSE_ALIASES[code] ?? [];
+}
+
 /** Nicknames of a course, flattened (empty when it has none). */
 export function aliasesOf(code: string): string[] {
   return ALIASES_BY_CODE.get(code) ?? [];

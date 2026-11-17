@@ -4,6 +4,7 @@
   import { candidates, deriveBlocks, findDegree, pickViews, withoutCoveredDegree } from '../../lib/gradreq';
   import type { Block, GradIndex, GradView, LoadedView, OfferedCourse, Requisites } from '../../lib/gradreq';
   import { fetchIndex } from '../../lib/data/client';
+  import { flatText, rankCourses } from '../../lib/search/courseSearch';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { liveWindow } from '../../lib/data/window';
   import { getChosenWindow } from '../../lib/state';
@@ -178,19 +179,15 @@
     return m;
   });
   let q = $state('');
-  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '');
   const matches = $derived.by(() => {
-    const s = q.trim().toLowerCase();
-    const f = norm(s);
-    if (!f) return [];
+    if (!flatText(q)) return [];
     // Every course the site knows, plus any course a selected view lists that the site has no page for.
     const all = new Map<string, string>(allCourses.map((c) => [c.code, c.title]));
     for (const [code, title] of poolCourses) if (!all.has(code)) all.set(code, title);
-    const rank = (code: string) => Number(!poolCourses.has(code)) * 2 + Number(!norm(code).startsWith(f));
-    return [...all]
-      .filter(([code, title]) => !completed.includes(code) && (norm(code).includes(f) || title.toLowerCase().includes(s)))
-      .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
-      .slice(0, 6);
+    const open = [...all].filter(([code]) => !completed.includes(code)).sort((a, b) => a[0].localeCompare(b[0]));
+    const ranked = rankCourses(open, q, (e) => e);
+    // Courses in the selected views first, each group in match order (code, nickname, title).
+    return [...ranked.filter(([c]) => poolCourses.has(c)), ...ranked.filter(([c]) => !poolCourses.has(c))].slice(0, 6);
   });
   function addDone(code: string) {
     if (!completed.includes(code)) completed = [...completed, code];
@@ -411,7 +408,7 @@
     <h2 id="pb-done">{stepDone}. Courses already done (optional)</h2>
     <label class="sr" for="done-q">Search courses already done</label>
     <div class="pickbox">
-      <input id="done-q" class="field" type="search" placeholder="Search by code or title" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={q}
+      <input id="done-q" class="field" type="search" placeholder="Code, title or nickname" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={q}
         onkeydown={(e) => e.key === 'Enter' && matches[0] && addDone(matches[0][0])} />
       {#if matches.length}
         <ul class="matches">

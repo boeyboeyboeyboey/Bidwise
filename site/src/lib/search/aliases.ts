@@ -16,6 +16,7 @@ export const COURSE_ALIASES: Readonly<Record<string, readonly string[]>> = {
   COR3301: ['Ethics'],
   COR3302: ['Ethics'],
   ACCT101: ['FA'],
+  ACCT111: ['FA'],
   ACCT102: ['MA'],
   ACCT112: ['MA'],
   CS102: ['Java'],

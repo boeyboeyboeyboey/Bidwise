@@ -18,6 +18,7 @@
   import { xLabel, yLabel } from './builder/plan';
   import { drawChart } from './builder/plot';
   import { valueChoices } from './builder/query';
+  import { nicknamesOf } from '../../lib/search/courseSearch';
   import {
     CHART_LABEL, CHART_TYPES, MAX_LINES, NARROW_KEYS, NUMBER_X_IDS, X_IDS, Y_IDS, decodeSpec, defaultSpec, emptyLine, encodeSpec, normalizeSpec,
     type ChartType, type NarrowKey,
@@ -264,7 +265,8 @@
         </li>
       {/each}
     </ul>
-    <datalist id="bld-codes">{#each man?.codes ?? [] as c}<option value={c}></option>{/each}</datalist>
+    <!-- Nicknames as option labels, so typing "WAD" suggests IS113 (browsers match the label too). -->
+    <datalist id="bld-codes">{#each man?.codes ?? [] as c}<option value={c} label={nicknamesOf(c).join(', ') || undefined}></option>{/each}</datalist>
     <button type="button" class="btn add" disabled={plain.lines.length >= MAX_LINES} onclick={addLine}>+ Add line</button>
 
     <div class="more">

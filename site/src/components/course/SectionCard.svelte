@@ -14,6 +14,8 @@
   import SectionDetail from './SectionDetail.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
   import { chipFor, chipTipLines, type SwapCell } from './swapUi';
+  // The balance every student gets per term; a bid above it needs e$ carried over from earlier terms.
+  import { EXAMPLE_BUDGET_CENTS as TERM_BUDGET_CENTS } from '../../lib/planner/example';
 
   let {
     section,
@@ -62,7 +64,8 @@
   const change = $derived(badge && badge.n === section.live?.sinceOpen ? '' : seatChange(section));
   const full = $derived(seatsOf(section).left <= 0);
   const low = $derived(typeof bid === 'object' && !swap && !!bid.low);
-  const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat${bid.low ? ', low confidence' : ''}` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
+  const over = $derived(typeof bid === 'object' && !swap && bid.cents > TERM_BUDGET_CENTS);
+  const bidText = $derived(typeof bid === 'object' ? `suggested bid ${eS(bid.cents)}, ${aboutPct(bid.p)} chance of a seat${bid.low ? ', low confidence' : ''}${bid.cents > TERM_BUDGET_CENTS ? ', more than one term\'s e$125' : ''}` : bid === 'wait' ? 'bid being worked out' : 'no suggested bid');
   const chip = $derived(swap?.kind === 'opt' ? chipFor(swap.opt.label) : null);
   const swapText = $derived(swap?.kind === 'mine' ? 'your section' : chip ? `${chip.text} to swap into` : swap?.kind === 'wait' ? 'swap chance being worked out' : 'no swap chance yet');
   const label = $derived([section.section, who, when, examText ? `exam ${examText}` : '', seatText, badge?.label ?? '', swap ? swapText : bidText, !swap && best ? 'lowest bid of the open sections' : ''].filter(Boolean).join(', '));
@@ -84,7 +87,7 @@
     <b class="sec">{section.section}</b>
     <span class="who" class:tipwho={swap?.kind === 'opt'}>{who}{#if best && !swap}<span class="badge" data-seeded={seeded || undefined}>Lowest bid</span>{/if}</span>
     <span class="time num">{when}{#if examText}<span class="exam">Exam {examText}</span>{/if}</span>
-    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}{#if low}<span class="lc" data-seeded={seeded || undefined}>Low confidence</span>{/if}</span>
+    <span class="seats">{seatText}{#if change}<span class="chg num">{change}</span>{/if}{#if badge}<span class="chg"><SeatDelta {section} {badge} /></span>{/if}{#if low}<span class="lc" data-seeded={seeded || undefined}>Low confidence</span>{/if}{#if over}<span class="lc" data-seeded={seeded || undefined}>Over e$125</span>{/if}</span>
     <span class="bid num" class:swapcol={!!swap} data-seeded={(seeded && !swap) || undefined}>
       {#if swap}
         {#if swap.kind === 'mine'}

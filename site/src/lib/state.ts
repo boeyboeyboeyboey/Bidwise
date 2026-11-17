@@ -2,13 +2,13 @@
 // - The chosen bidding window: set from the header, read by the course page, planner and Past bids.
 // - The plan: written by the course page's "Add to plan" and read/written by the planner.
 // Pages subscribe with onWindowChange/onPlanChange; changes in another tab arrive via the storage event.
-import { decodePlan } from '../components/planner/plan';
+import { BALANCE_EMPTY_MARK, decodePlan } from '../components/planner/plan';
 import type { StoredPlan } from '../components/planner/plan';
 import { DEFAULT_TARGET, targetToStored } from './sim/presets';
 
 export const WINDOW_KEY = 'boss.window';
 export const PLAN_KEY = 'boss.planner';
-/** The student's e$ balance, as typed. Shared with the home page; empty means none set. */
+/** The student's e$ balance, as typed. Nothing stored means never set (the planner then starts at e$125); BALANCE_EMPTY_MARK means cleared on purpose. */
 export const BALANCE_KEY = 'bidwise.balance';
 const WINDOW_EVENT = 'boss:window';
 const PLAN_EVENT = 'boss:plan';
@@ -52,15 +52,14 @@ export function onWindowChange(fn: (label: string | null) => void): () => void {
   };
 }
 
-/** The balance text saved by the home page or the planner, or null. */
+/** The stored balance text: null when never set, BALANCE_EMPTY_MARK when the student cleared it, else what they typed. */
 export function getBalanceText(): string | null {
-  const v = read(BALANCE_KEY);
-  return v !== null && v.trim() !== '' ? v : null;
+  return read(BALANCE_KEY);
 }
 
-/** Pass '' to clear it. */
+/** Pass '' to record an empty balance on purpose (it stays empty after a reload, unlike nothing stored). */
 export function setBalanceText(text: string): void {
-  write(BALANCE_KEY, text.trim() === '' ? null : text.trim());
+  write(BALANCE_KEY, text.trim() === '' ? BALANCE_EMPTY_MARK : text.trim());
 }
 
 export function getPlan(): StoredPlan | null {

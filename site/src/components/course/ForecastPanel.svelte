@@ -4,7 +4,7 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { lowConfidenceLines, styleTipLines } from './bidStyle';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
@@ -15,6 +15,8 @@
   import { simSection } from './sectionSim';
   import { bidOrNone, eS, pct } from './fmt';
   import { refitNote } from '../../lib/data/refitNote';
+  // The balance every student gets per term; a suggested bid above it needs e$ carried over from earlier terms.
+  import { EXAMPLE_BUDGET_CENTS as TERM_BUDGET_CENTS } from '../../lib/planner/example';
 
   let { section, history, failed = false, currentTerm, children }: {
     section: Section;
@@ -28,8 +30,9 @@
   const uid = $props.id();
 
   const full = $derived(ctx.bySection?.get(section.classNumber) ?? null);
-  // Only windows this section has a forecast for (all windows until the course file has loaded).
-  const windows = $derived(full?.forecast ? ctx.meta.windows.filter((w) => !!full.forecast![w]) : ctx.meta.windows);
+  // Only windows this section has a forecast for (all windows until the course file has loaded), from the current one onward: closed windows are not offered.
+  const openWindows = $derived(fromCurrent(ctx.meta.windows, ctx.currentWindow));
+  const windows = $derived(full?.forecast ? openWindows.filter((w) => !!full.forecast![w]) : openWindows);
   // The window chosen in the site header (kept across sections); the open window if that has no forecast here.
   const win = $derived(effectiveWindow(ctx.chosenWindow, ctx.currentWindow, windows));
   let group = $state(1);
@@ -176,10 +179,11 @@
           <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons, lowRel)} /></span>
         {/if}
       </div>
+      {#if rec > TERM_BUDGET_CENTS}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
       <p class="chances num">
-        <span><b>{pct(pNow)}</b> chance</span>
-        {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if it fills</span>{/if}
-        {#if ifFills !== null}<span class="fills">Fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
+        <span><b>{pct(pNow)}</b> chance of a seat</span>
+        {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
+        {#if ifFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
       </p>
       <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
       {#if note}<p class="disc">{note}</p>{/if}
@@ -302,6 +306,7 @@
   .fbar > span { display: block; height: 100%; background: var(--text); }
   .headline { margin: 0; font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
   .headline b { font-size: var(--fs-xl); font-weight: 700; }
+  .over { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .disc { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
   .upc { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .last { margin: 0; font-size: var(--fs-sm); color: var(--muted); }

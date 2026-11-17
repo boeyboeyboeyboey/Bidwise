@@ -18,6 +18,15 @@ export function effectiveWindow(chosen: string | null, open: string, available: 
   return available.includes(open) ? open : (available[available.length - 1] ?? '');
 }
 
+/**
+ * The forecast windows a person may pick: `current` (open now, or next to open) and the windows after it, in the given order.
+ * Windows before it have closed and their forecasts are not calibrated. Unchanged when `current` is null or not in the list.
+ */
+export function fromCurrent(all: readonly string[], current: string | null): string[] {
+  const i = current ? all.indexOf(current) : -1;
+  return i < 0 ? [...all] : all.slice(i);
+}
+
 export function toSimParams(f: ForecastWindow): SimParams {
   const { demandMean, demandDispersion, priceLevelCents, priceSigma, anchorSigma, anchorShare, anchorCents } = f;
   const out: SimParams = { demandMean, demandDispersion, priceLevelCents, priceSigma, anchorSigma, anchorShare, anchorCents };

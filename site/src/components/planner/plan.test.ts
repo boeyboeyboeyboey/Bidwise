@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Section } from '../../lib/data/types';
 import { orderSections } from '../course/sections';
+import { getBalanceText, setBalanceText } from '../../lib/state';
 import { pInAt, recommendBid, simulate } from '../../lib/sim';
 import { FORECAST_RUNS, FORECAST_SEED, toSimParams } from '../../lib/sim/forecast';
 import type { PlanItem } from '../../lib/sim/planner';
 import {
-  balanceFromCents, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
+  BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
   canStartGroup, chanceOfGroup, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
@@ -153,7 +154,7 @@ describe('duplicateCourses', () => {
 });
 
 describe('balance field state', () => {
-  it('starts empty (no balance assumed) and takes a saved balance while untouched', () => {
+  it('a plain field is empty and takes a saved balance while untouched', () => {
     const s = balanceFromCents(null);
     expect(s).toMatchObject({ text: '', cents: null, bad: false });
     expect(restoreBalance(s, 8000).cents).toBe(8000);
@@ -178,6 +179,66 @@ describe('balance field state', () => {
     expect(s.cents).toBe(6025);
     s = blurBalance(s);
     expect(s).toMatchObject({ text: '60.25', bad: false, cents: 6025 });
+  });
+});
+
+describe('starting balance', () => {
+  const store = new Map<string, string>();
+  const ls = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  };
+  const reload = () => balanceFromStored(getBalanceText());
+  it('nothing stored: e$125, not yet edited', () => {
+    expect(DEFAULT_BALANCE_CENTS).toBe(12500);
+    expect(balanceFromStored(null)).toMatchObject({ text: '125.00', cents: 12500, bad: false, edited: false });
+  });
+  it('a stored number wins, in any form it was typed', () => {
+    expect(balanceFromStored('80').cents).toBe(8000);
+    expect(balanceFromStored('60.25').cents).toBe(6025);
+    expect(balanceFromStored('e$99').cents).toBe(9900);
+  });
+  it('the empty mark is an empty field; unreadable text falls back to the default', () => {
+    expect(balanceFromStored(BALANCE_EMPTY_MARK)).toMatchObject({ text: '', cents: null, bad: false });
+    expect(balanceFromStored('abc').cents).toBe(12500);
+    expect(balanceFromStored('99999999').cents).toBe(12500);
+  });
+  it('clearing the field is stored as the empty mark and survives a reload; typing again replaces it', () => {
+    vi.stubGlobal('localStorage', ls);
+    try {
+      store.clear();
+      expect(reload().cents).toBe(12500);
+      setBalanceText('60');
+      expect(reload().cents).toBe(6000);
+      setBalanceText('  ');
+      expect(getBalanceText()).toBe(BALANCE_EMPTY_MARK);
+      expect(reload()).toMatchObject({ cents: null, text: '' });
+      setBalanceText('125');
+      expect(reload().cents).toBe(12500);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('Must get rows with no seats', () => {
+  const row = (role: 'required' | 'oneOf' | 'optional', issue: 'full' | 'estfull' | 'nofc' | 'group' | null, label = 'IS215 G1') => ({ role, issue, label });
+  it('a full Must get blocks the plan', () => {
+    expect(blockedMustGets([row('required', 'full'), row('required', null, 'IS216 G2')])).toEqual(['IS215 G1']);
+  });
+  it('other issues on a Must get do not block', () => {
+    expect(blockedMustGets([row('required', 'estfull'), row('required', 'nofc'), row('required', 'group')])).toEqual([]);
+  });
+  it('a full Pick one or Nice to have does not block', () => {
+    expect(blockedMustGets([row('oneOf', 'full'), row('optional', 'full')])).toEqual([]);
+  });
+  it('lists every full Must get, in order', () => {
+    expect(blockedMustGets([row('required', 'full', 'IS215 G1'), row('optional', 'full', 'X 1'), row('required', 'full', 'IS216 G2')])).toEqual(['IS215 G1', 'IS216 G2']);
+  });
+  it('the notice names each section', () => {
+    expect(blockedText(['IS215 G1'])).toBe('IS215 G1 has no seats left');
+    expect(blockedText(['IS215 G1', 'IS216 G2'])).toBe('IS215 G1 has no seats left, IS216 G2 has no seats left');
   });
 });
 
@@ -345,11 +406,11 @@ describe('share link', () => {
     expect(decodeShare('#share=%%%')).toBeNull();
     expect(decodeShare('')).toBeNull();
   });
-  it('keeps an explicit e$125 in new links but reads it as "none set" in old unversioned ones', () => {
-    const p125 = { ...plan, b: 12500 };
-    expect(decodeShare(encodeShare(p125))?.b).toBe(12500);
-    expect(decodeShare('#share=' + btoa(JSON.stringify(p125)))?.b).toBeNull();
-    expect(decodeShare('#share=' + btoa(JSON.stringify({ ...p125, b: 9000 })))?.b).toBe(9000);
+  it('keeps e$125 and an empty balance as they are, in new and old links', () => {
+    for (const b of [12500, null, 9000]) {
+      expect(decodeShare(encodeShare({ ...plan, b }))?.b).toBe(b);
+      expect(decodeShare('#share=' + btoa(JSON.stringify({ ...plan, b })))?.b).toBe(b);
+    }
   });
 });
 

@@ -13,7 +13,7 @@
     LEGACY_STORE_KEY, STORE_KEY, groupBlocks, intakesFor, isTrackBlock, leftText as blockLeftText, majorOptions, parseSaved, secondOptions,
     toSelection, trackOptions,
   } from './degree';
-  import { bidCalibrated, bidPresets, targetToStored } from '../../lib/sim/forecast';
+  import { bidCalibrated, bidPresets, fromCurrent, targetToStored } from '../../lib/sim/forecast';
   import { hasCheaperStyle, styleName } from '../../lib/sim/presets';
   import { styleTipLines } from '../course/bidStyle';
   import InfoTip from '../ui/InfoTip.svelte';
@@ -23,7 +23,7 @@
     type CoursesNeeded, type PlanRow,
   } from './logic';
 
-  let { builtWindow }: { builtWindow: string } = $props();
+  let { builtWindow, windows = [] }: { builtWindow: string; windows?: string[] } = $props();
 
   const TOP_PER_BLOCK = 5;
   const TOP_LIST = 30;
@@ -240,7 +240,11 @@
     const hasDone = done.length > 0;
     const reqs = effectiveRequisites(allReqs, hasDone);
     const liveW = liveWindow();
-    const opts = { window: liveW ? `Round ${liveW.round} Window ${liveW.window}` : builtWindow, chosenWindow: getChosenWindow(), bid: budget ?? MAX_SIM_BID, target: chance, sort: 'cheapest' as const };
+    const curWindow = liveW ? `Round ${liveW.round} Window ${liveW.window}` : builtWindow;
+    // A stored choice of a window that has closed is ignored (the current window is used instead).
+    const stored = getChosenWindow();
+    const chosenWindow = stored && fromCurrent(windows, curWindow).includes(stored) ? stored : null;
+    const opts = { window: curWindow, chosenWindow, bid: budget ?? MAX_SIM_BID, target: chance, sort: 'cheapest' as const };
     const pruned = prunedCourses(noFinalOnly(data, onlyNoFinal), budget);
     const byCode = new Map(pruned.map((c) => [c.code, c]));
     // Chunks of courses, so the page stays responsive; every simulation is cached for the requirement blocks below.

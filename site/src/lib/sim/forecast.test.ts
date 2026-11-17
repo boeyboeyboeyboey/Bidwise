@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { simulate, type SimInput } from './index';
-import { clampGroup, cutoffAt, toSimParams, effectiveWindow, cutoffRange, isLowConfidence, likelyWontFill, marginalPerFriend, pooledText } from './forecast';
+import { clampGroup, cutoffAt, toSimParams, effectiveWindow, fromCurrent, cutoffRange, isLowConfidence, likelyWontFill, marginalPerFriend, pooledText } from './forecast';
 
 const input: SimInput = {
   seats: 10, group: 1, minBidCents: 100, runs: 6000, seed: 3,
@@ -67,6 +67,24 @@ describe('paramRows', () => {
     expect(effectiveWindow('Z', 'B', av)).toBe('B');
     expect(effectiveWindow(null, 'Z', av)).toBe('C');
     expect(effectiveWindow(null, 'Z', [])).toBe('');
+  });
+
+  it('fromCurrent keeps the current window and the ones after it', () => {
+    const all = ['A', 'B', 'C', 'D'];
+    expect(fromCurrent(all, 'C')).toEqual(['C', 'D']);
+    expect(fromCurrent(all, 'D')).toEqual(['D']);
+    expect(fromCurrent(all, 'A')).toEqual(all);
+  });
+  it('fromCurrent leaves the list alone when the current window is unknown', () => {
+    const all = ['A', 'B', 'C'];
+    expect(fromCurrent(all, null)).toEqual(all);
+    expect(fromCurrent(all, 'Z')).toEqual(all);
+    expect(fromCurrent([], 'A')).toEqual([]);
+  });
+  it('a chosen window that has closed falls back to the current one', () => {
+    const open = fromCurrent(['A', 'B', 'C', 'D'], 'C');
+    expect(effectiveWindow('B', 'C', open)).toBe('C');
+    expect(effectiveWindow('D', 'C', open)).toBe('D');
   });
 });
 

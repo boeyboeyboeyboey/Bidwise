@@ -64,7 +64,15 @@ export function snipeChance(sim: SimResult, rebidCents: number, minBidCents: num
   return pInAt(sim, Math.max(rebidCents, minBidCents));
 }
 
-/** Whole e$ from a text field, as cents; null when unreadable or not above zero. */
+/** Minimum bid assumed when a section has none on record, cents. */
+export const FALLBACK_MIN_BID_CENTS = 1000;
+
+/** What was paid, or null when it is below the section's minimum bid (impossible). No upper cap: bids above e$125 are real. */
+export function validPaid(paidCents: number | null, minBidCents: number): number | null {
+  return paidCents !== null && paidCents >= minBidCents ? paidCents : null;
+}
+
+/** e$ from a text field (decimals allowed), as cents; null when unreadable or not above zero. */
 export function parseDollars(v: string): number | null {
   const n = Number(v.trim());
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;

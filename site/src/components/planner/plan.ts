@@ -37,6 +37,14 @@ export const ISSUE_TEXT: Record<RowIssue, string> = {
   group: 'Group too big',
 };
 
+/** Names of the Must get rows whose chosen section has no seats at all (Pick one and Nice to have rows never block the plan). */
+export function blockedMustGets(rows: { role: Role; issue: RowIssue | null; label: string }[]): string[] {
+  return rows.filter((r) => r.role === 'required' && r.issue === 'full').map((r) => r.label);
+}
+
+/** One line for the plan notice, e.g. "IS215 G1 has no seats left". */
+export const blockedText = (labels: string[]): string => labels.map((l) => `${l} has ${ISSUE_TEXT.full.toLowerCase()}`).join(', ');
+
 /** Simulator input for one row: seats = seats left now, forecast parameters of the chosen window. */
 export function toPlanSimInput(section: Section, window: string, group: number): SimInput | null {
   if (rowIssue(section, window, group)) return null;
@@ -61,6 +69,11 @@ export function parseBalance(text: string): number | null {
   return cents <= MAX_BALANCE_CENTS ? cents : null;
 }
 
+/** What a first-time visitor starts with: one term's e$. */
+export const DEFAULT_BALANCE_CENTS = 12500;
+/** Stored in place of the balance when the student cleared the field on purpose; nothing stored means "never set". */
+export const BALANCE_EMPTY_MARK = 'none';
+
 export interface BalanceState {
   /** What the field shows. */
   text: string;
@@ -76,6 +89,17 @@ const centsText = (cents: number | null) => (cents === null ? '' : (cents / 100)
 
 export function balanceFromCents(cents: number | null, edited = false): BalanceState {
   return { text: centsText(cents), cents, bad: false, edited };
+}
+
+/**
+ * The balance from its stored text. Nothing stored (null) or unreadable text: the default. The empty mark: empty on
+ * purpose. Anything else: the typed amount.
+ */
+export function balanceFromStored(raw: string | null): BalanceState {
+  if (raw === null) return balanceFromCents(DEFAULT_BALANCE_CENTS);
+  if (raw.trim() === BALANCE_EMPTY_MARK) return balanceFromCents(null, true);
+  const c = parseBalance(raw);
+  return c === null ? balanceFromCents(DEFAULT_BALANCE_CENTS) : balanceFromCents(c, true);
 }
 
 /** The student typed in the field. Valid text updates the balance, empty text clears it, invalid text keeps the last valid one. */
@@ -612,9 +636,8 @@ export function clashSummary(pairs: ClashPair[]): string {
 }
 
 const SHARE_PREFIX = 'share=';
-/** Links without a version (v) are the old ones, where a balance of exactly e$125 was the default and meant "none set". */
+/** Links without a version (v) are the old ones. An empty balance (b null) is carried by every link; e$125 is an ordinary balance again. */
 const SHARE_VERSION = 2;
-const LEGACY_DEFAULT_BALANCE_CENTS = 12500;
 
 /** Link fragment for a shared plan: "#share=<base64 of the plan>". */
 export function encodeShare(plan: StoredPlan): string {
@@ -626,10 +649,7 @@ export function decodeShare(hash: string): StoredPlan | null {
   const h = hash.replace(/^#/, '');
   if (!h.startsWith(SHARE_PREFIX)) return null;
   try {
-    const raw = JSON.parse(atob(h.slice(SHARE_PREFIX.length)));
-    const plan = decodePlan(raw);
-    if (plan && plan.b === LEGACY_DEFAULT_BALANCE_CENTS && !(raw && typeof raw === 'object' && raw.v === SHARE_VERSION)) plan.b = null;
-    return plan;
+    return decodePlan(JSON.parse(atob(h.slice(SHARE_PREFIX.length))));
   } catch {
     return null;
   }

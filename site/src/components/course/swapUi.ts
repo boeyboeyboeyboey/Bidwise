@@ -70,10 +70,8 @@ export function basisText(o: Pick<SwapOption, 'fallback' | 'preAssigned' | 'samp
   return `Based on predicted bids from ${o.sampleSize} past ${o.sampleSize === 1 ? 'result' : 'results'}.`;
 }
 
-/** Lines for a chip's InfoTip. */
+/** Lines for a chip's InfoTip. The percentages are judgment, not measured, so they are not shown here. */
 export function chipTipLines(o: SwapOption): string[] {
-  const r = rangeText(o);
-  const t = roughText(o);
-  if (!r || !t) return ['No seat count for this section, so no estimate.'];
-  return [`${t} · range ${r}`, basisText(o), 'Set by judgment of how hard swaps are, not measured from real swaps.'];
+  if (!rangeText(o) || !roughText(o)) return ['No seat count for this section, so no estimate.'];
+  return ['How likely a one-for-one swap into this section is.', basisText(o), 'Set by judgment of how hard swaps are, not measured from real swaps.'];
 }

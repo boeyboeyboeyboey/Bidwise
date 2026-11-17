@@ -1,0 +1,17 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Page not found · Bidwise" windowPicker={false}>
+  <div class="panel">
+    <h1>Page not found</h1>
+    <p>That page doesn't exist.</p>
+    <div class="links">
+      <a class="btn btn-primary" href="/">Search courses</a>
+      <a class="btn" href="/explore/">Browse past bids</a>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .links { display: flex; flex-wrap: wrap; gap: var(--s2); }
+</style>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ForecastWindow } from '../data/types';
 import { simulate } from '../sim';
-import { dropWindows, parseDollars, refundCapCents, refundCents, snipeChance, snipeMoney, snipeSimInput } from './snipe';
+import { dropWindows, parseDollars, refundCapCents, refundCents, snipeChance, snipeMoney, snipeSimInput, validPaid } from './snipe';
 
 const fw: ForecastWindow = {
   demandMean: 6, demandDispersion: 0.4, priceLevelCents: 1500, priceSigma: 0.5, anchorSigma: 0.2, anchorShare: 0.3,
@@ -71,5 +71,14 @@ describe('parseDollars', () => {
     expect(parseDollars('')).toBeNull();
     expect(parseDollars('-3')).toBeNull();
     expect(parseDollars('abc')).toBeNull();
+  });
+});
+
+describe('validPaid', () => {
+  it('rejects a payment below the minimum bid, accepts the minimum and above, with no upper cap', () => {
+    expect(validPaid(900, 1000)).toBeNull();
+    expect(validPaid(1000, 1000)).toBe(1000);
+    expect(validPaid(20000, 1000)).toBe(20000);
+    expect(validPaid(null, 1000)).toBeNull();
   });
 });

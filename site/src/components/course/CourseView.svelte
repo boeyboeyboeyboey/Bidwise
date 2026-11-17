@@ -10,7 +10,7 @@
   import type { SimResult } from '../../lib/sim';
   import { DEFAULT_TARGET, TARGETS, bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import { styleMeaning } from './bidStyle';
-  import { effectiveWindow } from '../../lib/sim/forecast';
+  import { effectiveWindow, fromCurrent } from '../../lib/sim/forecast';
   import { liveWindow } from '../../lib/data/window';
   import { getChosenWindow, onWindowChange, setChosenWindow } from '../../lib/state';
   import { eS, pct } from './fmt';
@@ -92,7 +92,7 @@
     for (const s0 of ordered) {
       const s = m.get(s0.classNumber);
       if (!s || seatsLeftNow(s) <= 0 || seeded?.bySection[s0.classNumber] !== undefined) continue;
-      const win = effectiveWindow(chosenWin, open, forecastMeta.windows.filter((w) => !!s.forecast?.[w]));
+      const win = effectiveWindow(chosenWin, open, fromCurrent(forecastMeta.windows, open).filter((w) => !!s.forecast?.[w]));
       const job = simSection(s, win, 1);
       if (!job) {
         acc.set(s0.classNumber, null);
@@ -119,7 +119,7 @@
     for (const [cn, r] of sims) {
       if (!r) continue;
       const s = withForecast?.get(cn);
-      const win = s ? effectiveWindow(chosen, currentName, forecastMeta.windows.filter((w) => !!s.forecast?.[w])) : '';
+      const win = s ? effectiveWindow(chosen, currentName, fromCurrent(forecastMeta.windows, currentName).filter((w) => !!s.forecast?.[w])) : '';
       out.set(cn, rowBidOf(r, target, s ? seatsLeftNow(s) : 0, win));
     }
     return out;
@@ -287,7 +287,7 @@
       const out: ReportRow[] = await Promise.all(
         ordered.map(async (s0) => {
           const s = m.get(s0.classNumber) ?? s0;
-          const wins = forecastMeta.windows.filter((w) => !!s.forecast?.[w]);
+          const wins = fromCurrent(forecastMeta.windows, currentName).filter((w) => !!s.forecast?.[w]);
           const win = effectiveWindow(chosen, currentName, wins);
           const job = seatsLeftNow(s) > 0 ? simSection(s, win, 1) : null;
           const r = job ? await job : null;

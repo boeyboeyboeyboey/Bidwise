@@ -7,7 +7,7 @@
   import type { SimResult } from '../../lib/sim';
   import { runSim } from '../../lib/sim/client';
   import { aboutPct, eS } from './fmt';
-  import { dropWindows, parseDollars, snipeChance, snipeMoney, snipeSimInput } from '../../lib/snipe/snipe';
+  import { FALLBACK_MIN_BID_CENTS, dropWindows, parseDollars, snipeChance, snipeMoney, snipeSimInput, validPaid } from '../../lib/snipe/snipe';
 
   let { section }: { section: Section } = $props();
   const ctx = getContext<ForecastCtx>('forecast');
@@ -24,7 +24,8 @@
   let picked = $state<string | null>(null);
   const win = $derived(picked && windows.includes(picked) ? picked : (windows[0] ?? ''));
 
-  const paid = $derived(parseDollars(paidText));
+  // Below the section's minimum bid nobody could have paid that, so it counts as no input.
+  const paid = $derived(validPaid(parseDollars(paidText), minBid ?? FALLBACK_MIN_BID_CENTS));
   const rebid = $derived(parseDollars(rebidText) ?? minBid);
   const money = $derived(paid !== null && rebid !== null && win ? snipeMoney(paid, rebid, win) : null);
 
@@ -46,7 +47,8 @@
   const below = $derived(rebid !== null && minBid !== null && rebid < minBid);
 
   const tip = [
-    'Dropping gives back what you paid, up to a cap by round: e$50 in Rounds 1 and 1A, e$40 in 1B, e$30 in 2, e$10 in 2A.',
+    'We assume dropping gives back what you paid, up to a cap by round: e$50 in Rounds 1 and 1A, e$40 in 1B, e$30 in 2, e$10 in 2A. SMU states only the caps.',
+    'From the SMU FAQ: "Dropping a course in Round 2 will incur a penalty unless the student is successful for another course bid in that round." The amounts here leave it out.',
     'The chance is that a bid of your re-bid wins one freed seat in the chosen window, from the same simulation as the bids on this page. Others can take the seat first.',
   ];
 </script>

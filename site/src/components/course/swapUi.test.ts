@@ -38,11 +38,13 @@ describe('chips', () => {
     expect(basisText({ fallback: true, preAssigned: false, sampleSize: 3 })).toBe('Estimate from last term’s bids.');
     expect(basisText({ fallback: false, preAssigned: true, sampleSize: 3 })).toMatch(/pre-assigned/);
   });
-  it('tooltip leads with the rough percentage and range, then basis and the judgment note', () => {
+  it('tooltip says what the label means, then basis and the judgment note, with no percentages', () => {
     const lines = chipTipLines(opt('A', 'possible'));
-    expect(lines[0]).toBe('About 65% · range 55–75%');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('How likely a one-for-one swap into this section is.');
     expect(lines[1]).toBe('Based on predicted bids from 8 past results.');
-    expect(lines[2]).toMatch(/judgment/);
+    expect(lines[2]).toBe('Set by judgment of how hard swaps are, not measured from real swaps.');
+    expect(lines.join(' ')).not.toMatch(/%/);
     expect(chipTipLines(opt('A', 'unknown', { chance: null, chanceLow: null, chanceHigh: null }))).toEqual(['No seat count for this section, so no estimate.']);
   });
 });

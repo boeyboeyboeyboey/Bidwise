@@ -4,7 +4,7 @@
   import { fetchCourse } from '../../lib/data/client';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
-  import { TARGETS, bidCalibrated, bidPresets, suggestBid, targetToStored } from '../../lib/sim/forecast';
+  import { TARGETS, bidCalibrated, bidPresets, fromCurrent, suggestBid, targetToStored } from '../../lib/sim/forecast';
   import { lowConfidenceLines, styleTipLines } from '../course/bidStyle';
   import { isLateWindow } from '../../lib/sim/presets';
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
@@ -19,12 +19,12 @@
   import CourseAdd from './CourseAdd.svelte';
   import PlanRow from './PlanRow.svelte';
   import {
-    DEFAULT_TARGET, balanceFromCents, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
+    DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
     canStartGroup, changeRole, chanceOfGroup, joinableRows, moveToGroup, planParts, whereNow, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
-  let { windows, currentWindow: builtWindow, lowConfidence = [], hot = [], example = [], startTimes = [] }: {
+  let { windows: allWindows, currentWindow: builtWindow, lowConfidence = [], hot = [], example = [], startTimes = [] }: {
     windows: string[];
     /** Distinct meeting start times this term ("08:15"), sorted: the rows of the can't-attend grid. */
     startTimes?: string[];
@@ -40,11 +40,13 @@
   // Open now, or the next to open between windows: the default window and the one "no choice" means.
   const liveWin = liveWindow();
   const currentWindow = liveWin ? `Round ${liveWin.round} Window ${liveWin.window}` : builtWindow;
+  // Closed windows are not offered: a stored or shared choice of one falls back to the current window (see windowFor).
+  const windows = fromCurrent(allWindows, currentWindow);
   let rows = $state<PlanRowState[]>([]);
   const fallbackWindow = windows.includes(currentWindow) ? currentWindow : (windows[0] ?? '');
   let win = $state(fallbackWindow);
-  let bal = $state<BalanceState>(balanceFromCents(null));
-  /** The student's balance in cents, or null while empty: then bids are shown uncut, with no fit-to-balance logic. */
+  let bal = $state<BalanceState>(balanceFromCents(DEFAULT_BALANCE_CENTS));
+  /** The student's balance in cents (e$125 until they change it), or null once they clear it: then bids are shown uncut, with no fit-to-balance logic. */
   const balanceCents = $derived(bal.cents);
   const balanceBad = $derived(bal.bad);
   /** Chance level you want, as on the course page: Cheap / Balanced / Safe (calibrated) or 80, 90 or 95%. */
@@ -121,6 +123,9 @@
   );
   const okRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
   const excluded = $derived(info.filter((x) => x.issue).length);
+  /** Must get rows whose section has no seats: the chance of getting all of them is zero, so no percentage is shown. */
+  const blocked = $derived(blockedMustGets(rows.map((r, i) => ({ role: r.role, issue: info[i].issue, label: rowName(r) }))));
+  const blockedNote = $derived(blockedText(blocked));
   const simItems = $derived.by(() => {
     const out: PlanItem[] = [];
     for (const r of okRows) {
@@ -310,11 +315,9 @@
       }
     } else clearHash();
     apply(shared);
-    // decodeShare already drops the old default balance of unversioned links; an explicit e$125 now survives.
-    if (shared.b !== null) {
-      bal = balanceFromCents(shared.b, true);
-      if (!mine) setBalanceText(String(shared.b / 100)); // no plan of the student's own to protect: keep the balance across reloads
-    }
+    // Every link carries a balance: empty (null) opens empty, e$125 opens at e$125.
+    bal = balanceFromCents(shared.b, true);
+    if (!mine) setBalanceText(shared.b === null ? '' : String(shared.b / 100)); // no plan of the student's own to protect: keep the balance across reloads
     setWindow(windowFor(shared.w || currentWindow));
   }
   function restoreMine() {
@@ -366,8 +369,7 @@
     onMq();
     mq.addEventListener('change', onMq);
     win = windowFor(getChosenWindow());
-    const kept = getBalanceText();
-    if (kept !== null) bal = typeBalance(balanceFromCents(null), kept);
+    bal = balanceFromStored(getBalanceText());
     const saved = getPlan();
     if (saved) apply(saved);
     const hadHash = !!decodeShare(location.hash);
@@ -392,7 +394,7 @@
     });
     const offWin = onWindowChange((label) => (win = windowFor(label)));
     const onStore = (e: StorageEvent) => {
-      if (e.key === BALANCE_KEY && !bal.bad) bal = e.newValue?.trim() ? typeBalance(bal, e.newValue) : balanceFromCents(null, true);
+      if (e.key === BALANCE_KEY && !bal.bad) bal = balanceFromStored(e.newValue);
     };
     window.addEventListener('storage', onStore);
     const onHash = () => readHash();
@@ -541,8 +543,8 @@
       balanceCents,
       bidTotalCents: shown ? result!.bidTotalCents : null,
       leftCents: shown && sum ? sum.leftCents : null,
-      pAll: result && !noMust && !overBudget ? result.pAll : null,
-      needCents: over ? reqNeedCents : null,
+      pAll: result && !noMust && !overBudget && !blocked.length ? result.pAll : null,
+      needCents: over && !blocked.length ? reqNeedCents : null,
     });
     const notes = skipped.length ? [`Left out, section no longer offered: ${skipped.join(', ')}`] : [];
     return { rows: out, meta: { title: 'Bidwise bid report', generatedAt: sgtStamp(new Date()), plan: true, totals, notes } };
@@ -597,7 +599,7 @@
     <div class="setup">
       <div class="ctl">
       <label class="budget">
-        <span class="lab">My balance <InfoTip label="About the balance" anchor="planner" lines={['Leave it empty to see the bid for each course. With a balance, bids are cut to fit it.']} /></span>
+        <span class="lab">My balance <InfoTip label="About the balance" anchor="planner" lines={['Starts at e$125, one term\'s e$. With a balance, bids are cut to fit it. Clear it to see the bid for each course.']} /></span>
         <span class="inp">
           <span class="cur" aria-hidden="true">e$</span>
           <input
@@ -761,7 +763,9 @@
   <aside class="side">
     <section class="panel result" id="plan-result" aria-live="polite" aria-busy={rows.length > 0 && pending}>
       {#if !noMust}<div class="lab">Chance of all Must get {#if rows.some((r) => r.group > 1)}<span>· whole group</span>{/if} <InfoTip label="About this chance" anchor="planner" lines={['Every Must get course, and one course from each Pick one group.', 'Nice to have courses do not count.']} /></div>{/if}
-      {#if result}
+      {#if blocked.length}
+        <div class="big none">Not possible</div>
+      {:else if result}
         {#if noMust}
           <div class="big none">No must-get courses</div>
         {:else if overBudget}
@@ -772,7 +776,9 @@
       {:else if pending && wide}
         <div class="calc">Calculating…</div>
       {/if}
-      {#if showCallout && result}
+      {#if blocked.length}
+        <div class="notice" role="status"><p>{blockedNote}</p></div>
+      {:else if showCallout && result}
         <div class="notice" role="status">
           {#if anyCut && balanceCents !== null}<p><b>Bids cut to fit {balanceLabel(balanceCents)}</b></p>{/if}
           {#if showNotice}
@@ -788,7 +794,7 @@
           {/if}
         </div>
       {/if}
-      {#if excluded}<p class="warn" role="status">{excluded} left out</p>{/if}
+      {#if excluded - blocked.length > 0}<p class="warn" role="status">{excluded - blocked.length} left out</p>{/if}
       {#if result && !sum && !overBudget}
         <p class="tot num" class:dim={pending}>Bids total <b>{eS(result.bidTotalCents)}</b></p>
       {/if}
@@ -820,7 +826,9 @@
 
   {#if rows.length && !wide}
     <button type="button" class="bar num" class:busy={pending} aria-busy={pending} onclick={toResult} aria-label="Show plan details">
-      {#if result}
+      {#if blocked.length}
+        <b>Not possible</b>
+      {:else if result}
         {#if noMust}<b>No must-get courses</b>{:else if overBudget}<b>Not possible</b><span>· need about {eS(reqNeedCents)}</span>{:else}<b>{pct(result.pAll)} chance of all</b>{#if showCallout}<span class="fit">· {over || hopeless ? 'Over balance' : 'Bids cut to fit'}</span>{:else}<span>· bids {eS(result.bidTotalCents)}</span>{#if sum}<span>· {eS(Math.max(0, sum.leftCents))} left</span>{/if}{/if}{/if}
         {#if overBudget && showCallout}<span class="fit">· Over balance</span>{/if}
       {:else}

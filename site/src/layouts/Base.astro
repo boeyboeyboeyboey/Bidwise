@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { getWindow, getSchedule, windowLabel, getForecastMeta, dataMeta } from '../lib/data';
+import { fromCurrent } from '../lib/sim/forecast';
 import { fallbackText } from '../lib/data/freshness';
 import { PLANNER_ENABLED } from '../lib/flags';
 import { GITHUB_URL, LINKEDIN_URL, GITHUB_ICON, LINKEDIN_ICON } from '../lib/links';
@@ -36,7 +37,9 @@ const seatData = seats ? JSON.stringify({ scanAt: seats.scanAt ?? null, captured
 const freshText = seats ? fallbackText(seats) : '';
 const tagFor = (s: string) => (s === 'open' ? ' (open now)' : s === 'upcoming' ? ' (next)' : '');
 const windows = getForecastMeta().windows;
-const choices = windows.includes(openLabel) ? windows : [openLabel, ...windows];
+// Only the current window (open now, or next to open) and later ones: forecasts for closed windows are not calibrated. The client script below trims again against the clock.
+const forward = fromCurrent(windows, openLabel);
+const choices = forward.includes(openLabel) ? forward : [openLabel, ...forward];
 const allTabs = [
   { id: 'explore', href: '/explore/', label: 'Browse', icon: 'M4 5h2v2H4V5Zm4 0h12v2H8V5Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 6h2v2H4v-2Zm4 0h12v2H8v-2Z' },
   { id: 'planner', href: '/planner', label: 'Bid planner', short: 'Planner', icon: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z' },
@@ -55,6 +58,8 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <!-- Friends-only trial: remove this and restore robots.txt at public launch. -->
+    <meta name="robots" content="noindex, nofollow" />
     <link rel="canonical" href={canonical} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Bidwise" />
@@ -142,6 +147,12 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
           open = `Round ${live.round} Window ${live.window}`;
           if (![...pick.options].some((o) => o.value === open)) pick.add(new Option(open, open), pick.options[0]);
         }
+        // Windows before the current one have closed; they are not offered, and a stored choice of one is cleared (the current window is used instead).
+        const opts = [...pick.options];
+        const closedBefore = opts.slice(0, Math.max(0, opts.findIndex((o) => o.value === open))).map((o) => o.value);
+        for (const o of opts) if (closedBefore.includes(o.value)) o.remove();
+        const stored = getChosenWindow();
+        if (stored && closedBefore.includes(stored)) setChosenWindow(null);
         const tags = { open: ' (open now)', upcoming: ' (next)', closed: '' };
         if (live) for (const o of pick.options) o.textContent = o.value === open ? o.value + tags[live.status] : o.value;
         const has = (v: string | null): v is string => !!v && [...pick.options].some((o) => o.value === v);

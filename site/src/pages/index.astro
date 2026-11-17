@@ -14,6 +14,7 @@ const builtAt = Date.now();
   <div class="home">
     <div class="lead">
       <h1>How much should I bid?</h1>
+      <p class="lede">Bid forecasts for SMU BOSS, built from past results. Unofficial; not affiliated with SMU.</p>
       <div class="find"><Search client:load index={index} /></div>
       <div class="status">
         <Countdown client:load windows={windows} builtAt={builtAt} />
@@ -34,6 +35,7 @@ const builtAt = Date.now();
   .status { order: 2; display: grid; justify-items: center; text-align: center; }
   .paths { order: 1; }
   h1 { font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; text-align: center; }
+  .lede { margin: 0; text-align: center; color: var(--muted); }
   .find { min-width: 0; }
   .home :global(label.find) {
     position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;

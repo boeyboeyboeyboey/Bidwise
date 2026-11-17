@@ -399,7 +399,7 @@ Levels of the 17 Nov 2026 refit:
 | R2 | 0.935 | 0.985 | 0.995 |
 | R2A | 0.990 | 0.995 (not reached) | 0.995 (not reached) |
 
-**Measured win rate.** `measured_win` estimates each style's out-of-sample win rate on filled sections. Levels picked on one term are applied to the other, in both directions, and the two folds are pooled. Rates are kept per window group and forecast band. The band is the conditional median: under e\$15, 15 to 25, 25 to 40, 40 to 60, or 60 and over (`BAND_EDGES`). A cell with fewer than 100 filled rows falls back to its group's rate, and a group without that many falls back to the overall rate.
+**Measured win rate.** `measured_win` estimates each style's out-of-sample win rate on filled sections. Levels picked on one term are applied to the other, in both directions, and the two folds are pooled. Which groups get their own level is decided once over both terms (`own_groups`), the same rule as the shipped pick, so each group is measured at the kind of level it ships with (since 17 Nov 2026; before, each fold applied the 100-row test to one term, and Round 2A was measured at the pooled level). Rates are kept per window group and forecast band. The band is the conditional median: under e\$15, 15 to 25, 25 to 40, 40 to 60, or 60 and over (`BAND_EDGES`). A cell with fewer than 100 filled rows falls back to its group's rate, and a group without that many falls back to the overall rate.
 
 **On the site.** `window_bid_fields` and `measured_summary` in `build_site_data.py` copy these into `forecast-meta.json` as `bidLevelsByWindow`, `measuredWin`, `bandEdges` and `measuredWinSummary`.
 
@@ -560,7 +560,7 @@ Per window, the site marks confidence "low" unless filled-section coverage is wi
 - 80% range on filled sections: the real clearing bid fell inside it 78% of the time (90% before), at about half the width. The width is 0.54 of the old median width, measured on the terms used to choose the calibration.
 - Median miss on sections that filled: e\$7.77.
 
-**Bid styles (17 Nov 2026 refit).** Measured win rate on filled sections, out of sample by cross-fit between 2025-26 Term 2 and 2026-27 Term 1:
+**Bid styles (17 Nov 2026 refit, 21:36).** Measured win rate on filled sections, out of sample by cross-fit between 2025-26 Term 2 and 2026-27 Term 1:
 
 | Round | Filled sections | Cheap | Balanced | Safe |
 |---|---|---|---|---|
@@ -569,10 +569,10 @@ Per window, the site marks confidence "low" unless filled-section coverage is wi
 | Round 1A | 1,411 | 71% | 85% | 91% |
 | Round 1B | 551 | 70% | 85% | 87% |
 | Round 2 | 675 | 69% | 84% | 88% |
-| Round 2A | 170 | 49% | 61% | 64% |
-| All | 3,423 | 70% | 84% | 88% |
+| Round 2A | 170 | 64% | 79% | 79% |
+| All | 3,423 | 70% | 85% | 89% |
 
-Round 2A falls short, and the site says so there, showing the measured rate instead of the model's. Its figure is rough and probably pessimistic: neither term alone has 100 filled Round 2A sections, so `measured_win` scored it at least partly at the pooled level (0.88, 0.965, 0.985), lower than the 0.99 to 0.995 the site ships for Round 2A. Each fold also picks its levels with range exponents learned on the term it then tests, so the test is not fully clean, and the table measures the procedure rather than the exact shipped numbers.
+Round 2A falls short on Cheap and Safe, and the site says so there, showing the measured rate instead of the model's. Its figure is rough: each fold picks Round 2A's level on one term's 47 to 123 filled sections. Checked against the following term's actual results over three term triples, this measurement missed Round 2A by 5 points on average (the earlier rule, which used the pooled level, missed by 14). Each fold also picks its levels with range exponents learned on the term it then tests, so the test is not fully clean, and the table measures the procedure rather than the exact shipped numbers.
 
 **Rolling harness** (`evalharness.py`). This replays the whole procedure with no look-ahead.
 
@@ -612,7 +612,7 @@ The baseline could forecast 6,989 of the 7,243 sections.
 - Ties are settled by random draw among the tied bids, but rivals are assumed to bid independently of each other and of the group; a bid exactly equal to the cutoff can therefore read very low for a large group (for example three seats for a group of three against ten rivals all at the floor). The recommended odd-cent bids avoid round-number ties.
 - Seat counts for some sections are estimates from the previous window and can be wrong, for example when reserved seats are released or students drop.
 - The planner treats sections as independent, which is optimistic when students compete for the same seats in correlated ways. It flags timetable clashes but does not model e\$ rollover rules or credit limits.
-- Bid styles promise a win rate only on sections that fill. Their levels come from two terms, and Round 2A (170 filled sections) falls short at 49%, 61% and 64%. That figure is rough and probably pessimistic, because it was measured partly at the pooled level.
+- Bid styles promise a win rate only on sections that fill. Their levels come from two terms, and Round 2A (170 filled sections) falls short at 64%, 79% and 79%; that figure is rough. Every round drifts between terms: on 2026-27 Term 1 the shipped procedure won 62%, 80% and 86% of filled sections overall, against about 72%, 86% and 91% measured on the two terms before it.
 - The swap chance, its settings, and the drop-and-re-bid chance have not been tested against real outcomes; the percentages are rough guides for ranking options. The drop chance counts past cases of the same course, which are correlated within a term.
 
 ## Running locally

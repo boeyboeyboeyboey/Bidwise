@@ -132,9 +132,9 @@ class MeasuredWin(unittest.TestCase):
         calls = []
         real = D.calibrate_levels
 
-        def spy(cal):
+        def spy(cal, own=None):
             calls.append([(id(rs), id(tab)) for rs, tab in cal])
-            return real(cal)
+            return real(cal, own)
 
         rt, rh = rows_in({"R1W1": 300}, 9), rows_in({"R1W1": 300}, 10, act_scale={"R1W1": 1.4})
         tt, th = D.learn_spread(rt)[0], D.learn_spread(rh)[0]
@@ -142,6 +142,38 @@ class MeasuredWin(unittest.TestCase):
             D.measured_win(rt, rh, tt, th)
         # levels picked on rt with the exponents of rh, and on rh with the exponents of rt
         self.assertEqual(calls, [[(id(rt), id(th))], [(id(rh), id(tt))]])
+
+    def test_a_group_own_over_both_terms_is_measured_at_its_own_level_in_each_fold(self):
+        # R2A: about 72 filled rows per term (under MIN_CELL alone, over it together), with much dearer actual bids. The shipped
+        # pick gives it its own level, so the measurement must too: each fold picks R2A's level on that fold's R2A rows.
+        rt = rows_in({"R1W1": 400, "R2A": 120}, 11, act_scale={"R2A": 2.5})
+        rh = rows_in({"R1W1": 400, "R2A": 120}, 12, act_scale={"R2A": 2.5})
+        tt, th = D.learn_spread(rt)[0], D.learn_spread(rh)[0]
+        self.assertEqual(D.own_groups([rt, rh]), {"R1W1", "R2A"})
+        self.assertNotIn("R2A", D.own_groups([rt]))
+        _, _, shipped = D.calibrate_levels([(rh, tt), (rt, th)])
+        self.assertTrue(shipped["R2A"]["cheap"]["own"])
+        seen = []
+        real = D.calibrate_levels
+
+        def spy(cal, own=None):
+            out = real(cal, own)
+            seen.append(out[2]["R2A"]["cheap"]["own"])
+            return out
+
+        with mock.patch.object(D, "calibrate_levels", spy):
+            mw = D.measured_win(rt, rh, tt, th)
+        self.assertEqual(seen, [True, True])
+        # the old behaviour (R2A at the pooled level in both folds) measures it far lower than its own level does
+        with mock.patch.object(D, "own_groups", lambda sets: {"R1W1"}):
+            old = D.measured_win(rt, rh, tt, th)
+        self.assertGreater(mw["R2A"]["0"]["cheap"], old["R2A"]["0"]["cheap"] + 0.1)
+
+    def test_own_groups_needs_min_cell_filled_rows_over_all_sets(self):
+        a = rows_in({"R1A": 100}, 13, fill_rate=1.0)
+        self.assertEqual(D.own_groups([a]), {"R1A"})
+        self.assertEqual(D.own_groups([a[:60], a[60:99]]), set())
+        self.assertEqual(D.own_groups([a[:60], a[60:]]), {"R1A"})
 
 
 @unittest.skipIf(C.IMPORT_ERROR is not None, "numpy/pandas/scikit-learn unavailable")

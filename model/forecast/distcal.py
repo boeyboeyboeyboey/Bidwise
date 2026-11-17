@@ -323,22 +323,38 @@ def _cal_arrays(cal):
     return arrs + (np.array([g for _, gs in parts for g in gs]),)
 
 
-def calibrate_levels(cal) -> tuple:
+def own_groups(row_sets) -> set:
+    """The window groups that get their own levels: at least MIN_CELL filled rows over all of `row_sets` together. The shipped
+    pick (calibrate_levels on both terms) and the measurement (measured_win, one term per fold) both use this, so a group is
+    measured at the kind of level it ships with."""
+    n = {}
+    for rows in row_sets:
+        for r in rows:
+            if int(r["filled"]) == 1:
+                g = S.window_group(r["window"])
+                n[g] = n.get(g, 0) + 1
+    return {g for g in GROUPS if n.get(g, 0) >= MIN_CELL}
+
+
+def calibrate_levels(cal, own: set | None = None) -> tuple:
     """(level table, pooled levels, levels by group) for cal = [(rows, exponent table), ...] pooled. Pooled levels: pick_levels of
     the table over all rows ({style: {level, lossFilled, lossAll, winAboveFloor, meanOverpay, reached}}). By group: for each of
-    GROUPS the levels picked on that group's rows when it has at least MIN_CELL filled ones, else the pooled level
-    ({group: {style: {level, lossFilled, reached, nFilled, own}}}; a fallback keeps the pooled lossFilled and reached, own False)."""
+    GROUPS the levels picked on that group's rows when it is in `own` (default: own_groups of cal's rows, i.e. at least MIN_CELL
+    filled) and has any filled row here, else the pooled level ({group: {style: {level, lossFilled, reached, nFilled, own}}}; a
+    fallback keeps the pooled lossFilled and reached, own False)."""
     Q, p, floor, act, filled, grp = _cal_arrays(cal)
     table = _level_table_arr(Q, p, floor, act, filled)
     pooled = pick_levels(table)
+    if own is None:
+        own = own_groups([rs for rs, _ in cal])
     by_group = {}
     for g in GROUPS:
         mk = grp == g
         nf = int(filled[mk].sum())
-        own = nf >= MIN_CELL
-        lv = pick_levels(_level_table_arr(Q[mk], p[mk], floor[mk], act[mk], filled[mk])) if own else pooled
+        is_own = g in own and nf > 0
+        lv = pick_levels(_level_table_arr(Q[mk], p[mk], floor[mk], act[mk], filled[mk])) if is_own else pooled
         by_group[g] = {st: {"level": lv[st]["level"], "lossFilled": lv[st]["lossFilled"], "reached": bool(lv[st]["reached"]),
-                            "nFilled": nf, "own": own} for st in STYLES}
+                            "nFilled": nf, "own": is_own} for st in STYLES}
     return table, pooled, by_group
 
 
@@ -357,13 +373,17 @@ def row_levels(rows, by_group: dict, pooled: dict, style: str):
 def measured_win(rt, rh, tab_test, tab_held) -> dict:
     """Out-of-sample win rate on FILLED sections of the per-group procedure, from two folds: levels picked on `rt` (scored with
     the exponents of the other term, tab_held) applied to `rh` scored with tab_test, and levels picked on `rh` (scored with
-    tab_test) applied to `rt` scored with tab_held. Bids are rounded the way the site rounds them (site_round). Each fold picks on one term, so the MIN_CELL test for a group's own level is stricter than in the shipped two-term pick: a thin group (R2A) may be measured at the pooled level while the site ships its own. Rows of
+    tab_test) applied to `rt` scored with tab_held. Bids are rounded the way the site rounds them (site_round). Which groups get
+    their own level is decided once on both terms (own_groups), as in the shipped pick, so a group with MIN_CELL filled rows over
+    both terms is measured at a level picked on its own rows of one term, however few (since 17 Nov; before, each fold applied
+    MIN_CELL to its one term, so a thin group such as R2A was measured at the pooled level while the site shipped its own). Rows of
     both folds are pooled; per (window group, forecast band) a cell with at least MIN_CELL filled rows uses its own rate, else the
     group's pooled rate (when the group has MIN_CELL), else the rate over all rows.
     {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"}}, "overall": {style: rate}}."""
     grp, band, win = [], [], {st: [] for st in STYLES}
+    own = own_groups([rt, rh])
     for pick_rows, pick_tab, app_rows, app_tab in ((rt, tab_held, rh, tab_test), (rh, tab_test, rt, tab_held)):
-        _, pooled, by_group = calibrate_levels([(pick_rows, pick_tab)])
+        _, pooled, by_group = calibrate_levels([(pick_rows, pick_tab)], own)
         Q, p, floor, act, filled = _arrays(app_rows, app_tab, True)
         fm = filled == 1
         grp += [S.window_group(r["window"]) for r, f in zip(app_rows, fm) if f]

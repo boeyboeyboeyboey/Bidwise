@@ -216,7 +216,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     {measured ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty rounds">
-      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, so a new term may differ.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A had too few filled sections for a clean test, so its figures are rough and probably low.</caption>
+      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, so a new term may differ.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A has few filled sections, so its figures are rough.</caption>
       <thead><tr><th scope="col"><span class="sr-only">Round</span></th>{KEYS.map((k) => <th scope="col" class="r">{LABEL[k]}</th>)}</tr></thead>
       <tbody>
         <tr class="aim"><th scope="row">Aim</th>{aims.map((a) => <td class="r">{a}</td>)}</tr>

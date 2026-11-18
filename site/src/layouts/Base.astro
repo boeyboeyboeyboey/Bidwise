@@ -24,7 +24,7 @@ const SITE = 'https://bidwise.pages.dev';
 const path = Astro.url.pathname.endsWith('/') ? Astro.url.pathname : `${Astro.url.pathname}/`;
 const canonical = new URL(path, Astro.site ?? SITE).href;
 const ogImage = `${SITE}/og.png`;
-const ogAlt = 'Bidwise: plan your SMU BOSS bids with past results and forecasts';
+const ogAlt = 'Bidwise: plan your SMU BOSS bids. A sample forecast card shows a balanced bid of e$12.01 and an 85% chance of a seat.';
 const siteJsonLd = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Bidwise', url: `${SITE}/`, description: DEFAULT_DESCRIPTION }).replace(/</g, '\\u003c');
 const extraJsonLd = jsonLd.map((o) => JSON.stringify(o).replace(/</g, '\\u003c'));
 const openLabel = windowLabel(getWindow());

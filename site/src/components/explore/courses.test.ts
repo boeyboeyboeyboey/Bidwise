@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRows, R } from '../classes/logic';
 import {
-  activeFilterCount, browseDefaults, classesQueryToBrowse, dayOptions, decodeBrowse, instructorLine, encodeBrowse, maskToTimes, timeOptions, timesToMask, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
+  activeFilterCount, browseDefaults, classesQueryToBrowse, courseRedirect, dayOptions, decodeBrowse, instructorLine, encodeBrowse, maskToTimes, timeOptions, timesToMask, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
   type BrowseState, type CourseEntry,
 } from './courses';
 
@@ -169,13 +169,17 @@ describe('termChoices', () => {
 
 describe('URL state', () => {
   const full: BrowseState = { q: 'law', sub: 'COR-LAW', days: 0b00101, times: ['08:15', '19:00'], seats: true, nofinal: true, course: 'COR-LAW2243', term: '2025-26 Term 2', sec: 'G1' };
-  it('round-trips every field and omits defaults', () => {
-    expect(decodeBrowse(encodeBrowse(full))).toEqual(full);
+  it('round-trips the filters and omits defaults', () => {
+    const list = { ...full, course: '', term: '', sec: '' };
+    expect(decodeBrowse(encodeBrowse(list))).toEqual(list);
     expect(encodeBrowse(browseDefaults())).toBe('');
     expect(decodeBrowse('')).toEqual(browseDefaults());
   });
+  it('never writes the course, term or section, but still reads them from old links', () => {
+    expect(encodeBrowse(full)).not.toMatch(/course|term|sec/);
+    expect(decodeBrowse('?course=IS214&term=2025-26+Term+2&sec=G1')).toMatchObject({ course: 'IS214', term: '2025-26 Term 2', sec: 'G1' });
+  });
   it('keeps the term and section only with a course', () => {
-    expect(encodeBrowse({ ...full, course: '' })).not.toMatch(/term|sec/);
     expect(decodeBrowse('?term=2025-26+Term+2&sec=G1')).toMatchObject({ course: '', term: '', sec: '' });
   });
   it('reads a course code in any case and ignores junk', () => {
@@ -195,6 +199,26 @@ describe('URL state', () => {
   it('counts filters but not the search text', () => {
     expect(activeFilterCount(full)).toBe(5);
     expect(activeFilterCount(browseDefaults())).toBe(0);
+  });
+});
+
+describe('courseRedirect', () => {
+  const now = '2026-27 Term 2';
+  const st = (o: Partial<BrowseState>) => ({ ...browseDefaults(), ...o });
+  it('is null for a list link', () => {
+    expect(courseRedirect(st({ q: 'esd' }), now)).toBeNull();
+  });
+  it('sends a course with no term, or this term, to its page, with the section as ?s=', () => {
+    expect(courseRedirect(st({ course: 'IS213' }), now)).toBe('/course/IS213/');
+    expect(courseRedirect(st({ course: 'IS213', term: now, sec: 'G1' }), now)).toBe('/course/IS213/?s=G1');
+    expect(courseRedirect(st({ course: 'COR-LAW2243', sec: 'G10' }), '')).toBe('/course/COR-LAW2243/?s=G10');
+  });
+  it('sends a past term to the history page with the term and section encoded as the list did', () => {
+    expect(courseRedirect(st({ course: 'IS213', term: '2025-26 Term 2', sec: 'G1' }), now)).toBe('/course/IS213/history/?term=2025-26+Term+2&sec=G1');
+    expect(courseRedirect(st({ course: 'IS213', term: '2024-25 Term 3A' }), now)).toBe('/course/IS213/history/?term=2024-25+Term+3A');
+  });
+  it('round-trips with decodeBrowse of an old link', () => {
+    expect(courseRedirect(decodeBrowse('?q=esd&course=is213&term=2025-26+Term+2&sec=G1'), now)).toBe('/course/IS213/history/?term=2025-26+Term+2&sec=G1');
   });
 });
 

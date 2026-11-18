@@ -43,11 +43,11 @@ export interface BrowseState {
   seats: boolean;
   /** Only sections with no final exam listed. */
   nofinal: boolean;
-  /** Open course code, '' for the list. */
+  /** Course of an old link, '' otherwise. Read for the redirect only; the list never opens a course. */
   course: string;
-  /** Term label of the open course; '' for its first term (this term when it has sections). */
+  /** Term label of an old link; '' for this term. */
   term: string;
-  /** Expanded section of the open course. */
+  /** Section of an old link. */
   sec: string;
 }
 
@@ -192,14 +192,23 @@ export function encodeBrowse(st: BrowseState): string {
   if (st.times.length) p.set('time', encodeTimes([...st.times].sort()));
   if (st.seats) p.set('seats', '1');
   if (st.nofinal) p.set('nofinal', '1');
-  if (st.course) {
-    p.set('course', st.course);
-    if (st.term) p.set('term', st.term);
-    if (st.sec) p.set('sec', st.sec);
-  }
   return p.toString().replace(/%2C/g, ',');
 }
 
+/**
+ * Where an old Browse link to one course (`?course=IS214`, optionally `term` and `sec`) now goes, or null for a plain list link.
+ * This term, or no term, is the course page (`?s=` opens a section); a past term is the course's history page.
+ */
+export function courseRedirect(st: Pick<BrowseState, 'course' | 'term' | 'sec'>, currentTerm: string): string | null {
+  if (!st.course) return null;
+  const base = `/course/${encodeURIComponent(st.course)}/`;
+  if (!st.term || st.term === currentTerm) return st.sec ? `${base}?s=${encodeURIComponent(st.sec)}` : base;
+  const p = new URLSearchParams({ term: st.term });
+  if (st.sec) p.set('sec', st.sec);
+  return `${base}history/?${p}`;
+}
+
+/** Reads the address; `course`, `term` and `sec` are only for old links (see courseRedirect), encodeBrowse never writes them. */
 export function decodeBrowse(search: string): BrowseState {
   const p = new URLSearchParams(search);
   const course = (p.get('course') ?? '').trim().toUpperCase();

@@ -1,6 +1,7 @@
 ---
 import Base from '../../../layouts/Base.astro';
 import HistoryView from '../../../components/course/HistoryView.svelte';
+import TermSections from '../../../components/course/TermSections.svelte';
 import { getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
 import { getCourse } from '../../../lib/data/server';
 import { historySeed } from '../../../components/course/history';
@@ -23,8 +24,10 @@ const seed = historySeed(course.history, instructor, windowName) ?? undefined;
   <header>
     <h1>Past results</h1>
     <p>{course.code} {course.title}</p>
+    <a class="jump" href="#by-term">By term ↓</a>
   </header>
   <HistoryView client:load code={course.code} {windowName} {seed} {instructor} />
+  <TermSections client:load code={course.code} />
 </Base>
 
 <style>
@@ -32,4 +35,7 @@ const seed = historySeed(course.history, instructor, windowName) ?? undefined;
   header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); padding-bottom: var(--s3); }
   h1 { font-size: 30px; font-weight: 600; }
   p { margin: 0; color: var(--muted); font-size: 17px; }
+  .jump { margin-left: auto; font-weight: 600; font-size: 15px; color: var(--accent); }
+  /* No past-term block for this course (or not loaded yet): no link to it. */
+  :global(body:not(:has(#by-term))) .jump { display: none; }
 </style>

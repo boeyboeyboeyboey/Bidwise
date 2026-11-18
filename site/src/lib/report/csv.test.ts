@@ -155,7 +155,7 @@ describe('planner rows', () => {
   });
   it('a row that cannot be simulated has no figures and the planner reason', () => {
     const r = planReportRow({ ...base, issue: 'estfull', bid: null, p: null, fullBid: null });
-    expect(r.note).toBe('Likely full (est.)');
+    expect(r.reason).toBe('Likely full (est.)');
     expect(r.bids[0.9]).toBeNull();
     expect(r.planBidCents).toBeNull();
   });
@@ -222,23 +222,42 @@ describe('bidReason', () => {
   });
 });
 
-describe('plan report with a group row', () => {
+describe('plan report with rows that have no price', () => {
   const mk = (over: object) => ({ code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', group: 1, window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 }, ...over });
-  it('a mixed plan has no overall chance, a Not counted line, and no bid figures for the group row', () => {
+  const meta = { title: 'Bidwise bid report', generatedAt: '2026-11-08 09:20 SGT', plan: true };
+  it('a mixed plan has no left total, no overall chance, a Not counted line with the reason, and no bid figures for the group row', () => {
     const a = planReportRow(mk({}));
     const b = planReportRow(mk({ code: 'IS215', group: 2, groupHidden: true }));
-    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: 11300, pAll: null, needCents: null, notCounted: ['IS215 G1'] });
+    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: null, pAll: null, needCents: null, notCounted: [{ name: 'IS215 G1', reason: 'Group estimates are being revised.' }] });
     expect(totals.find((t) => t.label === 'Chance of all must-get courses')).toBeUndefined();
-    expect(totals).toContainEqual({ label: 'Not counted (bid for 2 or more people)', value: 'IS215 G1' });
+    expect(totals.find((t) => t.label.startsWith('Left'))).toBeUndefined();
+    expect(totals).toContainEqual({ label: 'Not counted', value: 'IS215 G1 (Group estimates are being revised)' });
+    expect(totals).toContainEqual({ label: 'Plan bids total, priced rows only (e$)', value: '12.00' });
     expect(b.reason).toBe('Group estimates are being revised.');
     expect(b.planBidCents).toBeNull();
     expect(b.planChance).toBe('');
     expect(b.planP).toBeNull();
     expect(Object.values(b.bids).every((v) => v === null)).toBe(true);
-    const lines = buildReportCsv([a, b], { title: 'Bidwise bid report', generatedAt: '2026-11-08 09:20 SGT', plan: true, totals }).split('\r\n');
+    const lines = buildReportCsv([a, b], { ...meta, totals }).split('\r\n');
     const bLine = lines.find((l) => l.includes('Group estimates are being revised.'))!;
     expect(bLine).not.toMatch(/12\.00|10\.50|15\.00/);
-    expect(lines.some((l) => l.startsWith('Not counted (bid for 2 or more people),IS215 G1'))).toBe(true);
-    expect(lines.some((l) => l.includes('Chance of all'))).toBe(false);
+    expect(lines.some((l) => l.startsWith('Not counted,IS215 G1 (Group estimates are being revised)'))).toBe(true);
+    expect(lines.some((l) => l.includes('Chance of all') || l.includes('Left after bids'))).toBe(false);
+  });
+  it('a row with a seat issue and a group size shows the issue, not the group notice, and exports no bid figures', () => {
+    const b = planReportRow(mk({ group: 2, groupHidden: true, issue: 'nofc' }));
+    expect(b.reason).toBe('No forecast');
+    expect(b.planBidCents).toBeNull();
+    expect(Object.values(b.bids).every((v) => v === null)).toBe(true);
+  });
+  it('a row that is not priced for another reason exports that reason', () => {
+    const b = planReportRow(mk({ unpricedReason: 'loading' }));
+    expect(b.reason).toBe('loading');
+    expect(b.planP).toBeNull();
+  });
+  it('without unpriced rows the totals keep the plain total and the left figure', () => {
+    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: 11300, pAll: 0.9, needCents: null });
+    expect(totals).toContainEqual({ label: 'Plan bids total (e$)', value: '12.00' });
+    expect(totals).toContainEqual({ label: 'Left after bids (e$)', value: '113.00' });
   });
 });

@@ -6,7 +6,7 @@ import { dataMeta, getForecastMeta } from '../lib/data';
 import { refitNote } from '../lib/data/refitNote';
 import { bidLevels, measuredSummary } from '../lib/data/bidLevels';
 import { STYLE_TARGET } from '../lib/sim/windowBids';
-import { lowConfidenceLines, styleResults } from '../components/course/bidStyle';
+import { LATEST_FORWARD, lowConfidenceLines, styleResults } from '../components/course/bidStyle';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
 import { GITHUB_URL } from '../lib/links';
@@ -163,7 +163,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>Cheap, Balanced and Safe aim to win a seat {aims[0]}, {aims[1]} and {aims[2]} of the time when the section fills. When it doesn’t fill, any bid at the minimum gets in.</li>
         <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in two recent terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
-        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise the whole round), and says so where the past results fall clearly short of the aim.</li>
+        <li>Next to each style, the course page shows how often its bid matched or beat the lowest winning bid in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise all price ranges in this round), and says so where the past results fall clearly short of the aim.</li>
         <li>The headline chance also counts the times the section doesn’t fill, so it is usually higher than the “if it fills” figure.</li>
         <li>Groups: every member needs a seat</li>
       </ul>
@@ -174,7 +174,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>Each style takes a higher bid from the replays: Cheap the lowest, Safe the highest</li>
         <li>The chance shown is how often that bid won a seat in the replays</li>
-        <li>In {rateTerms}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' won' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
+        <li>In {rateTerms}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' matched or beat the lowest winning bid in' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
         <li>That is what they did, not a promise: the forecast for {styleTerm} was made without its results, but the style levels were chosen using that term's results, so a new term may differ</li>
         <li>Safe can show a high chance for a section that rarely fills: it also covers the case where the section fills unexpectedly</li>
         <li>Groups: every member needs a seat</li>
@@ -217,7 +217,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     {measured ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty rounds">
-      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, which flatters the results a little. Tested strictly forward, using only terms before it, the styles won 62%, 80% and 86% in 2026-27 Term 1, the last complete term, so a new term can fall several points short. Round 2A has few filled sections, so its figures are rough.</caption>
+      <caption>How often each style’s bid matched or beat the lowest winning bid on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. A bid exactly equal to the lowest winning bid can lose a tie. Each term was tested with bid levels chosen from the other term, which flatters the results a little. Tested strictly forward, using only terms before it, the styles matched or beat it in {(LATEST_FORWARD.cheap * 100).toFixed(1)}%, {(LATEST_FORWARD.balanced * 100).toFixed(1)}% and {(LATEST_FORWARD.safe * 100).toFixed(1)}% in {LATEST_FORWARD.term}, the last complete term, so a new term can fall several points short. Round 2A has few filled sections, so its figures are rough.</caption>
       <thead><tr><th scope="col"><span class="sr-only">Round</span></th>{KEYS.map((k) => <th scope="col" class="r">{LABEL[k]}</th>)}</tr></thead>
       <tbody>
         <tr class="aim"><th scope="row">Aim</th>{aims.map((a) => <td class="r">{a}</td>)}</tr>
@@ -228,7 +228,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     </>) : calibrated ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty">
-      <caption>Share of bids that won in {rateTerms}. The forecast for that term was made without its results, but the style levels were chosen using that term's results, so a new term may differ.</caption>
+      <caption>Share of bids that matched or beat the lowest winning bid in {rateTerms}. The forecast for that term was made without its results, but the style levels were chosen using that term's results, so a new term may differ.</caption>
       <thead><tr><th scope="col">Style</th><th scope="col" class="r">Sections that filled</th><th scope="col" class="r">All sections</th></tr></thead>
       <tbody>
         {styles.map((r) => <tr><th scope="row">{r.label}</th><td class="r"><b>{wonFilledPct(r)}</b> <span>{r.wonFilledText}</span></td><td class="r"><b>{wonAllPct(r)}</b></td></tr>)}

@@ -934,6 +934,27 @@ class WindowBidFields(unittest.TestCase):
         self.assertEqual(cell["upper"], {"cheap": 0.67, "balanced": 0.82, "safe": 0.87})
         self.assertEqual(m["Round 1 Window 1"]["0"]["source"], "cell")
 
+    def test_guard_fields_pass_with_upper_and_only_when_valid(self):
+        p = self._payload()
+        for g in self.GROUPS:
+            for c in p["measuredWin"][g].values():
+                c["upper"] = {st: round(c[st] + 0.05, 4) for st in ("cheap", "balanced", "safe")}
+                c["nCourses"], c["effCourses"] = 40, 25.3
+        cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1A Window 2"]["2"]
+        self.assertEqual((cell["nCourses"], cell["effCourses"]), (40, 25.3))
+        p["measuredWin"]["R1A"]["2"]["nCourses"] = 40.0  # a float count is left out
+        p["measuredWin"]["R1A"]["2"]["effCourses"] = True  # a bool is left out
+        cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1A Window 2"]["2"]
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled", "source", "upper"})  # both guard fields invalid: left out
+
+    def test_guard_fields_are_left_out_without_upper(self):
+        p = self._payload()
+        for g in self.GROUPS:
+            for c in p["measuredWin"][g].values():
+                c["nCourses"], c["effCourses"] = 40, 25.3
+        cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1A Window 2"]["2"]
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled", "source"})
+
     def test_bad_source_or_upper_is_left_out_but_the_cell_stays(self):
         p = self._payload()
         c = p["measuredWin"]["R1W1"]["1"]

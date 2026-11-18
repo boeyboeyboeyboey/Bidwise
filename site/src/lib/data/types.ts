@@ -216,6 +216,10 @@ export interface MeasuredWinCell {
   source?: 'cell' | 'group' | 'all';
   /** One-sided 95% upper bound (0..1, null when unknown) on each style's rate from a course-cluster bootstrap. Absent in older builds. */
   upper?: Record<BidStyleKey, number | null>;
+  /** Distinct courses behind the upper bound (an integer). Absent in older builds. */
+  nCourses?: number;
+  /** Effective number of courses, (sum n_i)^2 / sum n_i^2 over the courses' rows, 1 dp. Absent in older builds. */
+  effCourses?: number;
 }
 
 export interface DistCalibrationMeta {

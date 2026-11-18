@@ -47,6 +47,9 @@ function windowLevels(v: unknown): BidWindowData['levels'] {
 /** An upper bound is a fraction; anything else is "not known". */
 const upperOf = (v: unknown): number | null => (num(v) && v >= 0 && v <= 1 ? v : null);
 
+/** A course count behind an upper bound: finite and positive, and an integer for nCourses; anything else is left out. */
+const countOf = (v: unknown, integer: boolean): number | undefined => (num(v) && v > 0 && (!integer || Number.isInteger(v)) ? v : undefined);
+
 function windowMeasured(v: unknown): BidWindowData['measured'] {
   if (!v || typeof v !== 'object') return null;
   const out: NonNullable<BidWindowData['measured']> = {};
@@ -58,10 +61,14 @@ function windowMeasured(v: unknown): BidWindowData['measured'] {
       if (c && rate(c.cheap) && rate(c.balanced) && rate(c.safe) && num(c.nFilled)) {
         const up = c.upper && typeof c.upper === 'object' ? (c.upper as Record<string, unknown>) : null;
         const upper = up ? { cheap: upperOf(up.cheap), balanced: upperOf(up.balanced), safe: upperOf(up.safe) } : null;
+        const nCourses = countOf(c.nCourses, true);
+        const effCourses = countOf(c.effCourses, false);
         cells[String(i)] = {
           cheap: c.cheap, balanced: c.balanced, safe: c.safe, nFilled: c.nFilled,
           ...(c.source === 'cell' || c.source === 'group' || c.source === 'all' ? { source: c.source } : {}),
           ...(upper ? { upper } : {}),
+          ...(nCourses !== undefined ? { nCourses } : {}),
+          ...(effCourses !== undefined ? { effCourses } : {}),
         };
       }
     }

@@ -10,7 +10,7 @@
   import { orderSections } from '../course/sections';
   import { seatLabel } from '../course/seatLabel';
   import SeatRing from '../course/SeatRing.svelte';
-  import { ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
+  import { FAILED_REASON, ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
   import InfoTip from '../ui/InfoTip.svelte';
 
@@ -18,6 +18,7 @@
     row = $bindable(),
     course,
     issue = null,
+    failed = false,
     avoid,
     bid,
     p,
@@ -36,7 +37,7 @@
     onrole,
     reason = '',
     clashes = [],
-  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; canStart?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
+  }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; failed?: boolean; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; canStart?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
 
   const sec = $derived(course?.sectionsNow.find((x) => x.id === row.sectionId));
   /** Most people the group can be: capped by the seats left. */
@@ -77,7 +78,7 @@
     <div class="id"><b class="code">{row.course}</b>{#if hidden}<span class="lab hid">{hidden} {hidden === 1 ? 'section' : 'sections'} hidden</span>{/if}</div>
     <div class="secwrap">
       <select class="field sec" aria-label="{row.course} section" disabled={!course} bind:value={row.sectionId}>
-        {#if !course}<option value={row.sectionId}>Loading</option>{/if}
+        {#if !course}<option value={row.sectionId}>{failed ? "Couldn't load" : 'Loading'}</option>{/if}
         {#each sections as s (s.id)}
           <option value={s.id} disabled={seatsLeftNow(s) <= 0 && !isLikelyFull(s) && s.id !== row.sectionId}>{sectionOption(s)}</option>
         {/each}
@@ -96,7 +97,7 @@
     </button>
     <div class="l2">
     <div class="step" role="group" aria-label="{row.course} group size">
-      <span class="stl"><span class="lab">Bidding group size</span><InfoTip label="About bidding group size" lines={['Friends bidding for the same section together.', 'Everyone needs a seat, so a bigger group needs a higher bid.']} /></span>
+      <span class="stl"><span class="lab">Bidding group size</span><InfoTip label="About bidding group size" lines={['Friends bidding for the same section together.', 'Everyone in the group needs a seat.']} /></span>
       <div class="ctl">
         <button type="button" class="btn btn-icon" aria-label="Fewer people for {row.course}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
         <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
@@ -105,8 +106,9 @@
       </div>
     </div>
     <div class="res num" aria-live="polite" aria-busy={busy}>
-      {#if groupHidden}<span class="cant">{GROUP_NOTICE}</span> <button type="button" class="btn" onclick={() => (row.group = 1)}>{GROUP_NOTICE_ACTION}</button>
+      {#if failed}<span class="cant">{FAILED_REASON}</span>
       {:else if issue}<span class="cant">{ISSUE_TEXT[issue]}</span>
+      {:else if groupHidden}<span class="cant">{GROUP_NOTICE}</span> <button type="button" class="btn" onclick={() => (row.group = 1)}>{GROUP_NOTICE_ACTION}</button>
       {:else if none && fullBid !== null && fullBid > 0}<span class="need">Needs <s>{eS(fullBid)}</s></span>
       {:else if bid === null || (!skip && p === null)}<span class="calc">Calculating…</span>
       {:else if skip}

@@ -9,7 +9,7 @@ import {
   BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
-  canStartGroup, chanceOfGroup, chanceWithheldText, groupScope, inOptimisation, notCountedText, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
+  canStartGroup, chanceOfGroup, chanceWithheldText, planScope, inOptimisation, notCountedText, terminalText, classifyRow, type ScopeRowInput, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
@@ -642,33 +642,79 @@ describe('group rows and the optimisation', () => {
   });
 });
 
-describe('groupScope', () => {
-  const r = (course: string, group: number, role: 'required' | 'oneOf' | 'optional' = 'required', oneOf = 'A') => ({ course, group, role, oneOf });
-  const name = (x: { course: string }) => `${x.course} G1`;
-  it('a Must get group row withholds the chance and is listed', () => {
-    const s = groupScope([r('A', 1), r('B', 2)], name);
-    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: true, chanceNames: ['B G1'], groupOnly: false });
+describe('planScope', () => {
+  const r = (name: string, over: Partial<ScopeRowInput> = {}): ScopeRowInput => ({ name, role: 'required', oneOf: 'A', group: 1, courseLoaded: true, failed: false, sec: true, issue: null, curveReady: true, ...over });
+  it('classifies each row: priced, loading, unpriced with a reason, no seats', () => {
+    expect(classifyRow(r('A'))).toEqual({ state: 'priced', reason: '' });
+    expect(classifyRow(r('A', { courseLoaded: false }))).toEqual({ state: 'loading', reason: 'loading' });
+    expect(classifyRow(r('A', { curveReady: false }))).toEqual({ state: 'loading', reason: 'loading' });
+    expect(classifyRow(r('A', { issue: 'nofc' }))).toEqual({ state: 'unpriced', reason: 'No forecast' });
+    expect(classifyRow(r('A', { issue: 'estfull' }))).toEqual({ state: 'unpriced', reason: 'Likely full (est.)' });
+    expect(classifyRow(r('A', { issue: 'full' })).state).toBe('infeasible');
+    expect(classifyRow(r('A', { courseLoaded: false, failed: true }))).toEqual({ state: 'unpriced', reason: "Couldn't load this course" });
+    expect(classifyRow(r('A', { sec: false })).state).toBe('unpriced');
   });
-  it('a Pick one group row withholds the chance and names its group', () => {
-    const s = groupScope([r('A', 1), r('B', 3, 'oneOf', 'C')], name);
-    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: true, pickLetters: ['C'] });
+  it('a group row is unpriced with the group notice, but a seat issue is named first', () => {
+    expect(classifyRow(r('A', { group: 2, curveReady: false }))).toEqual({ state: 'unpriced', reason: 'Group estimates are being revised.' });
+    expect(classifyRow(r('A', { group: 2, issue: 'group' })).reason).toBe('Group too big');
+    expect(classifyRow(r('A', { group: 2, issue: 'full' })).state).toBe('infeasible');
   });
-  it('a Nice to have group row is listed but does not withhold the chance', () => {
-    const s = groupScope([r('A', 1), r('B', 2, 'optional')], name);
-    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: false, chanceNames: [], pickLetters: [], groupOnly: false });
+  it('a Must get still loading withholds the chance and the "left" figure, and is loading', () => {
+    const s = planScope([r('A'), r('B', { courseLoaded: false })]);
+    expect(s).toMatchObject({ loading: true, chanceWithheld: true, adviceWithheld: true, leftWithheld: true, terminal: false, priced: 1 });
+    expect(s.chanceNames).toEqual([{ name: 'B', reason: 'loading' }]);
   });
-  it('only group rows: group only', () => {
-    expect(groupScope([r('A', 2), r('B', 2, 'optional')], name)).toMatchObject({ hidden: ['A G1', 'B G1'], groupOnly: true, chanceWithheld: true });
-    expect(groupScope([r('B', 2, 'optional')], name)).toMatchObject({ groupOnly: true, chanceWithheld: false });
+  it('a Must get with no forecast withholds the chance and says why', () => {
+    const s = planScope([r('A'), r('B', { issue: 'nofc' })]);
+    expect(s).toMatchObject({ chanceWithheld: true, adviceWithheld: true, leftWithheld: true, loading: false });
+    expect(s.chanceNames).toEqual([{ name: 'B', reason: 'No forecast' }]);
+    expect(s.uncounted).toEqual(s.unpriced);
   });
-  it('no group rows: nothing hidden, also for an empty plan', () => {
-    const none = { hidden: [], chanceWithheld: false, chanceNames: [], pickLetters: [], groupOnly: false };
-    expect(groupScope([r('A', 1), r('B', 1, 'oneOf')], name)).toEqual(none);
-    expect(groupScope([], name)).toEqual(none);
+  it('a Pick one member that is estimated full withholds that letter only', () => {
+    const s = planScope([r('A', { role: 'oneOf', oneOf: 'B' }), r('B', { role: 'oneOf', oneOf: 'B', issue: 'estfull' }), r('C', { role: 'oneOf', oneOf: 'C' })]);
+    expect(s.pickWithheld).toEqual(['B']);
+    expect(s.chanceWithheld).toBe(true);
   });
-  it('words the notices with is / are and a joined list', () => {
-    expect(chanceWithheldText(['IS215 G1'])).toBe('Not shown while IS215 G1 is bid for 2 or more people.');
-    expect(chanceWithheldText(['A', 'B', 'C'])).toBe('Not shown while A, B and C are bid for 2 or more people.');
-    expect(notCountedText(['A', 'B'])).toBe('Not counted: A and B (bid for 2 or more people).');
+  it('a Pick one group whose members all have no seats is blocked, not dropped', () => {
+    const s = planScope([r('A'), r('B', { role: 'oneOf', oneOf: 'B', issue: 'full' }), r('C', { role: 'oneOf', oneOf: 'B', issue: 'full' })]);
+    expect(s.blocked).toEqual(['B', 'C']);
+    expect(s.blockedLetters).toEqual(['B']);
+    expect(s.chanceWithheld).toBe(false);
+    // one member with seats: not blocked
+    expect(planScope([r('B', { role: 'oneOf', issue: 'full' }), r('C', { role: 'oneOf' })]).blocked).toEqual([]);
+  });
+  it('a Must get with no seats blocks, and "Not possible" wins over a withheld chance', () => {
+    const s = planScope([r('A', { issue: 'full' }), r('B', { issue: 'nofc' })]);
+    expect(s.blocked).toEqual(['A']);
+    expect(s.chanceWithheld).toBe(false);
+    expect(s.leftWithheld).toBe(true);
+  });
+  it('an unpriced Nice to have keeps the chance but withholds "left"', () => {
+    const s = planScope([r('A'), r('B', { role: 'optional', issue: 'nofc' })]);
+    expect(s).toMatchObject({ chanceWithheld: false, adviceWithheld: false, leftWithheld: true, pickWithheld: [], chanceNames: [] });
+    expect(s.uncounted).toEqual([{ name: 'B', reason: 'No forecast' }]);
+  });
+  it('only unpriced rows: terminal, not loading', () => {
+    const s = planScope([r('A', { issue: 'nofc' })]);
+    expect(s).toMatchObject({ terminal: true, loading: false, priced: 0, chanceWithheld: true });
+    expect(s.unpricedAll).toEqual([{ name: 'A', reason: 'No forecast' }]);
+    expect(planScope([r('A', { issue: 'nofc' }), r('B', { courseLoaded: false })]).terminal).toBe(false);
+    expect(planScope([]).terminal).toBe(false);
+  });
+  it('a course that failed to load keeps its row, unpriced', () => {
+    const s = planScope([r('A', { courseLoaded: false, failed: true })]);
+    expect(s.rows).toEqual([{ name: 'A', state: 'unpriced', reason: "Couldn't load this course" }]);
+    expect(s.loading).toBe(false);
+    expect(s.terminal).toBe(true);
+  });
+  it('a fully priced plan withholds nothing', () => {
+    const s = planScope([r('A'), r('B', { role: 'oneOf' }), r('C', { role: 'optional' })]);
+    expect(s).toMatchObject({ chanceWithheld: false, adviceWithheld: false, leftWithheld: false, terminal: false, loading: false, priced: 3, hasChance: true, blocked: [] });
+  });
+  it('words the notices with a name (reason) list', () => {
+    const xs = [{ name: 'IS215 G1', reason: 'No forecast' }, { name: 'IS216 G2', reason: 'Group estimates are being revised.' }];
+    expect(chanceWithheldText(xs)).toBe('Not shown until every Must get and Pick one course has a bid: IS215 G1 (No forecast); IS216 G2 (Group estimates are being revised)');
+    expect(notCountedText(xs.slice(0, 1))).toBe('Bids total for priced rows only. Not counted: IS215 G1 (No forecast)');
+    expect(terminalText(xs)).toBe('No chance shown: IS215 G1: No forecast; IS216 G2: Group estimates are being revised');
   });
 });

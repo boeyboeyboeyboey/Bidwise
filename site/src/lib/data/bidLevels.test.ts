@@ -45,6 +45,14 @@ describe('bidWindowData', () => {
     expect(d?.measured?.['Round 1 Window 1']['3'].nFilled).toBe(60);
     expect(d?.edges).toEqual([15, 25, 40, 60]);
   });
+  it('reads the course counts when valid and drops invalid ones silently', () => {
+    const w = (c: object) => bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, c])) } } as never)?.measured?.['Round 1 Window 1']['0'];
+    const up = { upper: { cheap: 0.75, balanced: 0.9, safe: 0.95 } };
+    expect(w({ ...cell, ...up, nCourses: 30, effCourses: 20.5 })).toEqual({ ...cell, ...up, nCourses: 30, effCourses: 20.5 });
+    expect(w({ ...cell, ...up, nCourses: 30.5, effCourses: 0 })).toEqual({ ...cell, ...up });
+    expect(w({ ...cell, ...up, nCourses: -3, effCourses: Infinity })).toEqual({ ...cell, ...up });
+    expect(w({ ...cell, ...up, nCourses: '30', effCourses: '20' })).toEqual({ ...cell, ...up });
+  });
   it('reads source and upper bounds when present, ignores bad ones, and works without them', () => {
     const w = (c: object) => bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, c])) } } as never)?.measured?.['Round 1 Window 1']['0'];
     expect(w({ ...cell, source: 'cell', upper: { cheap: 0.75, balanced: 0.9, safe: 0.95 } })).toMatchObject({ source: 'cell', upper: { cheap: 0.75, balanced: 0.9, safe: 0.95 } });

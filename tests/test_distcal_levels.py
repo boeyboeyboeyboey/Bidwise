@@ -154,14 +154,43 @@ class MeasuredWin(unittest.TestCase):
     def test_upper_bounds_matches_a_hand_bootstrap(self):
         # 4 courses with 0, 1, 1, 1 wins of 2 rows each: rate 3/8; every resample's rate is a multiple of 1/8 within [0, 1]
         wins = {"cheap": [0, 0, 1, 0, 1, 0, 1, 0], "balanced": [1] * 8, "safe": [0] * 8}
-        ids = [0, 0, 1, 1, 2, 2, 3, 3]
+        ids = ["a", "a", "b", "b", "c", "c", "d", "d"]
         up = D.upper_bounds(wins, ids)
         self.assertEqual(up["balanced"], 1.0)
         self.assertEqual(up["safe"], 0.0)
         self.assertGreaterEqual(up["cheap"], 3 / 8)
         self.assertLessEqual(up["cheap"], 1.0)
         self.assertEqual(up, D.upper_bounds(wins, ids))
-        self.assertEqual(D.upper_bounds(wins, [7, 7, 9, 9, 11, 11, 13, 13]), up)  # only the grouping matters, not the ids
+        self.assertEqual(D.upper_bounds(wins, ["p", "p", "q", "q", "r", "r", "s", "s"]), up)  # only the grouping matters, not the names
+
+    def test_a_missing_or_invalid_course_id_gives_no_bounds_at_all(self):
+        wins = {"cheap": [0, 1, 1, 0], "balanced": [1] * 4, "safe": [0] * 4}
+        for bad in (None, "", "   ", 3, 2.5, b"x"):
+            self.assertIsNone(D.upper_bounds(wins, ["a", bad, "b", "b"]), repr(bad))
+        self.assertIsNotNone(D.upper_bounds(wins, [" a ", "b", "b", "a"]))  # padded but not blank
+
+    def test_course_counts_by_hand(self):
+        # courses with 3 and 1 rows: (3 + 1)^2 / (9 + 1) = 1.6
+        self.assertEqual(D._course_counts(["a", "a", "a", "b"]), (2, 1.6))
+        # three courses with 2 rows each: 6^2 / 12 = 3.0
+        self.assertEqual(D._course_counts(["a", "a", "b", "b", "c", "c"]), (3, 3.0))
+        # 4 + 2 + 2 rows: 64 / 24 = 2.666... -> 2.7
+        self.assertEqual(D._course_counts(["a"] * 4 + ["b"] * 2 + ["c"] * 2), (3, 2.7))
+
+    def test_guard_fields_for_every_cell_and_an_even_population(self):
+        # rows_in cycles 5 courses evenly, so all 1880 filled rows of both terms give 376 rows per course: nCourses 5, effCourses 5.0
+        rt, rh, mw = self._mw()
+        self.assertEqual((mw["R1B"]["1"]["nCourses"], mw["R1B"]["1"]["effCourses"]), (5, 5.0))  # no rows: the all-rows cell
+        for g in D.GROUPS:
+            for c in mw[g].values():
+                if "upper" in c:
+                    self.assertIsInstance(c["nCourses"], int)
+                    self.assertIsInstance(c["effCourses"], float)
+                    self.assertTrue(1 <= c["nCourses"] <= 5)
+                    self.assertTrue(1.0 <= c["effCourses"] <= c["nCourses"])
+                else:
+                    self.assertNotIn("nCourses", c)
+                    self.assertNotIn("effCourses", c)
 
     def test_without_course_ids_cells_ship_without_upper(self):
         rt, rh, _ = self._mw()
@@ -170,6 +199,19 @@ class MeasuredWin(unittest.TestCase):
         mw = D.measured_win(rt, rh, D.learn_spread(rt)[0], D.learn_spread(rh)[0])
         self.assertNotIn("upper", mw["R1W1"]["1"])
         self.assertEqual(set(mw["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source"})
+
+    def test_a_blank_course_id_drops_the_guard_only_from_populations_that_hold_it(self):
+        rt, rh, _ = self._mw()
+        rt[0]["course"] = "   "  # rt[0] is an R1W1 row, so the all-rows population holds it and the R2 cells do not
+        mw = D.measured_win(rt, rh, D.learn_spread(rt)[0], D.learn_spread(rh)[0])
+        self.assertEqual(set(mw["R1B"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source"})  # the all-rows cell
+        self.assertTrue(any("upper" in c for c in mw["R2"].values()))
+        for g in D.GROUPS:
+            for c in mw[g].values():
+                if "upper" not in c:
+                    self.assertEqual(set(c), {"cheap", "balanced", "safe", "nFilled", "source"})
+                else:
+                    self.assertEqual({"nCourses", "effCourses"} - set(c), set())
 
     def test_rates_are_exact_on_a_trivial_case(self):
         # actual bid = the floor: every site-rounded bid is at least the floor, so every style wins every filled row
@@ -277,7 +319,7 @@ class BacktestPayload(unittest.TestCase):
         self.assertEqual(set(p["levelsByGroup"]["R1W1"]["cheap"]), {"level", "lossFilled", "reached", "nFilled", "own"})
         self.assertFalse(p["levelsByGroup"]["R2A"]["safe"]["own"])
         self.assertEqual(list(p["measuredWin"]), list(D.GROUPS) + ["overall"])
-        self.assertEqual(set(p["measuredWin"]["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source", "upper"})
+        self.assertEqual(set(p["measuredWin"]["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source", "upper", "nCourses", "effCourses"})
 
 
 if __name__ == "__main__":

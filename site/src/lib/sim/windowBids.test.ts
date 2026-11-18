@@ -61,19 +61,43 @@ describe('measuredRate', () => {
 });
 
 describe('belowAim', () => {
+  // a cell that passes the course-count guard; each test changes one thing
+  const ok = (upper: number | null | undefined, extra: Record<string, unknown> = {}) => ({ rate: 0.5, upper, nCourses: 30, effCourses: 20, ...extra });
   it('judges the upper bound against the style target minus 3 points', () => {
     expect(STYLE_TARGET).toEqual({ cheap: 0.7, balanced: 0.85, safe: 0.9 });
-    expect(belowAim('cheap', 0.66)).toBe(true);
-    expect(belowAim('cheap', 0.67)).toBe(false); // exactly 3 points under is not below
-    expect(belowAim('cheap', 0.68)).toBe(false);
-    expect(belowAim('balanced', 0.81)).toBe(true);
-    expect(belowAim('balanced', 0.82)).toBe(false);
-    expect(belowAim('safe', 0.86)).toBe(true);
-    expect(belowAim('safe', 0.87)).toBe(false);
+    expect(belowAim('cheap', ok(0.66))).toBe(true);
+    expect(belowAim('cheap', ok(0.67))).toBe(false); // exactly 3 points under is not below
+    expect(belowAim('cheap', ok(0.68))).toBe(false);
+    expect(belowAim('balanced', ok(0.81))).toBe(true);
+    expect(belowAim('balanced', ok(0.82))).toBe(false);
+    expect(belowAim('safe', ok(0.86))).toBe(true);
+    expect(belowAim('safe', ok(0.87))).toBe(false);
   });
   it('never says so without an upper bound', () => {
+    expect(belowAim('safe', ok(null))).toBe(false);
+    expect(belowAim('safe', ok(undefined))).toBe(false);
     expect(belowAim('safe', null)).toBe(false);
     expect(belowAim('safe', undefined)).toBe(false);
+  });
+  it('fails closed when the course count is missing or under 30', () => {
+    expect(belowAim('safe', { rate: 0.5, upper: 0.8, effCourses: 25 })).toBe(false);
+    expect(belowAim('safe', ok(0.8, { nCourses: 29 }))).toBe(false);
+    expect(belowAim('safe', ok(0.8, { nCourses: 30 }))).toBe(true);
+    expect(belowAim('safe', ok(0.8, { nCourses: undefined }))).toBe(false);
+    expect(belowAim('safe', ok(0.8, { nCourses: NaN }))).toBe(false);
+  });
+  it('fails closed when the effective course count is missing or under 20', () => {
+    expect(belowAim('safe', { rate: 0.5, upper: 0.8, nCourses: 40 })).toBe(false);
+    expect(belowAim('safe', ok(0.8, { effCourses: 19.9 }))).toBe(false);
+    expect(belowAim('safe', ok(0.8, { effCourses: 20 }))).toBe(true);
+  });
+  it('needs a non-degenerate interval: an upper bound equal to the rate is not below', () => {
+    expect(belowAim('cheap', { rate: 0.6, upper: 0.6, nCourses: 40, effCourses: 25 })).toBe(false);
+    expect(belowAim('cheap', { rate: 0.6, upper: 0.65, nCourses: 40, effCourses: 25 })).toBe(true);
+  });
+  it('is false for a missing cell', () => {
+    expect(belowAim('cheap', null)).toBe(false);
+    expect(belowAim('cheap', undefined)).toBe(false);
   });
 });
 
@@ -83,6 +107,10 @@ describe('measuredCell', () => {
     const d: BidWindowData = { ...DATA, measured: { W1: { ...DATA.measured!.W1, '1': { ...cell(1), source: 'group', upper: { cheap: 0.6, balanced: 0.7, safe: null } } } } };
     expect(measuredCell(d, 'W1', s20, 'balanced')).toEqual({ rate: 0.61, nFilled: 50, source: 'group', upper: 0.7 });
     expect(measuredCell(d, 'W1', s20, 'safe')?.upper).toBeNull();
+  });
+  it('carries the course counts when the build has them', () => {
+    const d: BidWindowData = { ...DATA, measured: { W1: { ...DATA.measured!.W1, '1': { ...cell(1), upper: { cheap: 0.6, balanced: 0.7, safe: null }, nCourses: 40, effCourses: 25.5 } } } };
+    expect(measuredCell(d, 'W1', s20, 'balanced')).toEqual({ rate: 0.61, nFilled: 50, upper: 0.7, nCourses: 40, effCourses: 25.5 });
   });
   it('old data (no source, no upper) still gives the rate and count', () => {
     expect(measuredCell(DATA, 'W1', s20, 'cheap')).toEqual({ rate: 0.51, nFilled: 50, upper: null });
@@ -106,7 +134,10 @@ describe('reachedForWindow', () => {
 });
 
 describe('bidClaims', () => {
-  const cellOf = (rate: number, upper: number | null = null, source?: MeasuredCell['source']): MeasuredCell => ({ rate, nFilled: 80, upper, ...(source ? { source } : {}) });
+  // with an upper bound the cell also carries the course counts, as the build ships them
+  const cellOf = (rate: number, upper: number | null = null, source?: MeasuredCell['source']): MeasuredCell => ({
+    rate, nFilled: 80, upper, ...(upper === null ? {} : { nCourses: 40, effCourses: 25 }), ...(source ? { source } : {}),
+  });
   const base: ClaimInput = { group: 1, calibrated: true, rec: 3501, minBid: 1000, style: 'balanced', tied: ['balanced'], cells: { balanced: cellOf(0.8, 0.83, 'cell') }, reached: { balanced: true } };
   it('group of 2 or more: nothing but the hidden flag', () => {
     const c = bidClaims({ ...base, group: 2, tied: ['balanced', 'safe'], reached: { balanced: false } });
@@ -128,6 +159,11 @@ describe('bidClaims', () => {
   it('above the floor with an upper bound: below aim only when the bound is under target - 3 points', () => {
     expect(bidClaims({ ...base, cells: { balanced: cellOf(0.75, 0.81) } }).past[0].belowAim).toBe(true);
     expect(bidClaims({ ...base, cells: { balanced: cellOf(0.75, 0.82) } }).past[0].belowAim).toBe(false);
+  });
+  it('an upper bound under target from too few courses is not below aim', () => {
+    const thin: MeasuredCell = { ...cellOf(0.75, 0.81), nCourses: 29 };
+    expect(bidClaims({ ...base, cells: { balanced: thin } }).past[0].belowAim).toBe(false);
+    expect(bidClaims({ ...base, cells: { balanced: { ...cellOf(0.75, 0.81), effCourses: 19.9 } } }).past[0].belowAim).toBe(false);
   });
   it('above the floor without an upper bound: rate and count, no judgement, whatever the rate', () => {
     const c = bidClaims({ ...base, cells: { balanced: cellOf(0.3) } });

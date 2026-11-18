@@ -19,8 +19,8 @@
   import CourseAdd from './CourseAdd.svelte';
   import PlanRow from './PlanRow.svelte';
   import {
-    DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
-    canStartGroup, changeRole, chanceOfGroup, chanceWithheldText, groupScope, joinableRows, notCountedText, moveToGroup, planParts, whereNow, inOptimisation, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
+    DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
+    canStartGroup, changeRole, chanceOfGroup, chanceWithheldText, planScope, joinableRows, notCountedText, terminalText, moveToGroup, planParts, whereNow, inOptimisation, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
@@ -87,14 +87,15 @@
   let fitted = $state.raw<PlanResult | null>(null);
   const inflight = new Set<string>();
   const loading = new Set<string>();
-  const failed = new Set<string>();
+  /** Courses whose file could not be fetched: their rows stay, unpriced. */
+  let failedCodes = $state.raw<string[]>([]);
 
   const uid = () => Math.random().toString(36).slice(2, 9);
   const simKey = (r: PlanRowState) => `${win}|${r.sectionId}|${r.group}`;
 
   async function loadCourse(code: string): Promise<CourseData | null> {
     if (courses[code]) return courses[code];
-    if (loading.has(code) || failed.has(code)) return null;
+    if (loading.has(code) || failedCodes.includes(code)) return null;
     loading.add(code);
     try {
       const d = await fetchCourse(code);
@@ -107,9 +108,8 @@
       }
       return d;
     } catch {
-      failed.add(code);
+      failedCodes = [...failedCodes, code];
       loadError = `Could not load ${code}`;
-      rows = rows.filter((r) => r.course !== code);
       return null;
     } finally {
       loading.delete(code);
@@ -126,12 +126,12 @@
   // A group row sits out of the optimisation and totals while group estimates are withheld (as if not yet bid).
   const eligibleRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
   const okRows = $derived(inOptimisation(eligibleRows));
-  /** The left-out group rows: with a Must get or Pick one among them, the plan's chance is not shown; any left-out row is listed as not counted. */
-  const scope = $derived(groupScope(eligibleRows, rowName));
-  const notCounted = $derived(scope.hidden.length ? notCountedText(scope.hidden) : '');
+  /** Every selected row classified (priced, loading, unpriced, no seats): what the plan may claim about the whole plan follows from it. */
+  const scope = $derived(planScope(rows.map((r, i) => ({ name: rowName(r), role: r.role, oneOf: r.oneOf, group: r.group, courseLoaded: !!courses[r.course], failed: failedCodes.includes(r.course), sec: !!info[i].sec, issue: info[i].issue, curveReady: !!curves[simKey(r)] }))));
+  const notCounted = $derived(scope.uncounted.length ? notCountedText(scope.uncounted) : '');
   const excluded = $derived(info.filter((x) => x.issue).length);
-  /** Must get rows whose section has no seats: the chance of getting all of them is zero, so no percentage is shown. */
-  const blocked = $derived(blockedMustGets(rows.map((r, i) => ({ role: r.role, issue: info[i].issue, label: rowName(r) }))));
+  /** Must get rows (or Pick one groups) with no seats: the chance of getting everything is zero, so no percentage is shown. */
+  const blocked = $derived(scope.blocked);
   const blockedNote = $derived(blockedText(blocked));
   const simItems = $derived.by(() => {
     const out: PlanItem[] = [];
@@ -184,7 +184,7 @@
   const reqNeedCents = $derived(typicalNeedCents(planItems));
   const hasRequired = $derived(planItems.some((i) => i.role !== 'optional'));
   /** True when no row that can be simulated is a must-get or pick-one: the headline chance would be meaningless. */
-  const noMust = $derived(okRows.length > 0 && !okRows.some((r) => r.role !== 'optional'));
+  const noMust = $derived(scope.priced > 0 && !scope.hasChance);
   const allSimmed = $derived(okRows.length > 0 && simItems.length === okRows.length);
   /** Every row at the course page's recommended bid for the chance you want. */
   const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0, win) : null);
@@ -203,17 +203,20 @@
     return c ? suggestBid(c, target, win) : null;
   };
   const over = $derived(hasRequired && balanceCents !== null && overBalance(reqNeedCents, balanceCents));
+  /** Over-balance claims and advice: only when every Must get and Pick one row is priced, since the need is a lower bound only then. */
+  const overAdvice = $derived(over && !scope.adviceWithheld);
   const hopeless = $derived(!!result && !pending && result.pAll < 0.05);
-  const overBudget = $derived(hopeless && over);
+  const overBudget = $derived(hopeless && overAdvice);
   /** Totals against the balance; null with no balance (then only the bid total is shown). */
   const sum = $derived(result && balanceCents !== null ? bidSummary(result.bidTotalCents, result.spentCents, balanceCents) : null);
   // Over balance, Nice to have rows are not bid on at all: Must gets come first.
   const hasOptional = $derived(rows.some((r) => r.role === 'optional'));
   /** Some bid is below the bid for the chance wanted, because the balance does not stretch. */
   const anyCut = $derived(!!result && !pending && needsFit && rows.some((r) => isCapped(result.bids[r.id] ?? null, fullBidOf(r), needsFit)));
-  const saver = $derived((over || anyCut) && balanceCents !== null ? needSaver(planItems, balanceCents) : null);
-  const showNotice = $derived(!!result && !pending && (over || (hopeless && !scope.chanceWithheld)));
-  const showCallout = $derived(anyCut || showNotice);
+  const showCut = $derived(anyCut && !scope.adviceWithheld);
+  const saver = $derived((overAdvice || showCut) && balanceCents !== null ? needSaver(planItems, balanceCents) : null);
+  const showNotice = $derived(!!result && !pending && (overAdvice || (hopeless && !scope.chanceWithheld)));
+  const showCallout = $derived(showCut || showNotice);
   // Pick one group of a row, named by its courses ("IS469 / IS470").
   const pickOf = (row: PlanRowState) => (row.role === 'oneOf' ? courseLabel(rows.filter((r) => r.role === 'oneOf' && r.oneOf === row.oneOf).map((r) => r.course)) : '');
   /** One line on why the plan bids this much on a row, from its own forecast. */
@@ -249,6 +252,7 @@
    */
   async function addRow(code: string) {
     loadError = '';
+    failedCodes = failedCodes.filter((c) => c !== code); // adding it again tries again
     const same = rows.filter((r) => r.course === code);
     if (same.length) {
       // already in the plan: no second row. Alternatives are added from a Pick one group.
@@ -259,7 +263,7 @@
     rows.push({ id, course: code, sectionId: courses[code] ? (defaultSection(courses[code].sectionsNow, [], avoid)?.id ?? '') : '', group: 1, role: 'required', oneOf: 'A' });
     const d = await loadCourse(code);
     const row = rows.find((r) => r.id === id);
-    if (row && !d?.sectionsNow.some((s) => s.id === row.sectionId)) rows = rows.filter((r) => r.id !== id);
+    if (row && d && !d.sectionsNow.some((s) => s.id === row.sectionId)) rows = rows.filter((r) => r.id !== id);
   }
   /** Adds another section of a course already in the group `letter`, as an alternative. */
   function addSection(code: string, letter: string) {
@@ -519,11 +523,11 @@
 
   // Bid report: the rows as the planner shows them (same bids and chances), in display order. Null until everything is computed.
   // A pick whose course loaded but whose section is gone is left out (and listed); a course still loading makes the report wait.
-  const reportReady = $derived(ready && !pending && info.some((x) => !!x.sec) && rows.every((r, i) => !!info[i].sec || !!courses[r.course]));
+  // A course that failed to load does not hold the report back: its rows are listed as not counted.
+  const reportReady = $derived(ready && !pending && !scope.loading && info.some((x) => !!x.sec) && rows.every((r, i) => !!info[i].sec || !!courses[r.course] || failedCodes.includes(r.course)));
   function buildReport(): { rows: ReportRow[]; meta: ReportMeta } | null {
     if (!reportReady) return null;
     const order = shownOrder;
-    const skipped = order.filter((i) => !info[i].sec).map((i) => rows[i].course);
     const out = order.filter((i) => !!info[i].sec).map((i) => {
       const r = rows[i];
       const c = curves[simKey(r)];
@@ -545,7 +549,7 @@
         target,
         reason: reasonOf(r, i),
         clashes: clashLines(clashPairs, r.id),
-        groupHidden: !info[i].issue && groupEstimatesHidden(r.group),
+        groupHidden: groupEstimatesHidden(r.group),
         bids: Object.fromEntries(TARGETS.map((t) => [t, c ? suggestBid(c, t, win) : null])),
       });
     });
@@ -553,13 +557,12 @@
     const totals = planTotals({
       balanceCents,
       bidTotalCents: shown ? result!.bidTotalCents : null,
-      leftCents: shown && sum ? sum.leftCents : null,
-      pAll: result && !noMust && !overBudget && !blocked.length && !scope.chanceWithheld ? result.pAll : null,
-      needCents: over && !blocked.length ? reqNeedCents : null,
-      notCounted: scope.hidden,
+      leftCents: shown && sum && !scope.leftWithheld ? sum.leftCents : null,
+      pAll: result && !noMust && !overBudget && !blocked.length && !scope.chanceWithheld && !scope.terminal ? result.pAll : null,
+      needCents: overAdvice && !blocked.length ? reqNeedCents : null,
+      notCounted: scope.uncounted,
     });
-    const notes = skipped.length ? [`Left out, section no longer offered: ${skipped.join(', ')}`] : [];
-    return { rows: out, meta: { title: 'Bidwise bid report', generatedAt: sgtStamp(new Date()), plan: true, totals, notes } };
+    return { rows: out, meta: { title: 'Bidwise bid report', generatedAt: sgtStamp(new Date()), plan: true, totals } };
   }
   function downloadReport() {
     const rep = buildReport();
@@ -684,6 +687,7 @@
           bind:row={rows[i]}
           course={courses[row.course]}
           issue={info[i]?.issue ?? null}
+          failed={failedCodes.includes(row.course)}
           {avoid}
           {grouped}
           onrole={(role) => setRole(row, role)}
@@ -711,7 +715,7 @@
         {/each}
         {#each parts.groups as g (g.letter)}
           {@const letter = g.letter}
-          {@const gp = result && !pending && !overBudget && !scope.pickLetters.includes(letter) ? chanceOfGroup(planItems, planItems.map((it) => result.p[it.key] ?? 0), letter) : null}
+          {@const gp = result && !pending && !overBudget && !scope.pickWithheld.includes(letter) && !scope.blockedLetters.includes(letter) ? chanceOfGroup(planItems, planItems.map((it) => result.p[it.key] ?? 0), letter) : null}
           {@const joinable = joinableRows(rows, letter)}
           {@const more = [...new Set(g.idxs.map((i) => rows[i].course))].filter(moreSections)}
           <li class="grp">
@@ -774,9 +778,11 @@
   {#if rows.length}
   <aside class="side">
     <section class="panel result" id="plan-result" aria-live="polite" aria-busy={rows.length > 0 && pending}>
-      {#if scope.chanceWithheld || (!noMust && !scope.groupOnly)}<div class="lab">Chance of all Must get <InfoTip label="About this chance" anchor="planner" lines={['Every Must get course, and one course from each Pick one group.', 'Nice to have courses do not count.']} /></div>{/if}
+      {#if blocked.length || scope.chanceWithheld || (!noMust && !scope.terminal)}<div class="lab">Chance of all Must get <InfoTip label="About this chance" anchor="planner" lines={['Every Must get course, and one course from each Pick one group.', 'Nice to have courses do not count.']} /></div>{/if}
       {#if blocked.length}
         <div class="big none">Not possible</div>
+      {:else if scope.terminal}
+        <p class="withheld">{terminalText(scope.unpricedAll)}</p>
       {:else if scope.chanceWithheld}
         <p class="withheld">{chanceWithheldText(scope.chanceNames)}</p>
       {:else if result}
@@ -787,23 +793,23 @@
         {:else}
           <div class="big num" class:dim={pending}>{pct(result.pAll)}</div>
         {/if}
-      {:else if pending && wide}
+      {:else if (pending || scope.loading) && wide}
         <div class="calc">Calculating…</div>
       {/if}
       {#if blocked.length}
         <div class="notice" role="status"><p>{blockedNote}</p></div>
       {:else if showCallout && result}
         <div class="notice" role="status">
-          {#if anyCut && balanceCents !== null}<p><b>Bids cut to fit {balanceLabel(balanceCents)}</b></p>{/if}
+          {#if showCut && balanceCents !== null}<p><b>Bids cut to fit {balanceLabel(balanceCents)}</b></p>{/if}
           {#if showNotice}
-            <p>{#if over && balanceCents !== null}{#if overBudget}<b>Not possible</b>{' · '}{/if}{needSentence(planItems, reqNeedCents, balanceCents)}{:else}Best possible: <b>{pct(result.pAll)}</b>{/if}</p>
+            <p>{#if overAdvice && balanceCents !== null}{#if overBudget}<b>Not possible</b>{' · '}{/if}{needSentence(planItems, reqNeedCents, balanceCents)}{:else}Best possible: <b>{pct(result.pAll)}</b>{/if}</p>
           {/if}
-          {#if saver || over}
+          {#if saver || overAdvice}
             <div class="acts">
               {#if saver}{@const sv = saver}
-                {#if over && sv.fits}<button type="button" class="btn" onclick={() => (rows = rows.filter((r) => !sv.keys.includes(r.id)))}>Drop {sv.label}</button>{/if}
+                {#if overAdvice && sv.fits}<button type="button" class="btn" onclick={() => (rows = rows.filter((r) => !sv.keys.includes(r.id)))}>Drop {sv.label}</button>{/if}
               {/if}
-              {#if over}<button type="button" class="btn" onclick={raiseBudget}>Set balance to e${Math.ceil(reqNeedCents / 100)}</button>{/if}
+              {#if overAdvice}<button type="button" class="btn" onclick={raiseBudget}>Set balance to e${Math.ceil(reqNeedCents / 100)}</button>{/if}
             </div>
           {/if}
         </div>
@@ -815,14 +821,17 @@
       {/if}
       {#if sum && !overBudget && balanceCents !== null}
         <section class="split num" class:dim={pending}>
-          <p class="tot">Bids total <b>{eS(sum.bidCents)}</b> of {eS(balanceCents)}{#if !notCounted} · <b>{eS(Math.max(0, sum.leftCents))}</b> left{/if}</p>
+          <p class="tot">Bids total <b>{eS(sum.bidCents)}</b> of {eS(balanceCents)}{#if !scope.leftWithheld} · <b>{eS(Math.max(0, sum.leftCents))}</b> left{/if}</p>
           {#if notCounted}<p class="uncounted">{notCounted}</p>{/if}
-          <div class="stack" role="img" aria-label="Expected spend {eS(sum.likelyCents)}, bids total {eS(sum.bidCents)}, left {eS(Math.max(0, sum.leftCents))}">
-            <span class="sg likely" style="flex: {sum.share.likely} 1 0"></span>
-            <span class="sg rest" style="flex: {sum.share.rest} 1 0"></span>
-            <span class="sg left" style="flex: {sum.share.left} 1 0"></span>
-          </div>
-          <p class="key"><span class="sw" aria-hidden="true"></span>Expected spend <b>{eS(sum.likelyCents)}</b></p>
+          <!-- The bar is drawn against the balance, so its empty part would claim money left: not drawn while rows are unpriced. -->
+          {#if !scope.leftWithheld}
+            <div class="stack" role="img" aria-label="Expected spend {eS(sum.likelyCents)}, bids total {eS(sum.bidCents)}, left {eS(Math.max(0, sum.leftCents))}">
+              <span class="sg likely" style="flex: {sum.share.likely} 1 0"></span>
+              <span class="sg rest" style="flex: {sum.share.rest} 1 0"></span>
+              <span class="sg left" style="flex: {sum.share.left} 1 0"></span>
+            </div>
+          {/if}
+          <p class="key">{#if !scope.leftWithheld}<span class="sw" aria-hidden="true"></span>{/if}Expected spend <b>{eS(sum.likelyCents)}</b></p>
         </section>
       {/if}
       <div class="report" role="group" aria-label="Bid report">
@@ -848,12 +857,12 @@
     <button type="button" class="bar num" class:busy={pending} aria-busy={pending} onclick={toResult} aria-label="Show plan details">
       {#if blocked.length}
         <b>Not possible</b>
-      {:else if scope.groupOnly}
-        <b>Group estimates are being revised</b>
-      {:else if result && scope.chanceWithheld}
-        <b>Chance not shown</b>{#if overBudget}<span class="fit">· Over balance</span>{:else if showCallout}<span class="fit">· {over ? 'Over balance' : 'Bids cut to fit'}</span>{:else}<span>· bids {eS(result.bidTotalCents)}{#if scope.hidden.length}, group bids not counted{/if}</span>{/if}
+      {:else if scope.terminal}
+        <b>No chance shown</b>
+      {:else if scope.chanceWithheld}
+        <b>Chance not shown</b>{#if result}<span>· bids {eS(result.bidTotalCents)}, priced only</span>{/if}
       {:else if result}
-        {#if noMust}<b>No must-get courses</b>{:else if overBudget}<b>Not possible</b><span>· need about {eS(reqNeedCents)}</span>{:else}<b>{pct(result.pAll)} chance of all</b>{#if showCallout}<span class="fit">· {over || hopeless ? 'Over balance' : 'Bids cut to fit'}</span>{:else}<span>· bids {eS(result.bidTotalCents)}{#if scope.hidden.length}, group bids not counted{/if}</span>{#if sum && !scope.hidden.length}<span>· {eS(Math.max(0, sum.leftCents))} left</span>{/if}{/if}{/if}
+        {#if noMust}<b>No must-get courses</b>{:else if overBudget}<b>Not possible</b><span>· need about {eS(reqNeedCents)}</span>{:else}<b>{pct(result.pAll)} chance of all</b>{#if showCallout}<span class="fit">· {overAdvice || hopeless ? 'Over balance' : 'Bids cut to fit'}</span>{:else}<span>· bids {eS(result.bidTotalCents)}{#if scope.uncounted.length}, priced rows only{/if}</span>{#if sum && !scope.leftWithheld}<span>· {eS(Math.max(0, sum.leftCents))} left</span>{/if}{/if}{/if}
         {#if overBudget && showCallout}<span class="fit">· Over balance</span>{/if}
       {:else}
         <span class="lab">Calculating…</span>

@@ -4,10 +4,8 @@
   import InfoTip from '../ui/InfoTip.svelte';
   import type { ForecastCtx } from './forecast-ctx';
   import type { Section } from '../../lib/data/types';
-  import type { SimResult } from '../../lib/sim';
-  import { runSim } from '../../lib/sim/client';
-  import { aboutPct, eS } from './fmt';
-  import { FALLBACK_MIN_BID_CENTS, dropWindows, parseDollars, snipeChance, snipeMoney, snipeSimInput, validPaid } from '../../lib/snipe/snipe';
+  import { eS } from './fmt';
+  import { FALLBACK_MIN_BID_CENTS, dropWindows, parseDollars, snipeMoney, validPaid } from '../../lib/snipe/snipe';
 
   let { section }: { section: Section } = $props();
   const ctx = getContext<ForecastCtx>('forecast');
@@ -29,27 +27,12 @@
   const rebid = $derived(parseDollars(rebidText) ?? minBid);
   const money = $derived(paid !== null && rebid !== null && win ? snipeMoney(paid, rebid, win) : null);
 
-  let res = $state<{ r: SimResult; key: string } | null>(null);
-  let token = 0;
-  $effect(() => {
-    const f = full?.forecast?.[win];
-    const m = minBid;
-    if (!open || !f || m === null) return;
-    const key = `${section.classNumber}|${win}`;
-    const my = ++token;
-    runSim(snipeSimInput(f, m)).then((r) => {
-      if (my === token) res = { r, key };
-    });
-  });
-  const chance = $derived(
-    res && rebid !== null && minBid !== null && res.key === `${section.classNumber}|${win}` ? snipeChance(res.r, rebid, minBid) : null,
-  );
   const below = $derived(rebid !== null && minBid !== null && rebid < minBid);
 
   const tip = [
     'We assume dropping gives back what you paid, up to a cap by round: e$50 in Rounds 1 and 1A, e$40 in 1B, e$30 in 2, e$10 in 2A. SMU states only the caps.',
     'From the SMU FAQ: "Dropping a course in Round 2 will incur a penalty unless the student is successful for another course bid in that round." The amounts here leave it out.',
-    'The chance is that a bid of your re-bid wins one freed seat in the chosen window, from the same simulation as the bids on this page. Others can take the seat first.',
+    "We can't yet forecast whether a seat will be free in a later window or how many others will bid for it, so no chance is shown.",
   ];
 </script>
 
@@ -75,17 +58,15 @@
         </label>
       </div>
       {#if below}<p class="sub">Minimum bid is {eS(minBid)}; counted as that.</p>{/if}
-      {#if money && chance !== null}
+      {#if money}
         {@const save = money.savingCents}
         <p class="line">
-          <b>Works {aboutPct(chance)} of the time</b>
+          <b>Only works if a seat is free in {win} and nobody outbids you</b>
           · {save > 0 ? `saves ${eS(save)} if it does` : 'saves nothing: re-bid is not below the refund'}
           · if it fails you lose the class
         </p>
         <p class="sub num">Refund {eS(money.refundCents)} · cost if it works {eS(money.netCents)} instead of {eS(paid ?? 0)}</p>
         <p class="sub num">If it fails you lose this class and get {eS(money.refundCents)} back.</p>
-      {:else if money}
-        <p class="sub" aria-busy="true">Working it out…</p>
       {:else}
         <p class="sub">Enter what you paid for this class.</p>
       {/if}

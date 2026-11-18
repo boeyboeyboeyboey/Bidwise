@@ -45,6 +45,7 @@ except Exception:  # noqa: BLE001
 np, pd = C.np, C.pd
 CorrectionError = C.CorrectionError
 
+# 19 Nov 2026: nCourses / effCourses guard fields added beside measuredWin's upper (optional; same version)
 DISTCAL_VERSION = "distcal-a2"  # classifier variant A + S4 spread cells + per-window-group bid levels
 DISTCAL_FILE = "distcal.json"
 # Payloads the site build still accepts: a1 differs only in having no per-window-group levels (the site then uses the pooled ones).
@@ -388,12 +389,29 @@ def row_levels(rows, by_group: dict, pooled: dict, style: str):
     return np.array([by.get(S.window_group(r["window"]), base) for r in rows], float)
 
 
-def upper_bounds(wins: dict, course_ids, n_boot: int = BOOT_N, seed: int = BOOT_SEED, q: float = BOOT_Q) -> dict:
+def _course_ids_ok(course_ids) -> bool:
+    """True when every course id is a non-blank string. None, a number or a blank string means the course is unknown."""
+    return all(isinstance(c, str) and c.strip() for c in course_ids)
+
+
+def _course_counts(course_ids) -> tuple:
+    """(nCourses, effCourses): the distinct courses, and (sum n_i)^2 / sum n_i^2 over their row counts n_i, rounded to 1 dp."""
+    cnt = {}
+    for c in course_ids:
+        cnt[c] = cnt.get(c, 0) + 1
+    tot = sum(cnt.values())
+    return len(cnt), round(tot * tot / sum(v * v for v in cnt.values()), 1)
+
+
+def upper_bounds(wins: dict, course_ids, n_boot: int = BOOT_N, seed: int = BOOT_SEED, q: float = BOOT_Q):
     """One-sided upper bound (the q-th percentile, as a fraction rounded to 4 places) of each style's win rate from a course-cluster
     bootstrap: whole courses are resampled with replacement and the rate recomputed, so a course's rows move together (the same
     resampling as evalscore.bootstrap_ci, one-sided). `wins` {style: 0/1 array over the rows of the population}, `course_ids` one
-    integer per row. The same resamples serve every style. Deterministic for a seed."""
-    ci = np.unique(np.asarray(course_ids), return_inverse=True)[1]
+    non-blank string per row (see _course_ids_ok). The same resamples serve every style. Deterministic for a seed.
+    Returns None, with no bounds at all, when any course id is missing or invalid."""
+    if not _course_ids_ok(course_ids):
+        return None
+    ci = np.unique(np.asarray(course_ids, dtype=str), return_inverse=True)[1]
     k = int(ci.max()) + 1
     n = np.bincount(ci, None, k).astype(float)
     W = np.random.default_rng(seed).multinomial(k, np.full(k, 1.0 / k), size=n_boot).astype(float)
@@ -411,8 +429,10 @@ def measured_win(rt, rh, tab_test, tab_held) -> dict:
     both folds are pooled; per (window group, forecast band) a cell with at least MIN_CELL filled rows uses its own rate, else the
     group's pooled rate (when the group has MIN_CELL), else the rate over all rows. nFilled and `upper` always describe the rows
     the rate came from (`source`). upper (since 19 Nov, optional): the one-sided 95% upper bound of each rate from a course-cluster
-    bootstrap over those rows (upper_bounds); absent when a row has no course.
-    {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"[, upper: {style: bound}]}}, "overall": {style: rate}}."""
+    bootstrap over those rows (upper_bounds). nCourses (distinct courses) and effCourses (see _course_counts) are emitted with it,
+    under the same condition; all three are absent when any row of the population has a missing or blank course id.
+    {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"[, upper: {style: bound}, nCourses, effCourses]}},
+    "overall": {style: rate}}."""
     grp, band, win, crs = [], [], {st: [] for st in STYLES}, []
     own = own_groups([rt, rh])
     for pick_rows, pick_tab, app_rows, app_tab in ((rt, tab_held, rh, tab_test), (rh, tab_test, rt, tab_held)):
@@ -429,17 +449,15 @@ def measured_win(rt, rh, tab_test, tab_held) -> dict:
     grp, band = np.array(grp), np.array(band, dtype=int)
     win = {st: np.array(v) for st, v in win.items()}
 
-    # course ids for the bootstrap bound; without them for every filled row the cells ship without `upper`
-    cid = None
-    if crs and all(c is not None for c in crs):
-        _, cid = np.unique(np.array(crs, dtype=str), return_inverse=True)
-
     def rate(mk, source):
         n = int(mk.sum())
         cell = {**{st: round(float(win[st][mk].mean()), 4) if n else None for st in STYLES}, "nFilled": n, "source": source}
-        if n and cid is not None:
-            up = upper_bounds({st: win[st][mk] for st in STYLES}, cid[mk])
+        # course ids of the rows; any missing or blank id on a filled row leaves the cell without upper, nCourses and effCourses
+        ids = [c for c, m in zip(crs, mk) if m] if n else []
+        if n and _course_ids_ok(ids):
+            up = upper_bounds({st: win[st][mk] for st in STYLES}, ids)
             cell["upper"] = {st: max(up[st], cell[st]) for st in STYLES}  # a percentile can sit just under the observed rate
+            cell["nCourses"], cell["effCourses"] = _course_counts(ids)
         return cell
     everyone = np.ones(len(grp), dtype=bool)
     out = {}

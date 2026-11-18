@@ -315,7 +315,7 @@ describe('claimsFor', () => {
   const mk = (reached: boolean, upper?: number): BidWindowData => ({
     levels: { [W]: { cheap: { level: 0.6, lossFilled: 0.3, reached }, balanced: { level: 0.95, lossFilled: 0.15, reached }, safe: { level: 0.95, lossFilled: 0.1, reached } } },
     edges: [15, 25, 40, 60],
-    measured: { [W]: Object.fromEntries([0, 1, 2, 3, 4].map((b) => [String(b), { cheap: 0.7, balanced: 0.8, safe: 0.8, nFilled: 40, source: 'group', ...(upper === undefined ? {} : { upper: { cheap: upper, balanced: upper, safe: upper } }) }])) },
+    measured: { [W]: Object.fromEntries([0, 1, 2, 3, 4].map((b) => [String(b), { cheap: 0.7, balanced: 0.8, safe: 0.8, nFilled: 40, source: 'group', ...(upper === undefined ? {} : { upper: { cheap: upper, balanced: upper, safe: upper }, nCourses: 40, effCourses: 25 }) }])) },
   });
   const r = fake([1000, 1800, 2600, 3500, 6000], [0.05, 0.3, 0.7, 0.93, 1], 0.5);
   it('Balanced = Safe: each names the other, with its own rate and target', async () => {

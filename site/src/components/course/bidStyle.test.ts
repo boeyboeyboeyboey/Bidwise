@@ -26,14 +26,16 @@ describe('styleTipLines', () => {
   const summary = { overall: { cheap: 0.7023, balanced: 0.8469, safe: 0.8922 }, byRound: [], terms: ['2025-26 Term 2', '2026-27 Term 1'] };
   it('takes the out-of-fold rates and names both terms', () => {
     expect(styleTipLines(presets, summary)).toEqual([
-      'In 2025-26 Term 2 and 2026-27 Term 1, on sections that filled: Cheap would have won 70%, Balanced 85%, Safe 89%.',
+      'In 2025-26 Term 2 and 2026-27 Term 1, on sections that filled, bids matched or beat the lowest winning bid: Cheap 70%, Balanced 85%, Safe 89%.',
+      'Tested forward on 2026-27 Term 1, the latest complete term: Cheap 61.7%, Balanced 79.8%, Safe 85.5%.',
+      'A bid equal to the lowest winning bid can lose a tie.',
       'Safe can cost more.',
     ]);
   });
-  it('omits the rates line without the summary, and names no term it does not have', () => {
+  it('omits the rate and tie lines without the summary, and names no term it does not have', () => {
     expect(styleTipLines(presets, null)).toEqual(['Safe can cost more.']);
     expect(styleTipLines(presets)).toEqual(['Safe can cost more.']);
-    expect(styleTipLines(presets, { ...summary, terms: undefined })[0]).toMatch(/^In past terms, /);
+    expect(styleTipLines(presets, { ...summary, terms: undefined })[0]).toMatch(/^In past terms, on sections that filled, bids matched or beat/);
   });
   it('says nothing without presets', () => {
     expect(styleTipLines([], summary)).toEqual([]);
@@ -42,9 +44,16 @@ describe('styleTipLines', () => {
 
 describe('tied style wording', () => {
   it('names tied styles in one line and one unreached note', () => {
-    expect(pastRateText({ styles: ['balanced', 'safe'], rate: 0.79, nFilled: 108, belowAim: false })).toBe('Balanced and Safe would have won 79% of 108 filled cases.');
-    expect(unreachedText(['balanced', 'safe'])).toBe("Balanced and Safe couldn't reach their aims (85%, 90%) for this round in past terms.");
-    expect(unreachedText(['cheap'])).toBe("Cheap couldn't reach its 70% aim for this round in past terms.");
+    expect(pastRateText({ styles: ['balanced', 'safe'], rate: 0.79, nFilled: 108, belowAim: false })).toBe('Balanced and Safe matched or beat the lowest winning bid in 79% of 108 filled cases.');
+  });
+});
+
+describe('unreachedText', () => {
+  it('says the highest calibrated level fell short, for one style', () => {
+    expect(unreachedText(['cheap'])).toBe("Even the highest level tested in calibration fell short of Cheap's 70% aim.");
+  });
+  it('says the highest levels fell short, for several styles', () => {
+    expect(unreachedText(['balanced', 'safe'])).toBe('Even the highest levels tested in calibration fell short of the aims for Balanced and Safe (85%, 90%).');
   });
 });
 
@@ -52,9 +61,9 @@ describe('pastRateText', () => {
   const base: PastRate = { styles: ['balanced'], rate: 0.784, nFilled: 120, belowAim: false };
   it('names the source of the rate, or none when the build does not say', () => {
     expect(pastRateText({ ...base, source: 'cell' })).toContain('this round and price range');
-    expect(pastRateText({ ...base, source: 'group' })).toContain('whole round');
+    expect(pastRateText({ ...base, source: 'group' })).toContain('all price ranges in this round');
     expect(pastRateText({ ...base, source: 'all' })).toContain('all rounds');
-    expect(pastRateText(base)).toBe('Balanced would have won 78% of 120 filled cases.');
+    expect(pastRateText(base)).toBe('Balanced matched or beat the lowest winning bid in 78% of 120 filled cases.');
   });
   it('floor text says the bid often loses when the section fills', () => {
     expect(FLOOR_TEXT).toBe('If seats are left over, this bid wins. If the section fills, this bid often loses.');
@@ -70,7 +79,15 @@ describe('styleMeaning', () => {
     expect(styleMeaning(presets[2])).toBe('Bids are for 1 person. Safe aims to win about 9 in 10 times even when the section fills.');
     expect(styleMeaning(presets[0])).toContain('about 7 in 10');
     expect(styleMeaning(presets[1])).toContain('about 5 in 6');
-    expect(styleMeaning({ key: 'x', label: 'x', level: 0.5 })).toBe('Bids are for 1 person.');
+  });
+  it('takes the aim from the declared target, not the training loss', () => {
+    expect(styleMeaning({ key: 'safe', label: 'Safe', level: 0.99, lossFilled: 0.5 })).toBe('Bids are for 1 person. Safe aims to win about 9 in 10 times even when the section fills.');
+  });
+  it('uses the own level for the fallback presets', () => {
+    expect(styleMeaning({ key: 't80', label: '80%', level: 0.8 })).toBe('Bids are for 1 person. 80% aims to win about 4 in 5 times even when the section fills.');
+  });
+  it('keeps the plain line when a preset has no target at all', () => {
+    expect(styleMeaning({ key: 'x', label: 'x', level: undefined as unknown as number })).toBe('Bids are for 1 person.');
   });
 });
 

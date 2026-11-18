@@ -10,6 +10,14 @@ export const STYLE_TARGET: Readonly<Record<BidStyleKey, number>> = { cheap: 0.7,
 /** How far under its target the 95% upper bound of a measured rate must sit before the page says "below aim". */
 export const BELOW_AIM_MARGIN = 0.03;
 
+/**
+ * Course-count guard for "below aim": a bootstrap bound over few courses, or over one course with many rows, is degenerate, so the
+ * page judges a cell only with at least this many distinct courses (MIN_COURSES) and this effective count (MIN_EFF_COURSES, the
+ * (sum n_i)^2 / sum n_i^2 of the courses' rows). Set 19 Nov 2026 with the distcal guard fields.
+ */
+export const MIN_COURSES = 30;
+export const MIN_EFF_COURSES = 20;
+
 const STYLE_ORDER: readonly BidStyleKey[] = ['cheap', 'balanced', 'safe'];
 
 /**
@@ -68,6 +76,10 @@ export interface MeasuredCell {
   source?: 'cell' | 'group' | 'all';
   /** One-sided 95% upper bound on the rate; absent (null) when the build did not ship it. */
   upper: number | null;
+  /** Distinct courses behind the upper bound; absent when the build did not ship it. */
+  nCourses?: number;
+  /** Effective number of courses behind the upper bound; absent when the build did not ship it. */
+  effCourses?: number;
 }
 
 /** measuredRate with the case count, where the rate comes from and its upper bound; null on the same conditions. */
@@ -78,12 +90,32 @@ export function measuredCell(data: BidWindowData | null, window: string | null |
   const cell = data.measured[window]?.[String(bandOf(data.edges, median))];
   const rate = cell?.[style];
   if (!cell || typeof rate !== 'number') return null;
-  return { rate, nFilled: cell.nFilled, ...(cell.source ? { source: cell.source } : {}), upper: cell.upper?.[style] ?? null };
+  return {
+    rate,
+    nFilled: cell.nFilled,
+    ...(cell.source ? { source: cell.source } : {}),
+    upper: cell.upper?.[style] ?? null,
+    ...(cell.nCourses !== undefined ? { nCourses: cell.nCourses } : {}),
+    ...(cell.effCourses !== undefined ? { effCourses: cell.effCourses } : {}),
+  };
 }
 
-/** True when the 95% upper bound of the rate sits more than BELOW_AIM_MARGIN under the style's target. No upper bound: never. */
-export function belowAim(style: BidStyleKey, upper: number | null | undefined): boolean {
-  return typeof upper === 'number' && upper < STYLE_TARGET[style] - BELOW_AIM_MARGIN - 1e-9;
+/**
+ * True when the 95% upper bound sits above the measured rate (a non-degenerate interval), more than BELOW_AIM_MARGIN under the
+ * style's target, and the course-count guard holds. Fails closed: any missing or non-finite value, or a count below its minimum,
+ * gives false.
+ */
+export function belowAim(style: BidStyleKey, cell: Partial<Pick<MeasuredCell, 'rate' | 'upper' | 'nCourses' | 'effCourses'>> | null | undefined): boolean {
+  const rate = cell?.rate;
+  const upper = cell?.upper;
+  const nCourses = cell?.nCourses;
+  const effCourses = cell?.effCourses;
+  const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  return (
+    finite(rate) && finite(upper) && finite(nCourses) && finite(effCourses) &&
+    nCourses >= MIN_COURSES && effCourses >= MIN_EFF_COURSES &&
+    upper > rate && upper < STYLE_TARGET[style] - BELOW_AIM_MARGIN - 1e-9
+  );
 }
 
 /** The style's "reached its aim" flag for a window; null when the window or the flag is not in the data (older builds). */
@@ -151,7 +183,7 @@ export function bidClaims(i: ClaimInput): BidClaims {
     for (const s of tied) {
       const c = i.cells[s];
       if (!c) continue;
-      const bA = belowAim(s, c.upper);
+      const bA = belowAim(s, c);
       const same = past.find((p) => p.rate === c.rate && p.nFilled === c.nFilled && p.source === c.source && p.belowAim === bA);
       if (same) same.styles.push(s);
       else past.push({ styles: [s], rate: c.rate, nFilled: c.nFilled, ...(c.source ? { source: c.source } : {}), belowAim: bA });

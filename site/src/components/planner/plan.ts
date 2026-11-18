@@ -11,6 +11,7 @@ import { dayText } from '../course/history';
 import { formatSlot } from '../../lib/format/slot';
 import { eS } from '../course/fmt';
 import { titleName } from '../../lib/data/format';
+import { GROUP_NOTICE } from '../course/bidStyle';
 import { GROUP_LETTERS, isSlot, slotOf, startText, type PlanRowState } from './types';
 
 /** Same runs and seed as the course page, so a section shows the same bid and chance on both pages. */
@@ -33,43 +34,123 @@ export function rowIssue(section: Section, window: string, group: number): RowIs
 /** The rows that take part in the plan's optimisation and totals: a group row (2+ people) sits out while group estimates are withheld. */
 export const inOptimisation = <T extends { group: number }>(rows: readonly T[]): T[] => rows.filter((r) => !groupEstimatesHidden(r.group));
 
-/** What the planner says about rows left out of its bids and chances because they are bid for 2 or more people. */
-export interface GroupScope {
-  /** Display names of the rows left out (in row order). */
-  hidden: string[];
-  /** A Must get or Pick one row is left out, so no chance of the whole plan can be given. */
-  chanceWithheld: boolean;
-  /** Names of the left-out rows that stop the chance (Must get or Pick one only). */
-  chanceNames: string[];
-  /** Letters of the Pick one groups that have a left-out alternative: their own chance is withheld too. */
-  pickLetters: string[];
-  /** Every row that would be in the plan is left out, so there is nothing to total or calculate. */
-  groupOnly: boolean;
-}
-
-/**
- * Pure. `rows` are the rows that would otherwise be in the plan (section found, no issue); a row for 2 or more people is
- * hidden while group estimates are withheld. `name` gives a row's display name ("IS215 G1").
- */
-export function groupScope<T extends { group: number; role: Role; oneOf?: string }>(rows: readonly T[], name: (r: T) => string): GroupScope {
-  const hiddenRows = rows.filter((r) => groupEstimatesHidden(r.group));
-  const blocking = hiddenRows.filter((r) => r.role !== 'optional');
-  return {
-    hidden: hiddenRows.map(name),
-    chanceWithheld: blocking.length > 0,
-    chanceNames: blocking.map(name),
-    pickLetters: [...new Set(hiddenRows.filter((r) => r.role === 'oneOf').map((r) => r.oneOf ?? 'A'))],
-    groupOnly: hiddenRows.length > 0 && hiddenRows.length === rows.length,
-  };
-}
-
 /** "A", "A and B", "A, B and C". */
 export const joinNames = (names: readonly string[]): string => (names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
-/** Replaces the chance of all Must get when some Must get or Pick one row is bid for 2 or more people. */
-export const chanceWithheldText = (names: readonly string[]): string => `Not shown while ${joinNames(names)} ${names.length === 1 ? 'is' : 'are'} bid for 2 or more people.`;
-/** Under "Bids total" while rows are left out of it. */
-export const notCountedText = (names: readonly string[]): string => `Not counted: ${joinNames(names)} (bid for 2 or more people).`;
+export const LOADING_REASON = 'loading';
+export const FAILED_REASON = "Couldn't load this course";
+export const GONE_REASON = 'Section no longer offered';
+
+/** priced: bid and chance computed. loading: not ready yet. unpriced: will not be priced (see reason). infeasible: no seats at all. */
+export type ScopeState = 'priced' | 'loading' | 'unpriced' | 'infeasible';
+
+/** What the planner knows about one selected row. */
+export interface ScopeRowInput {
+  name: string;
+  role: Role;
+  oneOf?: string;
+  group: number;
+  /** The course file is in. */
+  courseLoaded: boolean;
+  /** The course file could not be fetched. */
+  failed: boolean;
+  /** The chosen section exists in the course file. */
+  sec: boolean;
+  issue: RowIssue | null;
+  /** The row's simulation is done. */
+  curveReady: boolean;
+}
+
+export interface NamedReason {
+  name: string;
+  reason: string;
+}
+
+/** Pure. Where one row stands: the first fact that applies, hard facts (a seat issue) before the group notice. */
+export function classifyRow(r: ScopeRowInput): { state: ScopeState; reason: string } {
+  if (!r.courseLoaded) return r.failed ? { state: 'unpriced', reason: FAILED_REASON } : { state: 'loading', reason: LOADING_REASON };
+  if (!r.sec) return { state: 'unpriced', reason: GONE_REASON };
+  if (r.issue === 'full') return { state: 'infeasible', reason: ISSUE_TEXT.full };
+  if (r.issue) return { state: 'unpriced', reason: ISSUE_TEXT[r.issue] };
+  if (groupEstimatesHidden(r.group)) return { state: 'unpriced', reason: GROUP_NOTICE };
+  if (!r.curveReady) return { state: 'loading', reason: LOADING_REASON };
+  return { state: 'priced', reason: '' };
+}
+
+/** What the planner may claim about the whole plan, given which rows are priced. */
+export interface PlanScope {
+  /** Per selected row, in the order given. */
+  rows: { name: string; state: ScopeState; reason: string }[];
+  /** Rows that will not be priced (not loading, not out of seats). */
+  unpriced: NamedReason[];
+  /** Every row that is unpriced or still loading (reason "loading"): what the totals leave out. */
+  uncounted: NamedReason[];
+  /** Every row without a price, out-of-seats rows included: what a terminal message lists. */
+  unpricedAll: NamedReason[];
+  /** Some row is still loading or simulating. */
+  loading: boolean;
+  /** Number of priced rows. */
+  priced: number;
+  /** A Must get or Pick one row is selected (in any state). */
+  hasChance: boolean;
+  /** Names of rows that make the plan impossible: a Must get with no seats, or every alternative of a Pick one group with none. */
+  blocked: string[];
+  /** Letters of the Pick one groups whose alternatives all have no seats. */
+  blockedLetters: string[];
+  /** A Must get or Pick one row is unpriced or loading (and nothing blocks): no chance of the whole plan. */
+  chanceWithheld: boolean;
+  /** The unpriced or loading Must get / Pick one rows behind chanceWithheld. */
+  chanceNames: NamedReason[];
+  /** Pick one groups with an unpriced or loading alternative: their own chance is withheld too. */
+  pickWithheld: string[];
+  /** Same as chanceWithheld: no feasibility claims or advice that changes the balance. */
+  adviceWithheld: boolean;
+  /** Some selected row (any role) has no price: no "left" figure. */
+  leftWithheld: boolean;
+  /** Nothing is priced, nothing is loading, and the plan has rows. */
+  terminal: boolean;
+}
+
+/** Pure. Classifies every selected row and says what the plan may claim. */
+export function planScope(inputs: readonly ScopeRowInput[]): PlanScope {
+  const rows = inputs.map((r) => ({ name: r.name, role: r.role, letter: r.oneOf ?? 'A', ...classifyRow(r) }));
+  const noPrice = (x: (typeof rows)[number]) => x.state === 'unpriced' || x.state === 'loading';
+  const uncounted = rows.filter(noPrice).map(({ name, reason }) => ({ name, reason }));
+  const chanceRows = rows.filter((x) => x.role !== 'optional' && noPrice(x));
+  const letters = [...new Set(rows.filter((x) => x.role === 'oneOf').map((x) => x.letter))];
+  const blockedLetters = letters.filter((l) => rows.filter((x) => x.role === 'oneOf' && x.letter === l).every((x) => x.state === 'infeasible'));
+  const blocked = rows.filter((x) => (x.role === 'required' && x.state === 'infeasible') || (x.role === 'oneOf' && blockedLetters.includes(x.letter))).map((x) => x.name);
+  const loading = rows.some((x) => x.state === 'loading');
+  const priced = rows.filter((x) => x.state === 'priced').length;
+  const chanceWithheld = !blocked.length && chanceRows.length > 0;
+  return {
+    rows: rows.map(({ name, state, reason }) => ({ name, state, reason })),
+    unpriced: rows.filter((x) => x.state === 'unpriced').map(({ name, reason }) => ({ name, reason })),
+    uncounted,
+    unpricedAll: rows.filter((x) => x.state !== 'priced').map(({ name, reason }) => ({ name, reason })),
+    loading,
+    priced,
+    hasChance: rows.some((x) => x.role !== 'optional'),
+    blocked,
+    blockedLetters,
+    chanceWithheld,
+    chanceNames: chanceRows.map(({ name, reason }) => ({ name, reason })),
+    pickWithheld: letters.filter((l) => rows.some((x) => x.role === 'oneOf' && x.letter === l && noPrice(x))),
+    adviceWithheld: chanceWithheld,
+    leftWithheld: uncounted.length > 0,
+    terminal: rows.length > 0 && priced === 0 && !loading,
+  };
+}
+
+/** "IS215 G1 (No forecast); IS216 G2 (loading)": a reason never ends in a full stop inside the brackets. */
+export const reasonList = (xs: readonly NamedReason[]): string => xs.map((x) => `${x.name} (${x.reason.replace(/\.$/, '')})`).join('; ');
+
+/** In place of the chance of all Must get while a Must get or Pick one row has no bid. */
+export const chanceWithheldText = (xs: readonly NamedReason[]): string => `Not shown until every Must get and Pick one course has a bid: ${reasonList(xs)}`;
+/** Under "Bids total" while rows have no price. */
+export const notCountedText = (xs: readonly NamedReason[]): string => `Bids total for priced rows only. Not counted: ${reasonList(xs)}`;
+/** When no row has a price at all. */
+export const terminalText = (xs: readonly NamedReason[]): string => `No chance shown: ${xs.map((x) => `${x.name}: ${x.reason.replace(/\.$/, '')}`).join('; ')}`;
 
 export const ISSUE_TEXT: Record<RowIssue, string> = {
   nofc: 'No forecast',

@@ -27,10 +27,14 @@ const STYLE_LABEL: Readonly<Record<BidStyleKey, string>> = { cheap: 'Cheap', bal
 /** "Balanced and Safe", "Cheap, Balanced and Safe". */
 const joinStyles = (ks: readonly BidStyleKey[]): string => ks.map((k) => STYLE_LABEL[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
 const pc = (v: number): string => `${Math.round(v * 100)}%`;
+const pct1 = (v: number): string => `${(v * 100).toFixed(1)}%`;
+
+// Rolling forward test, filled sections, bid ≥ lowest winning bid; model/forecast/eval/rows-20261117T170318.csv; checked 19 November 2026 (CLAUDE-COLLECTION-LOG).
+export const LATEST_FORWARD = { term: '2026-27 Term 1', cheap: 0.6172, balanced: 0.7976, safe: 0.8549 } as const;
 
 /**
- * Tip text for the style chips: the out-of-fold win rates on sections that filled (omitted without the summary), then the cost note.
- * Empty without presets.
+ * Tip text for the style chips: the out-of-fold rates on sections that filled (omitted without the summary), the latest forward
+ * test and a tie note, then the cost note. Empty without presets.
  */
 export function styleTipLines(presets: readonly BidPreset[], summary: MeasuredWinSummary | null = null): string[] {
   if (!presets.length) return [];
@@ -38,7 +42,10 @@ export function styleTipLines(presets: readonly BidPreset[], summary: MeasuredWi
   if (summary) {
     const when = summary.terms?.length === 2 ? `In ${summary.terms[0]} and ${summary.terms[1]}` : 'In past terms';
     const o = summary.overall;
-    lines.push(`${when}, on sections that filled: Cheap would have won ${pc(o.cheap)}, Balanced ${pc(o.balanced)}, Safe ${pc(o.safe)}.`);
+    lines.push(`${when}, on sections that filled, bids matched or beat the lowest winning bid: Cheap ${pc(o.cheap)}, Balanced ${pc(o.balanced)}, Safe ${pc(o.safe)}.`);
+    const L = LATEST_FORWARD;
+    lines.push(`Tested forward on ${L.term}, the latest complete term: Cheap ${pct1(L.cheap)}, Balanced ${pct1(L.balanced)}, Safe ${pct1(L.safe)}.`);
+    lines.push('A bid equal to the lowest winning bid can lose a tie.');
   }
   lines.push(`${presets[presets.length - 1].label} can cost more.`);
   return lines;
@@ -51,20 +58,20 @@ export const FLOOR_TEXT = 'If seats are left over, this bid wins. If the section
 export const GROUP_NOTICE = 'Group estimates are being revised.';
 export const GROUP_NOTICE_ACTION = 'Bid for 1 person';
 
-const SOURCE_TEXT = { cell: 'this round and price range', group: 'whole round average', all: 'all rounds' } as const;
+const SOURCE_TEXT = { cell: 'this round and price range', group: 'all price ranges in this round', all: 'all rounds' } as const;
 
 /** One style's past win rate with its case count and where it comes from; "Below aim in past terms." only when the data says so. */
 export function pastRateText(r: PastRate): string {
   const src = r.source ? ` (${SOURCE_TEXT[r.source]})` : '';
-  return `${joinStyles(r.styles)} would have won ${pc(r.rate)} of ${r.nFilled} filled cases${src}.${r.belowAim ? ' Below aim in past terms.' : ''}`;
+  return `${joinStyles(r.styles)} matched or beat the lowest winning bid in ${pc(r.rate)} of ${r.nFilled} filled cases${src}.${r.belowAim ? ' Below aim in past terms.' : ''}`;
 }
 
-/** The aim of each of these styles could not be reached for this round. */
+/** The aim of each of these styles could not be reached in calibration (the highest level tested fell short). */
 export const unreachedText = (styles: readonly BidStyleKey[]): string => {
   const aims = styles.map((k) => `${Math.round(STYLE_TARGET[k] * 100)}%`);
   return styles.length === 1
-    ? `${STYLE_LABEL[styles[0]]} couldn't reach its ${aims[0]} aim for this round in past terms.`
-    : `${joinStyles(styles)} couldn't reach their aims (${aims.join(', ')}) for this round in past terms.`;
+    ? `Even the highest level tested in calibration fell short of ${STYLE_LABEL[styles[0]]}'s ${aims[0]} aim.`
+    : `Even the highest levels tested in calibration fell short of the aims for ${joinStyles(styles)} (${aims.join(', ')}).`;
 };
 
 /** "Same bid as Balanced and Safe." */
@@ -72,9 +79,12 @@ export const sameBidText = (others: readonly BidStyleKey[]): string => `Same bid
 
 /** What the chosen style means, for the info tip next to the section list. */
 export function styleMeaning(preset: BidPreset): string {
-  const loss = preset.lossFilled;
-  if (typeof loss !== 'number') return 'Bids are for 1 person.';
-  const [k, n] = nearestFraction(loss);
+  // The aim is the declared target, not the training loss: calibrated styles by key, other presets by their own level.
+  const aim = Object.prototype.hasOwnProperty.call(STYLE_TARGET, preset.key)
+    ? STYLE_TARGET[preset.key as BidStyleKey]
+    : typeof preset.level === 'number' ? preset.level : null;
+  if (aim === null) return 'Bids are for 1 person.';
+  const [k, n] = nearestFraction(1 - aim);
   return `Bids are for 1 person. ${preset.label} aims to win about ${n - k} in ${n} times even when the section fills.`;
 }
 

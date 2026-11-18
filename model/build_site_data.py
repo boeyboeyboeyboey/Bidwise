@@ -740,8 +740,9 @@ def window_bid_fields(payload: dict) -> dict:
     """forecast-meta fields built from distcal.json's per-window-group keys, by window name (every window of fit.WINDOWS).
 
     `levelsByGroup` -> "bidLevelsByWindow" {window: {style: {level, lossFilled[, reached]}}}; `measuredWin` -> "measuredWin"
-    {window: {"0".."4": {cheap, balanced, safe, nFilled[, source, upper]}}} (source "cell" | "group" | "all": the rows the rate came
-    from; upper {style: bound}: its one-sided 95% upper bound; each is left out when distcal.json lacks it); `bandEdges` -> "bandEdges". A key that is absent or malformed is not
+    {window: {"0".."4": {cheap, balanced, safe, nFilled[, source, upper, nCourses, effCourses]}}} (source "cell" | "group" | "all": the rows
+    the rate came from; upper {style: bound}: its one-sided 95% upper bound; nCourses and effCourses, the course-count guard, travel
+    only with upper; each is left out when distcal.json lacks it); `bandEdges` -> "bandEdges". A key that is absent or malformed is not
     emitted (the site then falls back to the pooled `bidLevels`). The group of a window comes from evalscore.window_group.
     """
     sys.path.insert(0, str(ROOT / "model"))
@@ -792,6 +793,11 @@ def window_bid_fields(payload: dict) -> dict:
                     up = c.get("upper")  # one-sided 95% upper bound of each rate (course bootstrap); only newer distcal.json files have it
                     if isinstance(up, dict) and all(num(up.get(st)) for st in styles):
                         bands[b]["upper"] = {st: up[st] for st in styles}
+                        nc, ec = c.get("nCourses"), c.get("effCourses")  # guard fields travel with upper, only when present
+                        if isinstance(nc, int) and not isinstance(nc, bool):
+                            bands[b]["nCourses"] = nc
+                        if num(ec):
+                            bands[b]["effCourses"] = ec
             if len(bands) == 5:
                 table[w] = bands
         if table:

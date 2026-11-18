@@ -1,11 +1,12 @@
 <script lang="ts">
   import InfoTip from '../ui/InfoTip.svelte';
-  import type { Row } from '../../lib/requisites/types';
+  import type { Part, Row } from '../../lib/requisites/types';
 
-  /** Rows already rendered at build time by lib/requisites/render. */
-  let { rows }: { rows: Row[] } = $props();
+  /** Rows and the catalogue note, already rendered at build time by lib/requisites/render. */
+  let { rows, note = [] }: { rows: Row[]; note?: Part[] } = $props();
 </script>
 
+<div class="reqs">
 <dl class="req">
   {#each rows as row}
     <div class="row" class:muted={row.muted}>
@@ -26,9 +27,18 @@
     </div>
   {/each}
 </dl>
+{#if note.length}
+  <p class="note">
+    {#each note as p}
+      {#if p.k === 'text'}<span>{p.text}</span>{:else if p.k === 'link'}<a class="ext" href={p.href} target="_blank" rel="noopener">{p.text}</a>{/if}
+    {/each}
+  </p>
+{/if}
+</div>
 
 <style>
-  .req { margin: 0 0 var(--s3); display: grid; gap: 2px; font-size: 14.5px; line-height: 22px; }
+  .reqs { margin: 0 0 var(--s3); }
+  .req { margin: 0; display: grid; gap: 2px; font-size: 14.5px; line-height: 22px; }
   .row { display: grid; grid-template-columns: 124px minmax(0, 1fr); column-gap: var(--s3); align-items: baseline; }
   dt { margin: 0; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
   dd { margin: 0; }
@@ -43,7 +53,10 @@
   .row :global(.q.wide) { margin: -12px 0; }
   .row :global(.tip) { margin-left: var(--s1); }
   .nw { white-space: nowrap; }
+  /* Lined up with the values, under the rows. */
+  .note { margin: 2px 0 0 calc(124px + var(--s3)); font-size: var(--fs-xs); line-height: 20px; color: var(--muted); }
   @media (max-width: 480px) {
     .row { grid-template-columns: minmax(0, 1fr); }
+    .note { margin-left: 0; }
   }
 </style>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRows, formatAsOf, partsText, renderNode, renderRelation } from './render';
+import { buildRows, catalogueNote, formatAsOf, partsText, renderNode, renderRelation } from './render';
 import type { CourseReq, Node, RenderCtx } from './types';
 
 const ctx: RenderCtx = {
@@ -86,7 +86,7 @@ describe('renderNode', () => {
 
   it('turns a condition into a visible tip carrying the catalogue sentence, with a fallback when the text is missing', () => {
     const [tip] = renderNode(cond, ctx);
-    expect(tip).toMatchObject({ k: 'tip', label: 'Other condition', showLabel: true, lines: ['Eligibility is limited to SMU undergraduate students.'], href: 'https://courses.smu.edu.sg/courses/0006021' });
+    expect(tip).toMatchObject({ k: 'tip', label: 'Other condition', showLabel: true, lines: ['Eligibility is limited to SMU undergraduate students.'], href: 'https://courses.smu.edu.sg/courses/0006021/requisites-r2o6J' });
     const [none] = renderNode({ t: 'cond', text: null }, ctx);
     expect(none).toMatchObject({ lines: ["Details are on SMU's catalogue page."], linkText: 'Open SMU catalogue ↗' });
     const [noCat] = renderNode({ t: 'cond', text: null }, { ...ctx, cat: undefined });
@@ -96,11 +96,8 @@ describe('renderNode', () => {
 });
 
 describe('renderRelation', () => {
-  it('shows a wholly unknown relation as "Not captured" with a catalogue link, or alone without a catalogue id', () => {
-    const parts = renderRelation('pre', { t: 'unknown' }, ctx);
-    expect(partsText(parts)).toBe('Not captured · <SMU catalogue ↗>');
-    expect(parts[1]).toEqual({ k: 'link', text: 'SMU catalogue ↗', href: 'https://courses.smu.edu.sg/courses/0006021' });
-    expect(partsText(renderRelation('pre', { t: 'unknown' }, { ...ctx, cat: undefined }))).toBe('Not captured');
+  it('shows a wholly unknown relation as "Not captured" (the catalogue link is in the note below the rows)', () => {
+    expect(partsText(renderRelation('pre', { t: 'unknown' }, ctx))).toBe('Not captured');
   });
 
   it('marks a corequisite as before or same term, muted', () => {
@@ -116,38 +113,46 @@ describe('buildRows', () => {
   it('builds the rows in order with the exact labels', () => {
     const entry: CourseReq = { cat: '0006021', pre: 'ACCT221', co: 'ACCT229', anti: ['or', 'ACCT101', 'ECON102'] };
     const rows = buildRows(entry, base);
-    expect(rows.map((r) => r.label)).toEqual(['Prerequisites', 'Corequisites', 'Not with']);
+    expect(rows.map((r) => r.label)).toEqual(['Prerequisite', 'Corequisite', 'Antirequisite']);
     expect(rows.map((r) => partsText(r.parts))).toEqual(['ACCT221', 'ACCT229 (before or same term)', 'ACCT101 · ECON102']);
     expect(rows.some((r) => r.labelTip)).toBe(false);
   });
 
-  it('puts a "?" beside the label of an unclear rule, linking to the catalogue, but not on a wholly uncaptured one', () => {
-    const rows = buildRows({ cat: '0006021', pre: { t: 'unknown' }, anti: ['or', 'ACCT101', 'ECON102'], unclear: ['pre', 'anti'] }, base);
-    expect(rows[0].labelTip).toBeUndefined();
-    expect(rows[1].labelTip).toEqual({
+  it('puts a "?" beside the label of an unclear prerequisite or corequisite, but not on an antirequisite or a wholly uncaptured rule', () => {
+    const rows = buildRows({ cat: '0006021', pre: ['and', 'ACCT221', { t: 'unknown' }], co: { t: 'unknown' }, anti: ['or', 'ACCT101', 'ECON102'], unclear: ['pre', 'co', 'anti'] }, base);
+    expect(rows[0].labelTip).toEqual({
       k: 'tip',
-      label: 'Not with: unclear rule',
+      label: 'Prerequisite: unclear rule',
       lines: ["SMU's catalogue wording for this rule is unclear."],
-      href: 'https://courses.smu.edu.sg/courses/0006021',
+      href: 'https://courses.smu.edu.sg/courses/0006021/requisites-r2o6J',
       linkText: 'SMU catalogue',
     });
+    expect(rows[1].labelTip).toBeUndefined();
+    expect(rows[2].labelTip).toBeUndefined();
     expect(buildRows({ pre: 'ACCT221', unclear: ['pre'] }, base)[0].labelTip).not.toHaveProperty('href');
   });
 
   it('skips relations that are absent', () => {
-    expect(buildRows({ cat: '1', anti: 'ACCT101' }, base).map((r) => r.label)).toEqual(['Not with']);
+    expect(buildRows({ cat: '1', anti: 'ACCT101' }, base).map((r) => r.label)).toEqual(['Antirequisite']);
   });
 
-  it('gives a catalogue course with no rules one muted "None listed" row with the dated tip', () => {
+  it('gives a catalogue course with no rules one muted "None listed" row', () => {
     const rows = buildRows({ cat: '0007051' }, base);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ label: 'Requisites', muted: true });
-    expect(partsText(rows[0].parts)).toBe('None listed[About this]');
-    expect(rows[0].parts[1]).toMatchObject({ lines: ["None in SMU's public course catalogue as of 8 Nov 2026. Restricted rules may be missing."], href: 'https://courses.smu.edu.sg/courses/0007051' });
+    expect(rows).toEqual([{ label: 'Requisites', parts: [{ k: 'text', text: 'None listed' }], muted: true }]);
   });
 
   it('gives no block for a course that is not in the catalogue', () => {
     expect(buildRows(undefined, base)).toEqual([]);
+  });
+});
+
+describe('catalogueNote', () => {
+  it('dates our copy and links to the course in SMU\'s catalogue, or its search page without an id', () => {
+    const note = catalogueNote({ cat: '0006021' }, '2026-11-08');
+    expect(partsText(note)).toBe('As of 8 Nov 2026 · may be out of date · <SMU catalogue ↗>');
+    expect(note[1]).toEqual({ k: 'link', text: 'SMU catalogue ↗', href: 'https://courses.smu.edu.sg/courses/0006021/requisites-r2o6J' });
+    expect(catalogueNote({ pre: 'ACCT221' }, '2026-11-08')[1]).toMatchObject({ href: 'https://courses.smu.edu.sg/courses/' });
+    expect(catalogueNote(undefined, '2026-11-08')).toEqual([]);
   });
 });
 

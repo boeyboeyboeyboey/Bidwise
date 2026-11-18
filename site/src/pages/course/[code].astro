@@ -9,7 +9,7 @@ import { getCourse } from '../../lib/data/server';
 import { buildRowSeed } from '../../components/course/rowSeed';
 import { DEFAULT_TARGET } from '../../lib/sim/presets';
 import { readRequisites } from '../../lib/requisites/server';
-import { buildRows } from '../../lib/requisites/render';
+import { buildRows, catalogueNote } from '../../lib/requisites/render';
 import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
 
 export function getStaticPaths() {
@@ -31,13 +31,14 @@ const reqData = readRequisites();
 const reqRows = reqData
   ? buildRows(reqData.courses[course.code], { siteKeys: new Set(getCourseIndex().map((c) => c.code)), names: reqData.names, asOf: reqData.asOf })
   : [];
+const reqNote = reqData && reqRows.length ? catalogueNote(reqData.courses[course.code], reqData.asOf) : [];
 ---
 <Base title={`${course.code} · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
   <header>
     <h1>{course.code}</h1>
     <p>{course.title}</p>
   </header>
-  {reqRows.length > 0 && <Requisites client:idle rows={reqRows} />}
+  {reqRows.length > 0 && <Requisites client:idle rows={reqRows} note={reqNote} />}
   <!-- A visitor who chose another window sees "Calculating" in the seeded cells until the page has recomputed (CourseView removes the class). -->
   <script is:inline define:vars={{ seedWindow: rowSeed.window }}>
     try {

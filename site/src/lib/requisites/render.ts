@@ -45,8 +45,9 @@ function orList(items: Part[][]): Part[] {
 
 const paren = (parts: Part[]): Part[] => [text('('), ...parts, text(')')];
 
+/** The course's Requisites tab in SMU's catalogue (the tab id is the same for every course). */
 function catalogueUrl(cat: string | undefined): string | undefined {
-  return cat ? `${CATALOGUE}${cat}` : undefined;
+  return cat ? `${CATALOGUE}${cat}/requisites-r2o6J` : undefined;
 }
 
 function codePart(code: string, ctx: RenderCtx): Part {
@@ -154,8 +155,7 @@ export function renderNode(node: Node, ctx: RenderCtx, anti = false): Part[] {
 /** A whole relation: the rule and, for corequisites, the "(before or same term)" note. */
 export function renderRelation(rel: Relation, node: Node, ctx: RenderCtx): Part[] {
   if (isUnknown(node)) {
-    const href = catalogueUrl(ctx.cat);
-    return href ? [text('Not captured · '), { k: 'link', text: 'SMU catalogue ↗', href }] : [text('Not captured')];
+    return [text('Not captured')];
   }
   const parts = renderNode(node, ctx, rel === 'anti');
   if (rel === 'co') parts.push(text(' (before or same term)', true));
@@ -180,7 +180,8 @@ export function formatAsOf(iso: string): string {
   return `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}`;
 }
 
-const LABELS: [Relation, string][] = [['pre', 'Prerequisites'], ['co', 'Corequisites'], ['anti', 'Not with']];
+// SMU's own block labels on its catalogue's Requisites tab.
+const LABELS: [Relation, string][] = [['pre', 'Prerequisite'], ['co', 'Corequisite'], ['anti', 'Antirequisite']];
 
 /** The rows of one course's block; an empty list when the course has no entry (not in the catalogue). */
 export function buildRows(entry: CourseReq | undefined, ctx: Omit<RenderCtx, 'cat'>): Row[] {
@@ -191,21 +192,21 @@ export function buildRows(entry: CourseReq | undefined, ctx: Omit<RenderCtx, 'ca
     const node = entry[rel];
     if (node === undefined) continue;
     const row: Row = { label, parts: renderRelation(rel, node, c) };
-    if (entry.unclear?.includes(rel) && !isUnknown(node)) row.labelTip = unclearTip(label, c);
+    // Antirequisites are SMU's "mutually exclusive" lists, shown as SMU lists them, so they get no "?".
+    if (rel !== 'anti' && entry.unclear?.includes(rel) && !isUnknown(node)) row.labelTip = unclearTip(label, c);
     rows.push(row);
   }
   if (rows.length) return rows;
-  const tip: Part = {
-    k: 'tip',
-    label: 'About this',
-    lines: [`None in SMU's public course catalogue as of ${formatAsOf(ctx.asOf)}. Restricted rules may be missing.`],
-  };
-  const href = catalogueUrl(entry.cat);
-  if (href) {
-    tip.href = href;
-    tip.linkText = 'SMU catalogue';
-  }
-  return [{ label: 'Requisites', parts: [text('None listed'), tip], muted: true }];
+  return [{ label: 'Requisites', parts: [text('None listed')], muted: true }];
+}
+
+/** The line under the rows: the date of our copy and a link to the course in SMU's catalogue (its search page when the
+ *  course's catalogue id is unknown). Empty when there is no block. */
+export function catalogueNote(entry: CourseReq | undefined, asOf: string): Part[] {
+  if (!entry) return [];
+  const href = catalogueUrl(entry.cat) ?? CATALOGUE;
+  const when = formatAsOf(asOf);
+  return [text(`${when ? `As of ${when} · ` : ''}may be out of date · `, true), { k: 'link', text: 'SMU catalogue ↗', href }];
 }
 
 /** Plain-text form of parts, for tests and logs: codes as is, tips as [label], links as their text. */

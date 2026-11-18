@@ -3,9 +3,9 @@
 // held-out term; without it they are today's 80 / 90 / 95% chances, and every helper behaves exactly as before.
 import forecastMeta from '../../data/real/forecast-meta.json';
 import { bidLevels, bidWindowData } from '../data/bidLevels';
-import type { BidStyleKey, ForecastMeta } from '../data/types';
+import type { ForecastMeta } from '../data/types';
 import { pInAt, recommendBid, type SimResult } from './index';
-import { bidClaims, levelForWindow, measuredCell, measuredRate, reachedForWindow, type BidClaims } from './windowBids';
+import { claimsAt, conditionalMedianCents, ifFillsFrom, levelForWindow, measuredRate, type BidClaims } from './windowBids';
 
 export { STYLE_TARGET, belowAim, groupEstimatesHidden } from './windowBids';
 
@@ -102,20 +102,16 @@ export function measuredIfFills(window: string | null | undefined, result: SimRe
  * `result` is the simulation for `group`; the measured rates are for one bidder, so they are never offered for a group.
  */
 export function claimsFor(result: SimResult, window: string | null | undefined, group: number, target: number, minBid: number | null): BidClaims {
-  const rec = suggestBid(result, target, window);
-  const style = levels ? ((presetFor(target)?.key as BidStyleKey | undefined) ?? null) : null;
-  const tied = levels ? PRESETS.filter((p) => suggestBid(result, p.level, window) === rec).map((p) => p.key as BidStyleKey) : [];
-  const cells = Object.fromEntries(tied.map((k) => [k, measuredCell(windowData, window, result, k)]));
-  const reached = Object.fromEntries(tied.map((k) => [k, reachedForWindow(windowData, window, k)]));
-  return bidClaims({ group, calibrated: levels !== null, rec, minBid, style, tied, cells, reached });
+  const recs = PRESETS.map((p) => suggestBid(result, p.level, window));
+  return claimsAt({
+    group, calibrated: levels !== null, windowData, window, minBid, recs, rec: suggestBid(result, target, window),
+    styleIndex: PRESETS.findIndex((p) => p.level === target), medianCents: conditionalMedianCents(result),
+  });
 }
 
 /** Chance the bid wins given the section fills; null when it almost never fills (the number would mean nothing). */
 export function chanceIfFills(result: SimResult, bidCents: number): number | null {
-  const f = result.pFill;
-  if (!(f >= 0.02)) return null;
-  // rounded so float noise (7e-17) at the lowest bids reads as exactly 0
-  return Math.min(1, Math.max(0, Math.round(((pInAt(result, bidCents) - (1 - f)) / f) * 1e9) / 1e9));
+  return ifFillsFrom(result.pFill, pInAt(result, bidCents));
 }
 
 export type LowConfidenceReason = 'oneSeat' | 'lateWindow' | 'farWindow';

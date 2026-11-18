@@ -39,6 +39,15 @@ export function bandOf(edges: readonly number[], medianCents: number): number {
 }
 
 /**
+ * The chance a bid wins given the section fills, from P(win) at the bid and the fill chance; null when it almost never fills
+ * (pFill below 0.02, the number would mean nothing). Rounded so float noise (7e-17) at the lowest bids reads as exactly 0.
+ */
+export function ifFillsFrom(pFill: number, pWin: number): number | null {
+  if (!(pFill >= 0.02)) return null;
+  return Math.min(1, Math.max(0, Math.round(((pWin - (1 - pFill)) / pFill) * 1e9) / 1e9));
+}
+
+/**
  * The median clearing bid if the section fills, in cents: the point of the curve where P(win) is 1 - pFill / 2.
  * Null when the section almost never fills (the same cut as chanceIfFills) or the curve does not reach it.
  */
@@ -84,8 +93,12 @@ export interface MeasuredCell {
 
 /** measuredRate with the case count, where the rate comes from and its upper bound; null on the same conditions. */
 export function measuredCell(data: BidWindowData | null, window: string | null | undefined, result: SimResult, style: BidStyleKey | null | undefined): MeasuredCell | null {
+  return measuredCellAt(data, window, conditionalMedianCents(result), style);
+}
+
+/** measuredCell for a conditional median already read off the curve (cents), as panelView receives it; null when it is null. */
+export function measuredCellAt(data: BidWindowData | null, window: string | null | undefined, median: number | null, style: BidStyleKey | null | undefined): MeasuredCell | null {
   if (!data?.measured || !data.edges || !window || !style) return null;
-  const median = conditionalMedianCents(result);
   if (median === null) return null;
   const cell = data.measured[window]?.[String(bandOf(data.edges, median))];
   const rate = cell?.[style];
@@ -197,4 +210,30 @@ export function bidClaims(i: ClaimInput): BidClaims {
     unreached: tied.filter((s) => i.reached[s] === false),
     sameAs: tied.filter((s) => !named.includes(s)),
   };
+}
+
+export interface ClaimsAtInput {
+  group: number;
+  /** True when the bid levels are the calibrated Cheap / Balanced / Safe ones (bidLevels() read cleanly). */
+  calibrated: boolean;
+  /** Per-window data (bidWindowData); null when absent or not calibrated. */
+  windowData: BidWindowData | null;
+  window: string | null | undefined;
+  minBid: number | null;
+  /** Suggested bid of each preset in preset order (cheap, balanced, safe when calibrated), cents. */
+  recs: readonly number[];
+  /** The chosen bid, cents, and which preset it belongs to (-1 when none). */
+  rec: number;
+  styleIndex: number;
+  /** The model's median clearing bid if the section fills (conditionalMedianCents), cents; null when it has none. */
+  medianCents: number | null;
+}
+
+/** bidClaims for plain numbers: ties, measured cells and reached flags are read here, so the page, the snapshot and the tests share them. */
+export function claimsAt(i: ClaimsAtInput): BidClaims {
+  const style = i.calibrated ? (STYLE_ORDER[i.styleIndex] ?? null) : null;
+  const tied = i.calibrated ? STYLE_ORDER.filter((_, k) => i.recs[k] === i.rec) : [];
+  const cells = Object.fromEntries(tied.map((k) => [k, measuredCellAt(i.windowData, i.window, i.medianCents, k)]));
+  const reached = Object.fromEntries(tied.map((k) => [k, reachedForWindow(i.windowData, i.window, k)]));
+  return bidClaims({ group: i.group, calibrated: i.calibrated, rec: i.rec, minBid: i.minBid, style, tied, cells, reached });
 }

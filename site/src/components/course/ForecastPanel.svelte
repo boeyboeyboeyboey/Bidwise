@@ -4,10 +4,12 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, claimsFor, suggestBid } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
+  import { conditionalMedianCents } from '../../lib/sim/windowBids';
   import { measuredSummary } from '../../lib/data/bidLevels';
-  import { FLOOR_TEXT, GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, pastRateText, sameBidText, styleTipLines, unreachedText } from './bidStyle';
+  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, styleTipLines } from './bidStyle';
+  import { panelView } from './panelView';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
   import type { ForecastCtx } from './forecast-ctx';
   import OtherSections from './OtherSections.svelte';
@@ -16,8 +18,6 @@
   import { simSection } from './sectionSim';
   import { bidOrNone, eS, pct } from './fmt';
   import { refitNote } from '../../lib/data/refitNote';
-  // The balance every student gets per term; a suggested bid above it needs e$ carried over from earlier terms.
-  import { EXAMPLE_BUDGET_CENTS as TERM_BUDGET_CENTS } from '../../lib/planner/example';
 
   let { section, history, failed = false, currentTerm, children }: {
     section: Section;
@@ -90,14 +90,18 @@
   const presets = bidPresets();
   const styleTip = styleTipLines(presets, calibrated ? measuredSummary(ctx.meta) : null);
   const pNow = $derived(sim ? pInAt(sim, rec) : 0);
-  const modelIfFills = $derived(sim ? chanceIfFills(sim, rec) : null);
-  // What may be claimed next to the bid (floor case, past rates, unreached aim, ties, hidden for a group): decided in claimsFor.
-  const claims = $derived(sim && res && minBid !== null ? claimsFor(sim, res.win, res.group, target, minBid) : null);
-  // When past-rate lines are shown they carry the measured figure, so "if the section fills" is not repeated; otherwise the model's own estimate.
-  // Not shown at the floor (see FLOOR_TEXT).
-  const ifFills = $derived(modelIfFills !== null && !claims?.past.length ? modelIfFills : null);
-  const aboveMin = $derived(!!claims && !claims.floor);
   const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win, isFarWindow(res.win, ctx.buildWindow, ctx.meta.windows)) : []);
+  // Everything the settled answer shows (bid, chances, floor / past-rate / unreached / same-bid lines, minimum-bid line, low-confidence tag): decided in panelView.
+  const view = $derived(
+    sim && res && minBid !== null
+      ? panelView({
+          meta: ctx.meta, window: res.win, group: res.group, minBidCents: minBid,
+          recs: TARGETS.map((t) => suggestBid(sim, t, res!.win)) as [number, number, number],
+          styleIndex: Math.max(0, TARGETS.indexOf(target)), pNow, pFill: sim.pFill, conditionalMedianCents: conditionalMedianCents(sim),
+          reasons, hardWindow: lowRel,
+        })
+      : null,
+  );
 
   // null until the saved plan has been read in the browser, so the server-rendered button does not flip.
   let inPlan = $state<boolean | null>(null);
@@ -108,9 +112,6 @@
     sync();
     return onPlanChange(sync);
   });
-
-  // All three styles give the same bid at the minimum.
-  const allSame = $derived(!!sim && TARGETS.every((t) => suggestBid(sim!, t, res?.win) === suggestBid(sim!, TARGETS[0], res?.win)));
 
   function setGroup(g: number) {
     const c = clampGroup(g);
@@ -178,36 +179,36 @@
     <p class="none">No forecast for this section yet</p>
   {:else if !fw || minBid === null}
     <p class="none">No forecast for this section in this window</p>
-  {:else if live && res}
+  {:else if live && res && view}
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
-      {#if claims?.groupHidden || groupEstimatesHidden(group)}
+      {#if view.groupHidden || groupEstimatesHidden(group)}
         {@render groupNotice()}
       {:else}
         <div class="bidrow">
           <p class="headline num" aria-live="polite">
-            Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
+            Bid <b>{eS(view.bidCents ?? rec)}</b>{#if res.group > 1}&nbsp;each{/if}
           </p>
-          {#if reasons.length || lowRel}
-            <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons, lowRel)} /></span>
+          {#if view.lowConfidence.show}
+            <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={view.lowConfidence.lines} /></span>
           {/if}
         </div>
-        {#if rec > TERM_BUDGET_CENTS}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
+        {#if view.overBudget}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
         <p class="chances num">
-          <span><b>{pct(pNow)}</b> chance of a seat</span>
-          {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
-          {#if modelIfFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
+          <span><b>{view.chanceNow}</b> chance of a seat</span>
+          {#if view.ifFills !== null}<span><b>{view.ifFills}</b> if the section fills</span>{/if}
+          {#if view.fillChance}<span class="fills">Chance it fills: <b>{view.fillChance.text}</b><span class="fbar" aria-hidden="true"><span style:width="{view.fillChance.barPct}%"></span></span></span>{/if}
         </p>
-        {#if claims?.floor}<p class="disc">{FLOOR_TEXT}</p>{/if}
-        {#each claims?.past ?? [] as r (r.styles.join())}<p class="disc">{pastRateText(r)}</p>{/each}
-        {#if claims?.unreached.length}<p class="disc">{unreachedText(claims.unreached)}</p>{/if}
+        {#if view.floorText}<p class="disc">{view.floorText}</p>{/if}
+        {#each view.past as r (r.styles.join())}<p class="disc">{r.text}</p>{/each}
+        {#if view.unreachedText}<p class="disc">{view.unreachedText}</p>{/if}
         <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
         {#if note}<p class="disc">{note}</p>{/if}
-        {#if allSame && claims?.floor}
-          <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>
+        {#if view.minBidOnly}
+          <p class="sub num">Minimum bid {eS(view.minBidCents)}</p>
         {:else}
           {@render aim()}
-          {#if claims?.sameAs.length}<p class="sub">{sameBidText(claims.sameAs)}</p>{/if}
+          {#if view.sameAsText}<p class="sub">{view.sameAsText}</p>{/if}
         {/if}
       {/if}
       {#if hasLast && latest}

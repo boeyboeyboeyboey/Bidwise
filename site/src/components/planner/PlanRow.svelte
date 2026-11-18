@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { CourseData } from '../../lib/data/types';
   import { isLikelyFull, seatsLeftNow, seatsOf, seatsPhrase } from '../../lib/data/seats';
-  import { MAX_FRIENDS_GROUP } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, groupEstimatesHidden } from '../../lib/sim/forecast';
   import type { Role } from '../../lib/sim/planner';
   import { styleName } from '../../lib/sim/presets';
-  import { lowConfidenceLines } from '../course/bidStyle';
+  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines } from '../course/bidStyle';
   import { rowLowConfidence } from '../../lib/sim/presets';
   import { aboutPctParts, eS } from '../course/fmt';
   import { orderSections } from '../course/sections';
@@ -43,8 +43,10 @@
   const maxGroup = $derived(Math.max(1, Math.min(MAX_FRIENDS_GROUP, sec ? seatsLeftNow(sec) : MAX_FRIENDS_GROUP)));
   const limitNote = $derived(sec ? groupLimitNote(seatsLeftNow(sec), row.group, seatsPhrase(sec)) : '');
   const skip = $derived(bid === 0);
+  /** A group's bid and chance are withheld (see groupEstimatesHidden). */
+  const groupHidden = $derived(groupEstimatesHidden(row.group));
   /** "Below Safe" when the balance cut this bid under the style's bid (calibrated only). */
-  const below = $derived(issue || none ? '' : belowStyle(target, bid, fullBid, capMode));
+  const below = $derived(issue || none || groupHidden ? '' : belowStyle(target, bid, fullBid, capMode));
   /** The row's "?" text: the default one explains a chance level, which a named style is not. */
   const tipLines = $derived.by(() => {
     const style = styleName(target);
@@ -103,7 +105,8 @@
       </div>
     </div>
     <div class="res num" aria-live="polite" aria-busy={busy}>
-      {#if issue}<span class="cant">{ISSUE_TEXT[issue]}</span>
+      {#if groupHidden}<span class="cant">{GROUP_NOTICE}</span> <button type="button" class="btn" onclick={() => (row.group = 1)}>{GROUP_NOTICE_ACTION}</button>
+      {:else if issue}<span class="cant">{ISSUE_TEXT[issue]}</span>
       {:else if none && fullBid !== null && fullBid > 0}<span class="need">Needs <s>{eS(fullBid)}</s></span>
       {:else if bid === null || (!skip && p === null)}<span class="calc">Calculating…</span>
       {:else if skip}

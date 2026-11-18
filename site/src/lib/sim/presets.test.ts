@@ -308,3 +308,44 @@ describe('measuredIfFills', () => {
     expect(m.measuredIfFills('Round 1 Window 1', fakeSim([1000, 2000], [0.99, 1], 0.019), 'cheap')).toBeNull();
   });
 });
+
+describe('claimsFor', () => {
+  const W = 'Round 2A Window 1';
+  // Balanced and Safe read the same level in this window, so they give the same bid; Cheap reads lower.
+  const mk = (reached: boolean, upper?: number): BidWindowData => ({
+    levels: { [W]: { cheap: { level: 0.6, lossFilled: 0.3, reached }, balanced: { level: 0.95, lossFilled: 0.15, reached }, safe: { level: 0.95, lossFilled: 0.1, reached } } },
+    edges: [15, 25, 40, 60],
+    measured: { [W]: Object.fromEntries([0, 1, 2, 3, 4].map((b) => [String(b), { cheap: 0.7, balanced: 0.8, safe: 0.8, nFilled: 40, source: 'group', ...(upper === undefined ? {} : { upper: { cheap: upper, balanced: upper, safe: upper } }) }])) },
+  });
+  const r = fake([1000, 1800, 2600, 3500, 6000], [0.05, 0.3, 0.7, 0.93, 1], 0.5);
+  it('Balanced = Safe: each names the other, with its own rate and target', async () => {
+    const m = await load(true, mk(true, 0.86));
+    const bal = m.claimsFor(r, W, 1, 0.975, 1000);
+    const safe = m.claimsFor(r, W, 1, 0.99, 1000);
+    expect(bal.sameAs).toEqual(['safe']);
+    expect(safe.sameAs).toEqual(['balanced']);
+    expect(bal.past.map((p) => [p.styles, p.belowAim])).toEqual([[['balanced'], false], [['safe'], true]]);
+  });
+  it('Balanced = Safe with equal rates: one line naming both, no "same as"', async () => {
+    const m = await load(true, mk(true));
+    const c = m.claimsFor(r, W, 1, 0.975, 1000);
+    expect(c.past.map((p) => p.styles)).toEqual([['balanced', 'safe']]);
+    expect(c.sameAs).toEqual([]);
+  });
+  it('a group of 2 or more gets nothing to show', async () => {
+    const m = await load(true, mk(false, 0.1));
+    expect(m.claimsFor(r, W, 2, 0.975, 1000)).toEqual({ groupHidden: true, floor: false, past: [], unreached: [], sameAs: [] });
+  });
+  it('reached false is reported for the chosen style, and old data without the key says nothing', async () => {
+    expect((await load(true, mk(false))).claimsFor(r, W, 1, 0.9, 1000).unreached).toEqual(['cheap']);
+    expect((await load(true, mk(false))).claimsFor(r, W, 1, 0.975, 1000).unreached).toEqual(['balanced', 'safe']);
+    const old = mk(true);
+    old.levels![W].cheap = { level: 0.6, lossFilled: 0.3 };
+    expect((await load(true, old)).claimsFor(r, W, 1, 0.9, 1000).unreached).toEqual([]);
+  });
+  it('no per-window data at all: no past rate, no reached claim', async () => {
+    const c = (await load(true)).claimsFor(r, W, 1, 0.975, 1000);
+    expect(c.past).toEqual([]);
+    expect(c.unreached).toEqual([]);
+  });
+});

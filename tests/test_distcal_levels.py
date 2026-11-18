@@ -116,6 +116,61 @@ class MeasuredWin(unittest.TestCase):
         self.assertLessEqual(mw["overall"]["cheap"], mw["overall"]["balanced"] + 1e-9)
         self.assertLessEqual(mw["overall"]["balanced"], mw["overall"]["safe"] + 1e-9)
 
+    def _mw(self):
+        rt = rows_in({"R1W1": 600, "R1A": 10, "R2": 330}, 5, fill_rate=1.0)
+        rh = rows_in({"R1W1": 600, "R1A": 10, "R2": 330}, 6, fill_rate=1.0)
+        return rt, rh, D.measured_win(rt, rh, D.learn_spread(rt)[0], D.learn_spread(rh)[0])
+
+    def test_every_cell_has_an_upper_bound_at_or_above_its_rate_and_it_is_deterministic(self):
+        rt, rh, mw = self._mw()
+        self.assertEqual(mw, self._mw()[2])
+        for g in D.GROUPS:
+            for c in mw[g].values():
+                self.assertEqual(set(c["upper"]), set(D.STYLES))
+                for st in D.STYLES:
+                    self.assertGreaterEqual(c["upper"][st], c[st])
+                    self.assertLessEqual(c["upper"][st], 1.0)
+                    self.assertEqual(round(c["upper"][st], 4), c["upper"][st])
+
+    def test_upper_comes_from_the_rows_the_rate_came_from(self):
+        rt = rows_in({"R1W1": 600, "R1A": 10, "R2": 330}, 5, fill_rate=1.0)
+        rh = rows_in({"R1W1": 600, "R1A": 10, "R2": 330}, 6, fill_rate=1.0)
+        sizes, real = [], D.upper_bounds
+
+        def spy(wins, ids, *a, **k):
+            sizes.append((len(ids), {len(v) for v in wins.values()}))
+            return real(wins, ids, *a, **k)
+
+        with mock.patch.object(D, "upper_bounds", spy):
+            mw = D.measured_win(rt, rh, D.learn_spread(rt)[0], D.learn_spread(rh)[0])
+        cells = [c for g in D.GROUPS for c in mw[g].values()]
+        self.assertEqual(sorted(n for n, _ in sizes), sorted(c["nFilled"] for c in cells))  # one bootstrap per cell, over nFilled rows
+        self.assertTrue(all(lens == {n} for n, lens in sizes))
+        self.assertEqual({c["source"] for c in cells}, {"cell", "group", "all"})
+        # a cell that fell back to the group or to all rows shares that population's bound
+        self.assertEqual(mw["R1A"]["2"]["upper"], mw["R1B"]["1"]["upper"])
+        self.assertNotEqual(mw["R1W1"]["0"]["upper"], mw["R1W1"]["1"]["upper"])
+
+    def test_upper_bounds_matches_a_hand_bootstrap(self):
+        # 4 courses with 0, 1, 1, 1 wins of 2 rows each: rate 3/8; every resample's rate is a multiple of 1/8 within [0, 1]
+        wins = {"cheap": [0, 0, 1, 0, 1, 0, 1, 0], "balanced": [1] * 8, "safe": [0] * 8}
+        ids = [0, 0, 1, 1, 2, 2, 3, 3]
+        up = D.upper_bounds(wins, ids)
+        self.assertEqual(up["balanced"], 1.0)
+        self.assertEqual(up["safe"], 0.0)
+        self.assertGreaterEqual(up["cheap"], 3 / 8)
+        self.assertLessEqual(up["cheap"], 1.0)
+        self.assertEqual(up, D.upper_bounds(wins, ids))
+        self.assertEqual(D.upper_bounds(wins, [7, 7, 9, 9, 11, 11, 13, 13]), up)  # only the grouping matters, not the ids
+
+    def test_without_course_ids_cells_ship_without_upper(self):
+        rt, rh, _ = self._mw()
+        for r in rt:
+            r.pop("course")
+        mw = D.measured_win(rt, rh, D.learn_spread(rt)[0], D.learn_spread(rh)[0])
+        self.assertNotIn("upper", mw["R1W1"]["1"])
+        self.assertEqual(set(mw["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source"})
+
     def test_rates_are_exact_on_a_trivial_case(self):
         # actual bid = the floor: every site-rounded bid is at least the floor, so every style wins every filled row
         rt = rows_in({"R1W1": 300}, 7, fill_rate=1.0, act_fixed=1000)
@@ -222,7 +277,7 @@ class BacktestPayload(unittest.TestCase):
         self.assertEqual(set(p["levelsByGroup"]["R1W1"]["cheap"]), {"level", "lossFilled", "reached", "nFilled", "own"})
         self.assertFalse(p["levelsByGroup"]["R2A"]["safe"]["own"])
         self.assertEqual(list(p["measuredWin"]), list(D.GROUPS) + ["overall"])
-        self.assertEqual(set(p["measuredWin"]["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source"})
+        self.assertEqual(set(p["measuredWin"]["R1W1"]["1"]), {"cheap", "balanced", "safe", "nFilled", "source", "upper"})
 
 
 if __name__ == "__main__":

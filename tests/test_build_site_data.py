@@ -909,16 +909,55 @@ class WindowBidFields(unittest.TestCase):
         # only level, lossFilled and reached go to the site
         self.assertEqual(set(lv["Round 2 Window 1"]["safe"]), {"level", "lossFilled", "reached"})
 
-    def test_measured_win_drops_source_and_overall(self):
+    def test_measured_win_passes_source_and_drops_overall(self):
         out = bsd.window_bid_fields(self._payload())
         m = out["measuredWin"]
         self.assertEqual(len(m), 12)
         cell = m["Round 2A Window 3"]["3"]
-        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled"})
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled", "source"})  # no upper in this payload: key omitted
+        self.assertEqual(cell["source"], "cell")
         self.assertAlmostEqual(cell["balanced"], 0.78)
         self.assertEqual(cell["nFilled"], 80)
         self.assertEqual(sorted(m["Round 1 Window 1"]), ["0", "1", "2", "3", "4"])
         self.assertEqual(out["bandEdges"], [15, 25, 40, 60])
+
+    def test_measured_win_passes_upper_and_source_when_present(self):
+        p = self._payload()
+        for g in self.GROUPS:
+            for b, c in p["measuredWin"][g].items():
+                c["upper"] = {st: round(c[st] + 0.05, 4) for st in ("cheap", "balanced", "safe")}
+        p["measuredWin"]["R1A"]["2"]["source"] = "group"
+        m = bsd.window_bid_fields(p)["measuredWin"]
+        cell = m["Round 1A Window 2"]["2"]
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled", "source", "upper"})
+        self.assertEqual(cell["source"], "group")
+        self.assertEqual(cell["upper"], {"cheap": 0.67, "balanced": 0.82, "safe": 0.87})
+        self.assertEqual(m["Round 1 Window 1"]["0"]["source"], "cell")
+
+    def test_bad_source_or_upper_is_left_out_but_the_cell_stays(self):
+        p = self._payload()
+        c = p["measuredWin"]["R1W1"]["1"]
+        c["source"] = "elsewhere"
+        c["upper"] = {"cheap": 0.7, "balanced": None, "safe": 0.9}
+        cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1 Window 1"]["1"]
+        self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled"})
+
+    def test_source_and_upper_change_nothing_else_in_the_output(self):
+        """Bids come from bidLevels / bidLevelsByWindow / the params, none of which window_bid_fields' source and upper handling
+        touches: with and without those keys every other output key is identical, and measuredWin differs by the added keys only."""
+        old = self._payload()
+        new = self._payload()
+        for g in self.GROUPS:
+            for c in new["measuredWin"][g].values():
+                c["upper"] = {st: c[st] + 0.01 for st in ("cheap", "balanced", "safe")}
+        for g in self.GROUPS:
+            for c in old["measuredWin"][g].values():
+                del c["source"]
+        a, b = bsd.window_bid_fields(old), bsd.window_bid_fields(new)
+        self.assertEqual({k: v for k, v in a.items() if k != "measuredWin"}, {k: v for k, v in b.items() if k != "measuredWin"})
+        for w, bands in b["measuredWin"].items():
+            for k, c in bands.items():
+                self.assertEqual({kk: v for kk, v in c.items() if kk not in ("source", "upper")}, a["measuredWin"][w][k])
 
     def test_absent_keys_are_not_emitted(self):
         self.assertEqual(bsd.window_bid_fields({"levels": {}}), {})

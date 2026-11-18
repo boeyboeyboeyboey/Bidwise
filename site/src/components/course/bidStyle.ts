@@ -1,6 +1,7 @@
 // Plain-words text for the bid styles (Cheap / Balanced / Safe), built from the held-out backtest numbers. No DOM.
-import type { BidLevels } from '../../lib/data/types';
+import type { BidLevels, BidStyleKey, MeasuredWinSummary } from '../../lib/data/types';
 import type { BidPreset, LowConfidenceReason } from '../../lib/sim/presets';
+import { STYLE_TARGET, type PastRate } from '../../lib/sim/windowBids';
 
 /** Simple fractions a share is worded as, in order of preference when two are about as close. */
 const FRACTIONS: readonly (readonly [number, number])[] = [[1, 20], [1, 10], [1, 8], [1, 6], [1, 5], [1, 4], [3, 10], [1, 3], [2, 5], [1, 2]];
@@ -22,12 +23,52 @@ export const aboutInN = (p: number): string => {
   return `about ${k} in ${n}`;
 };
 
-/** Tip text for the style chips; empty unless every preset carries its backtest number. */
-export function styleTipLines(presets: readonly BidPreset[]): string[] {
-  if (!presets.length || presets.some((p) => typeof p.lossFilled !== 'number')) return [];
-  const parts = presets.map((p, i) => `${i === 0 ? `${p.label} bids lost` : p.label} ${aboutInN(p.lossFilled as number)}`);
-  return [`Last term, of the sections that filled: ${parts.join(', ')}.`, `${presets[presets.length - 1].label} costs more.`];
+const STYLE_LABEL: Readonly<Record<BidStyleKey, string>> = { cheap: 'Cheap', balanced: 'Balanced', safe: 'Safe' };
+/** "Balanced and Safe", "Cheap, Balanced and Safe". */
+const joinStyles = (ks: readonly BidStyleKey[]): string => ks.map((k) => STYLE_LABEL[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
+const pc = (v: number): string => `${Math.round(v * 100)}%`;
+
+/**
+ * Tip text for the style chips: the out-of-fold win rates on sections that filled (omitted without the summary), then the cost note.
+ * Empty without presets.
+ */
+export function styleTipLines(presets: readonly BidPreset[], summary: MeasuredWinSummary | null = null): string[] {
+  if (!presets.length) return [];
+  const lines: string[] = [];
+  if (summary) {
+    const when = summary.terms?.length === 2 ? `In ${summary.terms[0]} and ${summary.terms[1]}` : 'In past terms';
+    const o = summary.overall;
+    lines.push(`${when}, on sections that filled: Cheap won ${pc(o.cheap)}, Balanced ${pc(o.balanced)}, Safe ${pc(o.safe)}.`);
+  }
+  lines.push(`${presets[presets.length - 1].label} costs more.`);
+  return lines;
 }
+
+/** Shown for one bidder at the minimum bid, in place of the "if the section fills" figure. */
+export const FLOOR_TEXT = 'If seats are left over, this bid wins. If the section fills, this bid usually loses.';
+
+/** Shown instead of a group's bid and chances. */
+export const GROUP_NOTICE = 'Group estimates are being revised.';
+export const GROUP_NOTICE_ACTION = 'Bid for 1 person';
+
+const SOURCE_TEXT = { cell: 'this round and price range', group: 'whole round average', all: 'all rounds' } as const;
+
+/** One style's past win rate with its case count and where it comes from; "Below aim in past terms." only when the data says so. */
+export function pastRateText(r: PastRate): string {
+  const src = r.source ? ` (${SOURCE_TEXT[r.source]})` : '';
+  return `${joinStyles(r.styles)} won ${pc(r.rate)} of ${r.nFilled} filled cases${src}.${r.belowAim ? ' Below aim in past terms.' : ''}`;
+}
+
+/** The aim of each of these styles could not be reached for this round. */
+export const unreachedText = (styles: readonly BidStyleKey[]): string => {
+  const aims = styles.map((k) => `${Math.round(STYLE_TARGET[k] * 100)}%`);
+  return styles.length === 1
+    ? `${STYLE_LABEL[styles[0]]} couldn't reach its ${aims[0]} aim for this round in past terms.`
+    : `${joinStyles(styles)} couldn't reach their aims (${aims.join(', ')}) for this round in past terms.`;
+};
+
+/** "Same bid as Balanced and Safe." */
+export const sameBidText = (others: readonly BidStyleKey[]): string => `Same bid as ${joinStyles(others)}.`;
 
 /** What the chosen style means, for the info tip next to the section list. */
 export function styleMeaning(preset: BidPreset): string {

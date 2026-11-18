@@ -45,6 +45,12 @@ describe('bidWindowData', () => {
     expect(d?.measured?.['Round 1 Window 1']['3'].nFilled).toBe(60);
     expect(d?.edges).toEqual([15, 25, 40, 60]);
   });
+  it('reads source and upper bounds when present, ignores bad ones, and works without them', () => {
+    const w = (c: object) => bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, c])) } } as never)?.measured?.['Round 1 Window 1']['0'];
+    expect(w({ ...cell, source: 'cell', upper: { cheap: 0.75, balanced: 0.9, safe: 0.95 } })).toMatchObject({ source: 'cell', upper: { cheap: 0.75, balanced: 0.9, safe: 0.95 } });
+    expect(w({ ...cell, source: 'galaxy', upper: { cheap: 7, balanced: 'x' } })).toEqual({ ...cell, upper: { cheap: null, balanced: null, safe: null } });
+    expect(w(cell)).toEqual(cell);
+  });
   it('passes reached through when present', () => {
     const d = bidWindowData({ ...full, bidLevelsByWindow: { 'Round 1 Window 1': { cheap: lvl(0.5), balanced: lvl(0.7), safe: { ...lvl(0.995), reached: false } } } });
     expect(d?.levels?.['Round 1 Window 1'].safe.reached).toBe(false);

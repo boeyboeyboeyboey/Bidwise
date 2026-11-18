@@ -5,7 +5,7 @@ import { FILLED_TESTS, HELD_OUT_TEST, LATEST_FILLED_TEST } from '../lib/data/acc
 import { dataMeta, getForecastMeta } from '../lib/data';
 import { refitNote } from '../lib/data/refitNote';
 import { bidLevels, measuredSummary } from '../lib/data/bidLevels';
-import { STYLE_TARGET, underDelivers } from '../lib/sim/windowBids';
+import { STYLE_TARGET } from '../lib/sim/windowBids';
 import { lowConfidenceLines, styleResults } from '../components/course/bidStyle';
 import { FORECAST_RUNS } from '../lib/sim/forecast';
 import { eS, pct } from '../components/course/fmt';
@@ -66,14 +66,14 @@ const calibrated = styles.length === 3;
 const wonFilledPct = (r: { wonFilled: number }) => `${Math.round(r.wonFilled * 100)}%`;
 const wonAllPct = (r: { wonAll: number }) => `${Math.round(r.wonAll * 100)}%`;
 const styleTerm = fm.distCalibration?.heldOutTerm ?? latest.term;
+// The terms the past win rates are measured on (both, out of sample), which is not the held-out term alone.
+const rateTerms = fm.measuredWinSummary?.terms?.length === 2 ? `${fm.measuredWinSummary.terms[0]} and ${fm.measuredWinSummary.terms[1]}` : 'past terms';
 // Past win rates per round (out of sample); without them the page falls back to the pooled held-out table.
 const measured = calibrated ? measuredSummary(fm) : null;
 const KEYS = ['cheap', 'balanced', 'safe'] as const;
 const LABEL = { cheap: 'Cheap', balanced: 'Balanced', safe: 'Safe' } as const;
 const aims = KEYS.map((k) => `${Math.round(STYLE_TARGET[k] * 100)}%`);
 const r100 = (v: number) => `${Math.round(v * 100)}%`;
-const shortRounds = measured ? measured.byRound.filter((r) => KEYS.some((k) => underDelivers(k, r[k]))).map((r) => r.label) : [];
-const andList = (xs: string[]) => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 const lowConf = lowConfidenceLines(['oneSeat', 'lateWindow', 'farWindow'], true);
 const e = (c: number | null) => (c === null ? '–' : eS(c));
 const p = (v: number | null) => (v === null ? '–' : pct(v));
@@ -163,7 +163,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>Cheap, Balanced and Safe aim to win a seat {aims[0]}, {aims[1]} and {aims[2]} of the time when the section fills. When it doesn’t fill, any bid at the minimum gets in.</li>
         <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in two recent terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
-        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise the whole round), and says so where it fell well short.</li>
+        <li>Next to each style, the course page shows how often it actually won in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise the whole round), and says so where the past results fall clearly short of the aim.</li>
         <li>The headline chance also counts the times the section doesn’t fill, so it is usually higher than the “if it fills” figure.</li>
         <li>Groups: every member needs a seat</li>
       </ul>
@@ -174,7 +174,7 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
       <ul class="bul">
         <li>Each style takes a higher bid from the replays: Cheap the lowest, Safe the highest</li>
         <li>The chance shown is how often that bid won a seat in the replays</li>
-        <li>In {styleTerm}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' won' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
+        <li>In {rateTerms}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' won' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
         <li>That is what they did, not a promise: the forecast for {styleTerm} was made without its results, but the style levels were chosen using that term's results, so a new term may differ</li>
         <li>Safe can show a high chance for a section that rarely fills: it also covers the case where the section fills unexpectedly</li>
         <li>Groups: every member needs a seat</li>
@@ -217,18 +217,18 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
     {measured ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty rounds">
-      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, which flatters the results a little. Tested strictly forward, using only terms before it, the styles won 62%, 80% and 86% in 2026-27 Term 1, the last complete term, so a new term can fall several points short.{shortRounds.length > 0 && ` ${andList(shortRounds)} ${shortRounds.length > 1 ? 'were' : 'was'} below the aim, and the course page says so on those sections.`} Round 2A has few filled sections, so its figures are rough.</caption>
+      <caption>How often each style’s bid won a seat on sections that filled{measured.terms && ` in ${measured.terms[0]} and ${measured.terms[1]}`}. Each term was tested with bid levels chosen from the other term, which flatters the results a little. Tested strictly forward, using only terms before it, the styles won 62%, 80% and 86% in 2026-27 Term 1, the last complete term, so a new term can fall several points short. Round 2A has few filled sections, so its figures are rough.</caption>
       <thead><tr><th scope="col"><span class="sr-only">Round</span></th>{KEYS.map((k) => <th scope="col" class="r">{LABEL[k]}</th>)}</tr></thead>
       <tbody>
         <tr class="aim"><th scope="row">Aim</th>{aims.map((a) => <td class="r">{a}</td>)}</tr>
-        {measured.byRound.map((r) => <tr><th scope="row">{r.label}<span>{r.nFilled.toLocaleString('en-US')} filled sections</span></th>{KEYS.map((k) => <td class={underDelivers(k, r[k]) ? 'r short' : 'r'}><b>{r100(r[k])}</b>{underDelivers(k, r[k]) && <span>below aim</span>}</td>)}</tr>)}
+        {measured.byRound.map((r) => <tr><th scope="row">{r.label}<span>{r.nFilled.toLocaleString('en-US')} filled sections</span></th>{KEYS.map((k) => <td class="r"><b>{r100(r[k])}</b></td>)}</tr>)}
         <tr class="all"><th scope="row">All rounds</th>{KEYS.map((k) => <td class="r"><b>{r100(measured.overall[k])}</b></td>)}</tr>
       </tbody>
     </table>
     </>) : calibrated ? (<>
     <h3 id="bid-styles">How each bid style did</h3>
     <table class="sty">
-      <caption>Share of bids that won in {styleTerm}. The forecast for that term was made without its results, but the style levels were chosen using that term's results, so a new term may differ.</caption>
+      <caption>Share of bids that won in {rateTerms}. The forecast for that term was made without its results, but the style levels were chosen using that term's results, so a new term may differ.</caption>
       <thead><tr><th scope="col">Style</th><th scope="col" class="r">Sections that filled</th><th scope="col" class="r">All sections</th></tr></thead>
       <tbody>
         {styles.map((r) => <tr><th scope="row">{r.label}</th><td class="r"><b>{wonFilledPct(r)}</b> <span>{r.wonFilledText}</span></td><td class="r"><b>{wonAllPct(r)}</b></td></tr>)}
@@ -351,7 +351,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
   .sty td span, .sty th span { display: block; font-size: 13px; color: var(--muted); font-weight: 400; }
   .sty .aim > * { color: var(--muted); }
   .sty .all > * { border-top: 1px solid var(--rule-strong); }
-  .sty td.short b { color: color-mix(in srgb, var(--warn) 70%, var(--text)); }
   .rounds th:first-child { width: 40%; }
 
   .more, .formula-box { background: var(--surface); border-radius: var(--r-lg); margin-bottom: var(--s3); }

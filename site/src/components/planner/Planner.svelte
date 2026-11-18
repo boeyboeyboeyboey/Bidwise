@@ -4,8 +4,8 @@
   import { fetchCourse } from '../../lib/data/client';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
-  import { TARGETS, bidCalibrated, bidPresets, fromCurrent, suggestBid, targetToStored } from '../../lib/sim/forecast';
-  import { lowConfidenceLines, styleTipLines } from '../course/bidStyle';
+  import { TARGETS, bidCalibrated, bidPresets, fromCurrent, groupEstimatesHidden, suggestBid, targetToStored } from '../../lib/sim/forecast';
+  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, styleTipLines } from '../course/bidStyle';
   import { isFarWindow, isLateWindow } from '../../lib/sim/presets';
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
   import { liveWindow } from '../../lib/data/window';
@@ -20,7 +20,7 @@
   import PlanRow from './PlanRow.svelte';
   import {
     DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
-    canStartGroup, changeRole, chanceOfGroup, joinableRows, moveToGroup, planParts, whereNow, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
+    canStartGroup, changeRole, chanceOfGroup, joinableRows, moveToGroup, planParts, whereNow, inOptimisation, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
@@ -123,7 +123,8 @@
       return { sec, issue: sec ? rowIssue(sec, win, r.group) : null };
     }),
   );
-  const okRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
+  // A group row sits out of the optimisation and totals while group estimates are withheld (as if not yet bid).
+  const okRows = $derived(inOptimisation(rows.filter((_, i) => info[i].sec && !info[i].issue)));
   const excluded = $derived(info.filter((x) => x.issue).length);
   /** Must get rows whose section has no seats: the chance of getting all of them is zero, so no percentage is shown. */
   const blocked = $derived(blockedMustGets(rows.map((r, i) => ({ role: r.role, issue: info[i].issue, label: rowName(r) }))));
@@ -183,6 +184,9 @@
   const allSimmed = $derived(okRows.length > 0 && simItems.length === okRows.length);
   /** Every row at the course page's recommended bid for the chance you want. */
   const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0, win) : null);
+  /** Some row is bid for 2 or more people: it is left out of the plan's bids and chances, and says so. */
+  const groupRows = $derived(rows.some((r) => groupEstimatesHidden(r.group)));
+  const singleBidder = () => rows.forEach((r) => (r.group = 1));
   /** The recommended bids add up to more than the balance, so they have to be cut to fit. */
   const needsFit = $derived(!!full && balanceCents !== null && full.bidTotalCents > balanceCents);
   const result = $derived.by(() => {
@@ -430,7 +434,7 @@
     rows.forEach((r, i) => {
       const sec = info[i].sec;
       const k = simKey(r);
-      if (!sec || info[i].issue || curves[k] || inflight.has(k)) return;
+      if (!sec || info[i].issue || groupEstimatesHidden(r.group) || curves[k] || inflight.has(k)) return;
       const input = toPlanSimInput(sec, win, r.group);
       if (!input) return;
       inflight.add(k);
@@ -764,7 +768,7 @@
   {#if rows.length}
   <aside class="side">
     <section class="panel result" id="plan-result" aria-live="polite" aria-busy={rows.length > 0 && pending}>
-      {#if !noMust}<div class="lab">Chance of all Must get {#if rows.some((r) => r.group > 1)}<span>· whole group</span>{/if} <InfoTip label="About this chance" anchor="planner" lines={['Every Must get course, and one course from each Pick one group.', 'Nice to have courses do not count.']} /></div>{/if}
+      {#if !noMust}<div class="lab">Chance of all Must get <InfoTip label="About this chance" anchor="planner" lines={['Every Must get course, and one course from each Pick one group.', 'Nice to have courses do not count.']} /></div>{/if}
       {#if blocked.length}
         <div class="big none">Not possible</div>
       {:else if result}
@@ -816,6 +820,10 @@
         <button type="button" class="btn" disabled={!reportReady} onclick={printReport}>Print</button>
         <button type="button" class="btn" disabled={!reportReady} onclick={downloadReport}>Download CSV</button>
       </div>
+      {#if groupRows}
+        <p class="warn" role="status">{GROUP_NOTICE}</p>
+        <div class="acts"><button type="button" class="btn" onclick={singleBidder}>{GROUP_NOTICE_ACTION}</button></div>
+      {/if}
     </section>
   </aside>
   {/if}

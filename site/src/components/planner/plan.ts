@@ -4,7 +4,7 @@ import type { Meeting, Section } from '../../lib/data/types';
 import { isLikelyFull, seatsLeftNow, seatsOf } from '../../lib/data/seats';
 import type { SimInput } from '../../lib/sim';
 import { pInAt } from '../../lib/sim';
-import { FORECAST_RUNS, FORECAST_SEED, MAX_FRIENDS_GROUP, TARGETS, clampGroup, toSimParams } from '../../lib/sim/forecast';
+import { FORECAST_RUNS, FORECAST_SEED, MAX_FRIENDS_GROUP, TARGETS, clampGroup, groupEstimatesHidden, toSimParams } from '../../lib/sim/forecast';
 import { DEFAULT_TARGET, bidCalibrated, styleName, suggestBid, targetFromStored, targetToStored } from '../../lib/sim/presets';
 import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
 import { dayText } from '../course/history';
@@ -29,6 +29,9 @@ export function rowIssue(section: Section, window: string, group: number): RowIs
   if (group > seatsLeftNow(section)) return 'group';
   return null;
 }
+
+/** The rows that take part in the plan's optimisation and totals: a group row (2+ people) sits out while group estimates are withheld. */
+export const inOptimisation = <T extends { group: number }>(rows: readonly T[]): T[] => rows.filter((r) => !groupEstimatesHidden(r.group));
 
 export const ISSUE_TEXT: Record<RowIssue, string> = {
   nofc: 'No forecast',

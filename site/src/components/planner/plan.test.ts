@@ -9,7 +9,7 @@ import {
   BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
-  canStartGroup, chanceOfGroup, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
+  canStartGroup, chanceOfGroup, inOptimisation, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
@@ -624,5 +624,20 @@ describe('decodePlan group letters', () => {
   it('puts a letter outside A-D in group A, so a shared link cannot make a fifth group', () => {
     const plan = decodePlan({ r: [{ c: 'X1', o: 'oneOf', l: 'Z' }, { c: 'X2', o: 'oneOf', l: 'B' }, { c: 'X3', o: 'oneOf' }] });
     expect(plan?.r.map((x) => x.l)).toEqual(['A', 'B', 'A']);
+  });
+});
+
+describe('group rows and the optimisation', () => {
+  const s = sec();
+  const row = (id: string, group: number) => ({ id, group, curve: simulate(toPlanSimInput(s, W, group)!) });
+  const items = (rs: { id: string; curve: ReturnType<typeof simulate> }[]): PlanItem[] => rs.map((r) => ({ key: r.id, courseCode: r.id, role: 'required', curve: r.curve }));
+  it('a row for 2+ people is left out, and the others plan exactly as without it', () => {
+    const rows = [row('a', 1), row('g', 3), row('b', 1)];
+    expect(inOptimisation(rows).map((r) => r.id)).toEqual(['a', 'b']);
+    // a balance that forces the optimiser to cut: the group row must not take any of it
+    const withGroup = bidsAtTarget(items(inOptimisation(rows)), 0.9, 2500);
+    const without = bidsAtTarget(items(rows.filter((r) => r.id !== 'g')), 0.9, 2500);
+    expect(withGroup).toEqual(without);
+    expect(Object.keys(withGroup.bids)).not.toContain('g');
   });
 });

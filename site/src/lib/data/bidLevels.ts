@@ -44,6 +44,9 @@ function windowLevels(v: unknown): BidWindowData['levels'] {
   return Object.keys(out).length ? out : null;
 }
 
+/** An upper bound is a fraction; anything else is "not known". */
+const upperOf = (v: unknown): number | null => (num(v) && v >= 0 && v <= 1 ? v : null);
+
 function windowMeasured(v: unknown): BidWindowData['measured'] {
   if (!v || typeof v !== 'object') return null;
   const out: NonNullable<BidWindowData['measured']> = {};
@@ -52,7 +55,15 @@ function windowMeasured(v: unknown): BidWindowData['measured'] {
     const cells: Record<string, MeasuredWinCell> = {};
     for (let i = 0; i < 5; i++) {
       const c = b?.[String(i)];
-      if (c && rate(c.cheap) && rate(c.balanced) && rate(c.safe) && num(c.nFilled)) cells[String(i)] = { cheap: c.cheap, balanced: c.balanced, safe: c.safe, nFilled: c.nFilled };
+      if (c && rate(c.cheap) && rate(c.balanced) && rate(c.safe) && num(c.nFilled)) {
+        const up = c.upper && typeof c.upper === 'object' ? (c.upper as Record<string, unknown>) : null;
+        const upper = up ? { cheap: upperOf(up.cheap), balanced: upperOf(up.balanced), safe: upperOf(up.safe) } : null;
+        cells[String(i)] = {
+          cheap: c.cheap, balanced: c.balanced, safe: c.safe, nFilled: c.nFilled,
+          ...(c.source === 'cell' || c.source === 'group' || c.source === 'all' ? { source: c.source } : {}),
+          ...(upper ? { upper } : {}),
+        };
+      }
     }
     if (Object.keys(cells).length === 5) out[w] = cells;
   }

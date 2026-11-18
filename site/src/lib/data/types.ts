@@ -212,6 +212,10 @@ export interface MeasuredWinCell {
   balanced: number | null;
   safe: number | null;
   nFilled: number;
+  /** Which past cases the rates rest on: this round and price range, the whole round, or all rounds. Absent in older builds. */
+  source?: 'cell' | 'group' | 'all';
+  /** One-sided 95% upper bound (0..1, null when unknown) on each style's rate from a course-cluster bootstrap. Absent in older builds. */
+  upper?: Record<BidStyleKey, number | null>;
 }
 
 export interface DistCalibrationMeta {

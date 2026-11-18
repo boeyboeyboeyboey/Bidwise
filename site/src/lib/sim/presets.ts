@@ -3,11 +3,11 @@
 // held-out term; without it they are today's 80 / 90 / 95% chances, and every helper behaves exactly as before.
 import forecastMeta from '../../data/real/forecast-meta.json';
 import { bidLevels, bidWindowData } from '../data/bidLevels';
-import type { ForecastMeta } from '../data/types';
+import type { BidStyleKey, ForecastMeta } from '../data/types';
 import { pInAt, recommendBid, type SimResult } from './index';
-import { levelForWindow, measuredRate, underDelivers } from './windowBids';
+import { bidClaims, levelForWindow, measuredCell, measuredRate, reachedForWindow, type BidClaims } from './windowBids';
 
-export { STYLE_TARGET, underDelivers } from './windowBids';
+export { STYLE_TARGET, belowAim, groupEstimatesHidden } from './windowBids';
 
 export interface BidPreset {
   key: string;
@@ -94,6 +94,20 @@ export function suggestBid(result: SimResult, target: number, window?: string | 
  */
 export function measuredIfFills(window: string | null | undefined, result: SimResult, style: string | null | undefined): number | null {
   return measuredRate(windowData, window, result, style);
+}
+
+/**
+ * What may be claimed next to the bid suggested for `target` in `window`: floor case, past win rate of each style that gives this
+ * bid, an unreached aim, the styles with the same bid, or nothing at all for a group of 2 or more (see bidClaims).
+ * `result` is the simulation for `group`; the measured rates are for one bidder, so they are never offered for a group.
+ */
+export function claimsFor(result: SimResult, window: string | null | undefined, group: number, target: number, minBid: number | null): BidClaims {
+  const rec = suggestBid(result, target, window);
+  const style = levels ? ((presetFor(target)?.key as BidStyleKey | undefined) ?? null) : null;
+  const tied = levels ? PRESETS.filter((p) => suggestBid(result, p.level, window) === rec).map((p) => p.key as BidStyleKey) : [];
+  const cells = Object.fromEntries(tied.map((k) => [k, measuredCell(windowData, window, result, k)]));
+  const reached = Object.fromEntries(tied.map((k) => [k, reachedForWindow(windowData, window, k)]));
+  return bidClaims({ group, calibrated: levels !== null, rec, minBid, style, tied, cells, reached });
 }
 
 /** Chance the bid wins given the section fills; null when it almost never fills (the number would mean nothing). */

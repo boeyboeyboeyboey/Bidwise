@@ -53,6 +53,7 @@ COMPATIBLE_VERSIONS = (DISTCAL_VERSION, "distcal-a1")
 BAND_EDGES = (15, 25, 40, 60)  # e$ of the conditional median: <15, 15-25, 25-40, 40-60, 60+
 N_BANDS = len(BAND_EDGES) + 1
 MIN_CELL = 100  # filled rows needed for a cell (or a band) to keep its own pair
+BOOT_N, BOOT_SEED, BOOT_Q = 1000, 20261119, 0.95  # course-cluster bootstrap behind measuredWin's `upper`
 GRID_LO, GRID_HI, GRID_STEP = 0.30, 2.00, 0.05
 S_GRID = [round(GRID_LO + i * GRID_STEP, 2) for i in range(int(round((GRID_HI - GRID_LO) / GRID_STEP)) + 1)]
 QLEVELS = (0.5, 0.8, 0.9, 0.95)  # unconditional quantile levels of the pinball metric
@@ -387,6 +388,19 @@ def row_levels(rows, by_group: dict, pooled: dict, style: str):
     return np.array([by.get(S.window_group(r["window"]), base) for r in rows], float)
 
 
+def upper_bounds(wins: dict, course_ids, n_boot: int = BOOT_N, seed: int = BOOT_SEED, q: float = BOOT_Q) -> dict:
+    """One-sided upper bound (the q-th percentile, as a fraction rounded to 4 places) of each style's win rate from a course-cluster
+    bootstrap: whole courses are resampled with replacement and the rate recomputed, so a course's rows move together (the same
+    resampling as evalscore.bootstrap_ci, one-sided). `wins` {style: 0/1 array over the rows of the population}, `course_ids` one
+    integer per row. The same resamples serve every style. Deterministic for a seed."""
+    ci = np.unique(np.asarray(course_ids), return_inverse=True)[1]
+    k = int(ci.max()) + 1
+    n = np.bincount(ci, None, k).astype(float)
+    W = np.random.default_rng(seed).multinomial(k, np.full(k, 1.0 / k), size=n_boot).astype(float)
+    den = W @ n  # every course has at least one row, so a resample is never empty
+    return {st: round(float(np.percentile((W @ np.bincount(ci, np.asarray(v, float), k)) / den, q * 100)), 4) for st, v in wins.items()}
+
+
 def measured_win(rt, rh, tab_test, tab_held) -> dict:
     """Out-of-sample win rate on FILLED sections of the per-group procedure, from two folds: levels picked on `rt` (scored with
     the exponents of the other term, tab_held) applied to `rh` scored with tab_test, and levels picked on `rh` (scored with
@@ -395,9 +409,11 @@ def measured_win(rt, rh, tab_test, tab_held) -> dict:
     both terms is measured at a level picked on its own rows of one term, however few (since 17 Nov; before, each fold applied
     MIN_CELL to its one term, so a thin group such as R2A was measured at the pooled level while the site shipped its own). Rows of
     both folds are pooled; per (window group, forecast band) a cell with at least MIN_CELL filled rows uses its own rate, else the
-    group's pooled rate (when the group has MIN_CELL), else the rate over all rows.
-    {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"}}, "overall": {style: rate}}."""
-    grp, band, win = [], [], {st: [] for st in STYLES}
+    group's pooled rate (when the group has MIN_CELL), else the rate over all rows. nFilled and `upper` always describe the rows
+    the rate came from (`source`). upper (since 19 Nov, optional): the one-sided 95% upper bound of each rate from a course-cluster
+    bootstrap over those rows (upper_bounds); absent when a row has no course.
+    {group: {str(band): {cheap, balanced, safe, nFilled, source: "cell" | "group" | "all"[, upper: {style: bound}]}}, "overall": {style: rate}}."""
+    grp, band, win, crs = [], [], {st: [] for st in STYLES}, []
     own = own_groups([rt, rh])
     for pick_rows, pick_tab, app_rows, app_tab in ((rt, tab_held, rh, tab_test), (rh, tab_test, rt, tab_held)):
         _, pooled, by_group = calibrate_levels([(pick_rows, pick_tab)], own)
@@ -405,6 +421,7 @@ def measured_win(rt, rh, tab_test, tab_held) -> dict:
         fm = filled == 1
         grp += [S.window_group(r["window"]) for r, f in zip(app_rows, fm) if f]
         band += [_band(r["cond_p50"]) if r.get("cond_p50") else 0 for r, f in zip(app_rows, fm) if f]
+        crs += [r.get("course") for r, f in zip(app_rows, fm) if f]
         for st in STYLES:
             raw = _uq(Q, p, floor, row_levels(app_rows, by_group, pooled, st))
             bid = np.array([site_round(b, f) for b, f in zip(raw[fm], floor[fm])], float)
@@ -412,9 +429,18 @@ def measured_win(rt, rh, tab_test, tab_held) -> dict:
     grp, band = np.array(grp), np.array(band, dtype=int)
     win = {st: np.array(v) for st, v in win.items()}
 
+    # course ids for the bootstrap bound; without them for every filled row the cells ship without `upper`
+    cid = None
+    if crs and all(c is not None for c in crs):
+        _, cid = np.unique(np.array(crs, dtype=str), return_inverse=True)
+
     def rate(mk, source):
         n = int(mk.sum())
-        return {**{st: round(float(win[st][mk].mean()), 4) if n else None for st in STYLES}, "nFilled": n, "source": source}
+        cell = {**{st: round(float(win[st][mk].mean()), 4) if n else None for st in STYLES}, "nFilled": n, "source": source}
+        if n and cid is not None:
+            up = upper_bounds({st: win[st][mk] for st in STYLES}, cid[mk])
+            cell["upper"] = {st: max(up[st], cell[st]) for st in STYLES}  # a percentile can sit just under the observed rate
+        return cell
     everyone = np.ones(len(grp), dtype=bool)
     out = {}
     for g in GROUPS:

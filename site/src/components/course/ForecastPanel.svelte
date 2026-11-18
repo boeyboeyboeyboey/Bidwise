@@ -4,9 +4,10 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isFarWindow, isLowConfidence, lowConfidence, measuredIfFills, presetFor, suggestBid, underDelivers } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isFarWindow, isLowConfidence, lowConfidence, claimsFor, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
-  import { lowConfidenceLines, styleTipLines } from './bidStyle';
+  import { measuredSummary } from '../../lib/data/bidLevels';
+  import { FLOOR_TEXT, GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, pastRateText, sameBidText, styleTipLines, unreachedText } from './bidStyle';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
   import type { ForecastCtx } from './forecast-ctx';
   import OtherSections from './OtherSections.svelte';
@@ -87,24 +88,15 @@
   // Calibrated: the chips are the named bid styles, and the headline carries two chances plus the fill chance.
   const calibrated = bidCalibrated();
   const presets = bidPresets();
-  const styleTip = styleTipLines(presets);
+  const styleTip = styleTipLines(presets, calibrated ? measuredSummary(ctx.meta) : null);
   const pNow = $derived(sim ? pInAt(sim, rec) : 0);
   const modelIfFills = $derived(sim ? chanceIfFills(sim, rec) : null);
-  // For a bid style, "if the section fills" is how often that style's bid won on filled sections like this one in past terms
-  // (same window group and price band), when that is known; a custom bid, a friends group (the measured rate is for one bidder)
-  // and everything else keep the model's own estimate.
-  const styleKey = $derived(calibrated ? (presetFor(target)?.key ?? null) : null);
-  // Styles that suggest the same bid here share one figure, the lowest of theirs, so one bid never carries two claims.
-  const measured = $derived.by(() => {
-    if (!sim || modelIfFills === null || !styleKey || res?.group !== 1) return null;
-    const rates = presets.filter((p) => suggestBid(sim, p.level, res?.win) === rec)
-      .map((p) => measuredIfFills(res?.win, sim, p.key)).filter((x): x is number => x !== null);
-    return rates.length ? Math.min(...rates) : null;
-  });
-  const ifFills = $derived(measured ?? modelIfFills);
-  const measuredLow = $derived(measured !== null && (styleKey === 'cheap' || styleKey === 'balanced' || styleKey === 'safe') && underDelivers(styleKey, measured));
-  // Only a bid above the minimum has an "if it fills" chance worth showing (at the minimum it is certain).
-  const aboveMin = $derived(minBid !== null && rec > minBid + 1);
+  // What may be claimed next to the bid (floor case, past rates, unreached aim, ties, hidden for a group): decided in claimsFor.
+  const claims = $derived(sim && res && minBid !== null ? claimsFor(sim, res.win, res.group, target, minBid) : null);
+  // "If the section fills" is, for a bid style, the lowest past win rate of the styles that suggest this bid (so one bid never
+  // carries two claims), when that is known; otherwise the model's own estimate. Not shown at the floor (see FLOOR_TEXT).
+  const ifFills = $derived(modelIfFills !== null && claims?.past.length ? Math.min(...claims.past.map((r) => r.rate)) : modelIfFills);
+  const aboveMin = $derived(!!claims && !claims.floor);
   const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win, isFarWindow(res.win, ctx.buildWindow, ctx.meta.windows)) : []);
 
   // null until the saved plan has been read in the browser, so the server-rendered button does not flip.
@@ -150,6 +142,11 @@
   </div>
 {/snippet}
 
+{#snippet groupNotice()}
+  <p class="capline" role="status">{GROUP_NOTICE}</p>
+  <button type="button" class="btn" onclick={() => setGroup(1)}>{GROUP_NOTICE_ACTION}</button>
+{/snippet}
+
 {#snippet capmsg()}
   {maxGroup} {maxGroup === 1 ? 'seat' : 'seats'} left, {tried} won't fit.
   {#if othersFit}<button type="button" class="link" onclick={() => (picked = 'others')}>Sections with {tried}+ seats</button>{/if}
@@ -184,27 +181,34 @@
   {:else if live && res}
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
-      <div class="bidrow">
-        <p class="headline num" aria-live="polite">
-          Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
-        </p>
-        {#if reasons.length || lowRel}
-          <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons, lowRel)} /></span>
-        {/if}
-      </div>
-      {#if rec > TERM_BUDGET_CENTS}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
-      <p class="chances num">
-        <span><b>{pct(pNow)}</b> chance of a seat</span>
-        {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
-        {#if ifFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
-      </p>
-      {#if measuredLow && aboveMin}<p class="disc">In past terms this style lost more often on sections like this.</p>{/if}
-      <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
-      {#if note}<p class="disc">{note}</p>{/if}
-      {#if allSame}
-        <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>
+      {#if claims?.groupHidden}
+        {@render groupNotice()}
       {:else}
-        {@render aim()}
+        <div class="bidrow">
+          <p class="headline num" aria-live="polite">
+            Bid <b>{eS(rec)}</b>{#if res.group > 1}&nbsp;each{/if}
+          </p>
+          {#if reasons.length || lowRel}
+            <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={lowConfidenceLines(reasons, lowRel)} /></span>
+          {/if}
+        </div>
+        {#if rec > TERM_BUDGET_CENTS}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
+        <p class="chances num">
+          <span><b>{pct(pNow)}</b> chance of a seat</span>
+          {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
+          {#if ifFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
+        </p>
+        {#if claims?.floor}<p class="disc">{FLOOR_TEXT}</p>{/if}
+        {#each claims?.past ?? [] as r (r.styles.join())}<p class="disc">{pastRateText(r)}</p>{/each}
+        {#if claims?.unreached.length}<p class="disc">{unreachedText(claims.unreached)}</p>{/if}
+        <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
+        {#if note}<p class="disc">{note}</p>{/if}
+        {#if allSame}
+          <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>
+        {:else}
+          {@render aim()}
+          {#if claims?.sameAs.length}<p class="sub">{sameBidText(claims.sameAs)}</p>{/if}
+        {/if}
       {/if}
       {#if hasLast && latest}
         <p class="last num">Last window ({latest.window}): lowest {bidOrNone(latest.minCents)} · median {bidOrNone(latest.medianCents)}</p>
@@ -261,8 +265,12 @@
     {#if !ctx.bySection && !ctx.failed}
       <div class="skel" aria-busy="true" aria-label="Loading other sections"></div>
     {:else if windows.length}
-      {#if !soldOut && live && sim}{@render aim()}{/if}
-      <OtherSections {section} {win} group={soldOut ? 1 : othersGroup} {target} fit={!soldOut && othersGroup > group ? othersGroup : 0} onall={() => setGroup(group)} />
+      {#if !soldOut && othersGroup >= 2}
+        <div class="answer">{@render groupNotice()}</div>
+      {:else}
+        {#if !soldOut && live && sim}{@render aim()}{/if}
+        <OtherSections {section} {win} group={soldOut ? 1 : othersGroup} {target} fit={!soldOut && othersGroup > group ? othersGroup : 0} onall={() => setGroup(group)} />
+      {/if}
     {:else}
       <p class="none">No forecast available</p>
     {/if}

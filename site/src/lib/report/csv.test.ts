@@ -221,3 +221,24 @@ describe('bidReason', () => {
     expect(bidReason({ ...base, curve: undefined })).toBe('');
   });
 });
+
+describe('plan report with a group row', () => {
+  const mk = (over: object) => ({ code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', group: 1, window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 }, ...over });
+  it('a mixed plan has no overall chance, a Not counted line, and no bid figures for the group row', () => {
+    const a = planReportRow(mk({}));
+    const b = planReportRow(mk({ code: 'IS215', group: 2, groupHidden: true }));
+    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: 11300, pAll: null, needCents: null, notCounted: ['IS215 G1'] });
+    expect(totals.find((t) => t.label === 'Chance of all must-get courses')).toBeUndefined();
+    expect(totals).toContainEqual({ label: 'Not counted (bid for 2 or more people)', value: 'IS215 G1' });
+    expect(b.reason).toBe('Group estimates are being revised.');
+    expect(b.planBidCents).toBeNull();
+    expect(b.planChance).toBe('');
+    expect(b.planP).toBeNull();
+    expect(Object.values(b.bids).every((v) => v === null)).toBe(true);
+    const lines = buildReportCsv([a, b], { title: 'Bidwise bid report', generatedAt: '2026-11-08 09:20 SGT', plan: true, totals }).split('\r\n');
+    const bLine = lines.find((l) => l.includes('Group estimates are being revised.'))!;
+    expect(bLine).not.toMatch(/12\.00|10\.50|15\.00/);
+    expect(lines.some((l) => l.startsWith('Not counted (bid for 2 or more people),IS215 G1'))).toBe(true);
+    expect(lines.some((l) => l.includes('Chance of all'))).toBe(false);
+  });
+});

@@ -112,12 +112,12 @@ describe('bidClaims', () => {
     const c = bidClaims({ ...base, group: 2, tied: ['balanced', 'safe'], reached: { balanced: false } });
     expect(c).toEqual({ groupHidden: true, floor: false, past: [], unreached: [], sameAs: [] });
   });
-  it('floor: at the minimum or one cent above, no past rate and no unreached note', () => {
+  it('floor: at the minimum or one cent above, no past rate, but an unreached aim is still reported', () => {
     for (const rec of [1000, 1001]) {
       const c = bidClaims({ ...base, rec, reached: { balanced: false } });
       expect(c.floor).toBe(true);
       expect(c.past).toEqual([]);
-      expect(c.unreached).toEqual([]);
+      expect(c.unreached).toEqual(['balanced']);
     }
     expect(bidClaims({ ...base, rec: 1002 }).floor).toBe(false);
   });
@@ -171,8 +171,8 @@ describe('bidClaims', () => {
     expect(bidClaims({ ...base, style: 'safe', tied: [...t], cells }).past[0].styles).toEqual(['balanced', 'safe']);
     expect(bidClaims({ ...base, style: 'cheap', tied: ['cheap'] }).sameAs).toEqual([]);
   });
-  it('all three the same: no "same as" (the page shows the minimum bid)', () => {
-    expect(bidClaims({ ...base, tied: ['cheap', 'balanced', 'safe'] }).sameAs).toEqual([]);
+  it('three tied styles above the floor: the other two are named in "same as"', () => {
+    expect(bidClaims({ ...base, style: 'balanced', tied: ['cheap', 'balanced', 'safe'] }).sameAs).toEqual(['cheap', 'safe']);
   });
   it('reached false names every tied style whose flag is false; true or unknown does not', () => {
     const t = ['balanced', 'safe'] as const;

@@ -4,7 +4,7 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, isFarWindow, isLowConfidence, lowConfidence, claimsFor, suggestBid } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, chanceIfFills, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, claimsFor, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { measuredSummary } from '../../lib/data/bidLevels';
   import { FLOOR_TEXT, GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, pastRateText, sameBidText, styleTipLines, unreachedText } from './bidStyle';
@@ -93,9 +93,9 @@
   const modelIfFills = $derived(sim ? chanceIfFills(sim, rec) : null);
   // What may be claimed next to the bid (floor case, past rates, unreached aim, ties, hidden for a group): decided in claimsFor.
   const claims = $derived(sim && res && minBid !== null ? claimsFor(sim, res.win, res.group, target, minBid) : null);
-  // "If the section fills" is, for a bid style, the lowest past win rate of the styles that suggest this bid (so one bid never
-  // carries two claims), when that is known; otherwise the model's own estimate. Not shown at the floor (see FLOOR_TEXT).
-  const ifFills = $derived(modelIfFills !== null && claims?.past.length ? Math.min(...claims.past.map((r) => r.rate)) : modelIfFills);
+  // When past-rate lines are shown they carry the measured figure, so "if the section fills" is not repeated; otherwise the model's own estimate.
+  // Not shown at the floor (see FLOOR_TEXT).
+  const ifFills = $derived(modelIfFills !== null && !claims?.past.length ? modelIfFills : null);
   const aboveMin = $derived(!!claims && !claims.floor);
   const reasons = $derived(res && !soldOut ? lowConfidence(seats, res.win, isFarWindow(res.win, ctx.buildWindow, ctx.meta.windows)) : []);
 
@@ -109,7 +109,7 @@
     return onPlanChange(sync);
   });
 
-  // The three aim bids are the same: the minimum bid already gets the seat.
+  // All three styles give the same bid at the minimum.
   const allSame = $derived(!!sim && TARGETS.every((t) => suggestBid(sim!, t, res?.win) === suggestBid(sim!, TARGETS[0], res?.win)));
 
   function setGroup(g: number) {
@@ -181,7 +181,7 @@
   {:else if live && res}
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
-      {#if claims?.groupHidden}
+      {#if claims?.groupHidden || groupEstimatesHidden(group)}
         {@render groupNotice()}
       {:else}
         <div class="bidrow">
@@ -196,14 +196,14 @@
         <p class="chances num">
           <span><b>{pct(pNow)}</b> chance of a seat</span>
           {#if ifFills !== null && aboveMin}<span><b>{pct(ifFills)}</b> if the section fills</span>{/if}
-          {#if ifFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
+          {#if modelIfFills !== null}<span class="fills">Chance it fills: <b>{pct(sim!.pFill)}</b><span class="fbar" aria-hidden="true"><span style:width="{Math.round(sim!.pFill * 100)}%"></span></span></span>{/if}
         </p>
         {#if claims?.floor}<p class="disc">{FLOOR_TEXT}</p>{/if}
         {#each claims?.past ?? [] as r (r.styles.join())}<p class="disc">{pastRateText(r)}</p>{/each}
         {#if claims?.unreached.length}<p class="disc">{unreachedText(claims.unreached)}</p>{/if}
         <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
         {#if note}<p class="disc">{note}</p>{/if}
-        {#if allSame}
+        {#if allSame && claims?.floor}
           <p class="sub num">Minimum bid {eS(minBid ?? rec)}</p>
         {:else}
           {@render aim()}

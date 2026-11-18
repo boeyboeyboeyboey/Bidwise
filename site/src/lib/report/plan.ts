@@ -2,8 +2,9 @@
 import type { Section } from '../data/types';
 import type { Role } from '../sim/planner';
 import type { SimResult } from '../sim';
-import { ISSUE_TEXT, isCapped, type RowIssue } from '../../components/planner/plan';
+import { ISSUE_TEXT, isCapped, joinNames, type RowIssue } from '../../components/planner/plan';
 import { styleName } from '../sim/presets';
+import { GROUP_NOTICE } from '../../components/course/bidStyle';
 import { eS, pct } from '../../components/course/fmt';
 import { NO_BIDS, sectionFacts, type ReportRow, type ReportTotal } from './csv';
 
@@ -38,6 +39,8 @@ export interface PlanReportInput {
   reason: string;
   /** Lines naming the sections this one clashes with in time (clashLines). */
   clashes: string[];
+  /** The row is bid for 2 or more people while group estimates are withheld: it exports no bid figure, only the group notice. */
+  groupHidden?: boolean;
 }
 
 /** What a bid reason is built from: the row's simulation and what the plan did with it. */
@@ -98,6 +101,20 @@ export function planNote(i: Pick<PlanReportInput, 'issue' | 'bid' | 'p' | 'fullB
 }
 
 export function planReportRow(i: PlanReportInput): ReportRow {
+  if (i.groupHidden) {
+    return {
+      ...sectionFacts(i.code, i.title, i.section),
+      window: i.window,
+      bids: NO_BIDS,
+      note: i.clashes.join(' · '),
+      priority: i.role === 'oneOf' && i.pickOf ? `${ROLE_TEXT.oneOf} of ${i.pickOf}` : ROLE_TEXT[i.role],
+      group: i.group,
+      planBidCents: null,
+      planChance: '',
+      planP: null,
+      reason: GROUP_NOTICE,
+    };
+  }
   const bidOn = !i.issue && !i.none && i.bid !== null && i.bid > 0;
   return {
     ...sectionFacts(i.code, i.title, i.section),
@@ -122,7 +139,11 @@ export interface PlanTotalsInput {
   pAll: number | null;
   /** What the must-gets need when that is more than the balance. */
   needCents: number | null;
+  /** Names of rows left out of the plan because they are bid for 2 or more people. */
+  notCounted?: readonly string[];
 }
+
+export const NOT_COUNTED_LABEL = 'Not counted (bid for 2 or more people)';
 
 const e = (c: number) => (c / 100).toFixed(2);
 
@@ -131,6 +152,7 @@ export function planTotals(t: PlanTotalsInput): ReportTotal[] {
   if (t.bidTotalCents !== null) out.push({ label: 'Plan bids total (e$)', value: e(t.bidTotalCents) });
   if (t.leftCents !== null) out.push({ label: 'Left after bids (e$)', value: e(Math.max(0, t.leftCents)) });
   if (t.needCents !== null) out.push({ label: 'Must-gets need about (e$)', value: e(t.needCents) });
+  if (t.notCounted?.length) out.push({ label: NOT_COUNTED_LABEL, value: joinNames(t.notCounted) });
   if (t.pAll !== null) out.push({ label: 'Chance of all must-get courses', value: pct(t.pAll) });
   return out;
 }

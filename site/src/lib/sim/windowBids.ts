@@ -135,7 +135,7 @@ export interface BidClaims {
   past: PastRate[];
   /** The tied styles whose aim could not be reached for this round. */
   unreached: BidStyleKey[];
-  /** The other styles that give the same bid and are not already named in the chosen style's past-rate line (never when all three tie: the page then shows the minimum bid). */
+  /** The other styles that give the same bid and are not already named in the chosen style's past-rate line. */
   sameAs: BidStyleKey[];
 }
 
@@ -162,7 +162,7 @@ export function bidClaims(i: ClaimInput): BidClaims {
     ...none,
     floor,
     past,
-    unreached: floor ? [] : tied.filter((s) => i.reached[s] === false),
-    sameAs: tied.length >= 3 ? [] : tied.filter((s) => !named.includes(s)),
+    unreached: tied.filter((s) => i.reached[s] === false),
+    sameAs: tied.filter((s) => !named.includes(s)),
   };
 }

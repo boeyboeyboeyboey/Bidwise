@@ -33,6 +33,44 @@ export function rowIssue(section: Section, window: string, group: number): RowIs
 /** The rows that take part in the plan's optimisation and totals: a group row (2+ people) sits out while group estimates are withheld. */
 export const inOptimisation = <T extends { group: number }>(rows: readonly T[]): T[] => rows.filter((r) => !groupEstimatesHidden(r.group));
 
+/** What the planner says about rows left out of its bids and chances because they are bid for 2 or more people. */
+export interface GroupScope {
+  /** Display names of the rows left out (in row order). */
+  hidden: string[];
+  /** A Must get or Pick one row is left out, so no chance of the whole plan can be given. */
+  chanceWithheld: boolean;
+  /** Names of the left-out rows that stop the chance (Must get or Pick one only). */
+  chanceNames: string[];
+  /** Letters of the Pick one groups that have a left-out alternative: their own chance is withheld too. */
+  pickLetters: string[];
+  /** Every row that would be in the plan is left out, so there is nothing to total or calculate. */
+  groupOnly: boolean;
+}
+
+/**
+ * Pure. `rows` are the rows that would otherwise be in the plan (section found, no issue); a row for 2 or more people is
+ * hidden while group estimates are withheld. `name` gives a row's display name ("IS215 G1").
+ */
+export function groupScope<T extends { group: number; role: Role; oneOf?: string }>(rows: readonly T[], name: (r: T) => string): GroupScope {
+  const hiddenRows = rows.filter((r) => groupEstimatesHidden(r.group));
+  const blocking = hiddenRows.filter((r) => r.role !== 'optional');
+  return {
+    hidden: hiddenRows.map(name),
+    chanceWithheld: blocking.length > 0,
+    chanceNames: blocking.map(name),
+    pickLetters: [...new Set(hiddenRows.filter((r) => r.role === 'oneOf').map((r) => r.oneOf ?? 'A'))],
+    groupOnly: hiddenRows.length > 0 && hiddenRows.length === rows.length,
+  };
+}
+
+/** "A", "A and B", "A, B and C". */
+export const joinNames = (names: readonly string[]): string => (names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
+/** Replaces the chance of all Must get when some Must get or Pick one row is bid for 2 or more people. */
+export const chanceWithheldText = (names: readonly string[]): string => `Not shown while ${joinNames(names)} ${names.length === 1 ? 'is' : 'are'} bid for 2 or more people.`;
+/** Under "Bids total" while rows are left out of it. */
+export const notCountedText = (names: readonly string[]): string => `Not counted: ${joinNames(names)} (bid for 2 or more people).`;
+
 export const ISSUE_TEXT: Record<RowIssue, string> = {
   nofc: 'No forecast',
   full: 'No seats left',

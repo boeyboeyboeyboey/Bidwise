@@ -38,14 +38,14 @@ export function styleTipLines(presets: readonly BidPreset[], summary: MeasuredWi
   if (summary) {
     const when = summary.terms?.length === 2 ? `In ${summary.terms[0]} and ${summary.terms[1]}` : 'In past terms';
     const o = summary.overall;
-    lines.push(`${when}, on sections that filled: Cheap won ${pc(o.cheap)}, Balanced ${pc(o.balanced)}, Safe ${pc(o.safe)}.`);
+    lines.push(`${when}, on sections that filled: Cheap would have won ${pc(o.cheap)}, Balanced ${pc(o.balanced)}, Safe ${pc(o.safe)}.`);
   }
-  lines.push(`${presets[presets.length - 1].label} costs more.`);
+  lines.push(`${presets[presets.length - 1].label} can cost more.`);
   return lines;
 }
 
 /** Shown for one bidder at the minimum bid, in place of the "if the section fills" figure. */
-export const FLOOR_TEXT = 'If seats are left over, this bid wins. If the section fills, this bid usually loses.';
+export const FLOOR_TEXT = 'If seats are left over, this bid wins. If the section fills, this bid often loses.';
 
 /** Shown instead of a group's bid and chances. */
 export const GROUP_NOTICE = 'Group estimates are being revised.';
@@ -56,7 +56,7 @@ const SOURCE_TEXT = { cell: 'this round and price range', group: 'whole round av
 /** One style's past win rate with its case count and where it comes from; "Below aim in past terms." only when the data says so. */
 export function pastRateText(r: PastRate): string {
   const src = r.source ? ` (${SOURCE_TEXT[r.source]})` : '';
-  return `${joinStyles(r.styles)} won ${pc(r.rate)} of ${r.nFilled} filled cases${src}.${r.belowAim ? ' Below aim in past terms.' : ''}`;
+  return `${joinStyles(r.styles)} would have won ${pc(r.rate)} of ${r.nFilled} filled cases${src}.${r.belowAim ? ' Below aim in past terms.' : ''}`;
 }
 
 /** The aim of each of these styles could not be reached for this round. */

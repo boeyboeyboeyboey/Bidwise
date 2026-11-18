@@ -9,7 +9,7 @@ import {
   BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
-  canStartGroup, chanceOfGroup, inOptimisation, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
+  canStartGroup, chanceOfGroup, chanceWithheldText, groupScope, inOptimisation, notCountedText, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
@@ -639,5 +639,36 @@ describe('group rows and the optimisation', () => {
     const without = bidsAtTarget(items(rows.filter((r) => r.id !== 'g')), 0.9, 2500);
     expect(withGroup).toEqual(without);
     expect(Object.keys(withGroup.bids)).not.toContain('g');
+  });
+});
+
+describe('groupScope', () => {
+  const r = (course: string, group: number, role: 'required' | 'oneOf' | 'optional' = 'required', oneOf = 'A') => ({ course, group, role, oneOf });
+  const name = (x: { course: string }) => `${x.course} G1`;
+  it('a Must get group row withholds the chance and is listed', () => {
+    const s = groupScope([r('A', 1), r('B', 2)], name);
+    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: true, chanceNames: ['B G1'], groupOnly: false });
+  });
+  it('a Pick one group row withholds the chance and names its group', () => {
+    const s = groupScope([r('A', 1), r('B', 3, 'oneOf', 'C')], name);
+    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: true, pickLetters: ['C'] });
+  });
+  it('a Nice to have group row is listed but does not withhold the chance', () => {
+    const s = groupScope([r('A', 1), r('B', 2, 'optional')], name);
+    expect(s).toMatchObject({ hidden: ['B G1'], chanceWithheld: false, chanceNames: [], pickLetters: [], groupOnly: false });
+  });
+  it('only group rows: group only', () => {
+    expect(groupScope([r('A', 2), r('B', 2, 'optional')], name)).toMatchObject({ hidden: ['A G1', 'B G1'], groupOnly: true, chanceWithheld: true });
+    expect(groupScope([r('B', 2, 'optional')], name)).toMatchObject({ groupOnly: true, chanceWithheld: false });
+  });
+  it('no group rows: nothing hidden, also for an empty plan', () => {
+    const none = { hidden: [], chanceWithheld: false, chanceNames: [], pickLetters: [], groupOnly: false };
+    expect(groupScope([r('A', 1), r('B', 1, 'oneOf')], name)).toEqual(none);
+    expect(groupScope([], name)).toEqual(none);
+  });
+  it('words the notices with is / are and a joined list', () => {
+    expect(chanceWithheldText(['IS215 G1'])).toBe('Not shown while IS215 G1 is bid for 2 or more people.');
+    expect(chanceWithheldText(['A', 'B', 'C'])).toBe('Not shown while A, B and C are bid for 2 or more people.');
+    expect(notCountedText(['A', 'B'])).toBe('Not counted: A and B (bid for 2 or more people).');
   });
 });

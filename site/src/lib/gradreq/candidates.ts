@@ -8,6 +8,7 @@ import { formatSlot } from '../format/slot';
 import { pInAt, simulate, type SimInput, type SimResult } from '../sim';
 import { TARGETS, effectiveWindow, suggestBid } from '../sim/forecast';
 import { canonicalJson } from '../sim/cache';
+import { bossCodeOf, splitFamily } from '../data/bossCode';
 import { eligibility } from './eligibility';
 import type { Block, Requisites } from './types';
 
@@ -32,6 +33,8 @@ export interface CandidateOptions {
   /** Simulated bidding windows per section (default: the planner's). Tests lower it. */
   runs?: number;
   simulate?: (input: SimInput) => SimResult;
+  /** Offer a member's split sibling (COR-STAT1202-X next to COR-STAT1202). Default true; off for a block that already lists every offered course. */
+  siblings?: boolean;
 }
 
 export interface SectionOption {
@@ -141,28 +144,34 @@ export function candidates(
   const target = opts.target ?? DEFAULT_TARGET;
   const out: Candidate[] = [];
 
+  const listed = new Set<string>();
   for (const m of block.members) {
-    if (m.done || m.setSatisfied || completed.has(m.code)) continue;
-    const course = lookup(offered, m.code);
-    if (!course || !course.sectionsNow?.length) continue;
-    const elig = eligibility(m.code, completed, requisites);
-    if (elig === 'blocked') continue;
-    let full = 0;
-    const sections: SectionOption[] = [];
-    for (const s of course.sectionsNow) {
-      const o = sectionOption(s, opts, bid, target);
-      if (o === 'full') full++;
-      else sections.push(o);
+    if (m.done || m.setSatisfied) continue;
+    // A requirement names the BOSS course; its split sibling (COR-STAT1202-X) is offered next to it with its own price.
+    for (const code of opts.siblings === false ? [m.code] : splitFamily(m.code)) {
+      if (listed.has(code) || completed.has(code) || completed.has(bossCodeOf(code))) continue;
+      const course = lookup(offered, code);
+      if (!course || !course.sectionsNow?.length) continue;
+      listed.add(code);
+      const elig = eligibility(code, completed, requisites);
+      if (elig === 'blocked') continue;
+      let full = 0;
+      const sections: SectionOption[] = [];
+      for (const s of course.sectionsNow) {
+        const o = sectionOption(s, opts, bid, target);
+        if (o === 'full') full++;
+        else sections.push(o);
+      }
+      sections.sort((a, b) => (b.chance ?? -1) - (a.chance ?? -1) || (a.bidCents ?? Infinity) - (b.bidCents ?? Infinity) || a.classNumber.localeCompare(b.classNumber));
+      const chances = sections.map((s) => s.chance).filter((x): x is number => x !== null);
+      const bids = sections.map((s) => s.bidCents).filter((x): x is number => x !== null);
+      out.push({
+        code, title: course.title || m.title, cls: m.cls, mandatory: m.mandatory, cus: m.cus, eligibility: elig,
+        sections, fullSections: full,
+        chance: chances.length ? Math.max(...chances) : null,
+        bidCents: bids.length ? Math.min(...bids) : null,
+      });
     }
-    sections.sort((a, b) => (b.chance ?? -1) - (a.chance ?? -1) || (a.bidCents ?? Infinity) - (b.bidCents ?? Infinity) || a.classNumber.localeCompare(b.classNumber));
-    const chances = sections.map((s) => s.chance).filter((x): x is number => x !== null);
-    const bids = sections.map((s) => s.bidCents).filter((x): x is number => x !== null);
-    out.push({
-      code: m.code, title: course.title || m.title, cls: m.cls, mandatory: m.mandatory, cus: m.cus, eligibility: elig,
-      sections, fullSections: full,
-      chance: chances.length ? Math.max(...chances) : null,
-      bidCents: bids.length ? Math.min(...bids) : null,
-    });
   }
 
   const tie = (a: Candidate, b: Candidate) => clsRank(a) - clsRank(b) || Number(b.mandatory) - Number(a.mandatory) || a.code.localeCompare(b.code);

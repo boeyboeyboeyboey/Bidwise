@@ -1,6 +1,7 @@
 // Pure builder for the bid report CSV (no DOM). Unit tested in csv.test.ts.
 // Only the figures the planner and the course page already show: no history rows, no scan internals.
 import type { Meeting, Section } from '../data/types';
+import { bossCodeOf } from '../data/bossCode';
 import { fullText, seatsOf, type SeatSource } from '../data/seats';
 import { bidCalibrated, bidPresets } from '../sim/presets';
 
@@ -150,11 +151,11 @@ export function scheduleText(meetings: readonly Meeting[]): string {
   return ms.length ? ms.map((m) => `${DAY(m.day)} ${m.start}–${m.end}`).join('; ') : 'Time not set';
 }
 
-/** The identifying columns of a section's row, the same facts the section list shows. */
-export function sectionFacts(code: string, title: string, s: Section): Pick<ReportRow, 'course' | 'title' | 'section' | 'classNumber' | 'professor' | 'schedule' | 'seats' | 'seatsBasis'> {
+/** The identifying columns of a section's row, the same facts the section list shows. The course column holds the BOSS code (a student copies it into BOSS), which differs from the site code for a split course. */
+export function sectionFacts(code: string, title: string, s: Section, bossCode?: string): Pick<ReportRow, 'course' | 'title' | 'section' | 'classNumber' | 'professor' | 'schedule' | 'seats' | 'seatsBasis'> {
   const v = seatsOf(s);
   return {
-    course: code,
+    course: bossCodeOf(code, bossCode),
     title,
     section: s.section,
     classNumber: s.classNumber,

@@ -32,6 +32,16 @@ export function groupCourses(rows: readonly ClassRow[], index: readonly { code: 
   return [...by.values()].sort((a, b) => a.code.localeCompare(b.code));
 }
 
+/** The course code for text that is not a code: the one course among `codes` whose nickname is exactly the text ("statx", "Stat-X"); null when none or several have it. Text that already is a code gives null. */
+export function codeFromNickname(codes: Iterable<string>, text: string): string | null {
+  const t = flatText(text);
+  if (!t) return null;
+  const list = [...codes];
+  if (list.some((c) => flatText(c) === t)) return null;
+  const hits = list.filter((c) => aliasesOf(c).includes(t));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 export interface BrowseState {
   q: string;
   /** Code prefix such as "ECON" or "COR-LAW"; '' for all. */

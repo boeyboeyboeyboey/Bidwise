@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { chunk, pseudoBlock, uniqueByCode } from '../../components/planb/logic';
+import { toBossCodes } from '../data/bossCode';
 import { candidates, clearCandidateCache, type OfferedCourse } from './candidates';
 import { deriveBlocks } from './blocks';
 import { group, loaded, member, view } from './fixtures';
@@ -146,5 +148,55 @@ describe('sorting', () => {
       const r = candidates(blk, same, [], {}, { ...opts, sort }).candidates.map((c) => c.code);
       expect(r).toEqual(['M1', 'R1', 'R2', 'T1']);
     }
+  });
+});
+
+describe('split courses (COR-STAT1202 and COR-STAT1202-X)', () => {
+  const offered = new Map<string, OfferedCourse>([
+    ['COR-STAT1202', course('COR-STAT1202', [section('1', MID)])],
+    ['COR-STAT1202-X', course('COR-STAT1202-X', [section('2', CHEAP)])],
+    ['IS112', course('IS112', [section('3', CHEAP)])],
+  ]);
+  const reqs: Requisites = { 'COR-STAT1202': { prereq: 'Z' }, IS112: { prereq: 'COR-STAT1202' } };
+
+  it('offers the SMU-X course next to the requirement course, each with its own price', () => {
+    const b = blockOf([member('COR-STAT1202')]);
+    const r = candidates(b, offered, [], {}, opts);
+    expect(r.candidates.map((c) => c.code).sort()).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    expect(r.candidates.find((c) => c.code === 'COR-STAT1202-X')?.sections[0].classNumber).toBe('2');
+  });
+  it('lists each course once when both are members (a block of every offered course)', () => {
+    const b = blockOf([member('COR-STAT1202'), member('COR-STAT1202-X')]);
+    expect(candidates(b, offered, [], {}, opts).candidates.map((c) => c.code).sort()).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+  });
+  it('a completed BOSS course hides both; completing the SMU-X course (as its BOSS code) satisfies the requirement and hides both', () => {
+    const b = blockOf([member('COR-STAT1202'), member('IS112')]);
+    const done = toBossCodes(['COR-STAT1202-X']);
+    expect(done).toEqual(['COR-STAT1202']);
+    expect(candidates(b, offered, done, {}, opts).candidates.map((c) => c.code)).toEqual(['IS112']);
+    // the requirement block itself sees COR-STAT1202 done
+    const finished = blockOf([member('COR-STAT1202')], done);
+    expect(finished.doneCodes).toEqual(['COR-STAT1202']);
+  });
+  it('the SMU-X course takes its BOSS course requisites; a prerequisite on COR-STAT1202 is met by completing the SMU-X course', () => {
+    const b = blockOf([member('COR-STAT1202'), member('IS112')]);
+    expect(candidates(b, offered, [], reqs, opts).candidates).toEqual([]);
+    const met = candidates(b, offered, ['Z'], reqs, opts).candidates.map((c) => c.code);
+    expect(met.sort()).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    // IS112 needs COR-STAT1202: completing the SMU-X course counts
+    expect(candidates(blockOf([member('IS112')]), offered, toBossCodes(['COR-STAT1202-X']), reqs, opts).candidates.map((c) => c.code)).toEqual(['IS112']);
+  });
+  it('Plan B pricing in chunks lists each course once, even when the siblings fall in different chunks', () => {
+    const codes = ['A1', 'A2', 'A3', 'COR-STAT1202', 'COR-STAT1202-X', 'Z1', 'Z2', 'Z3'];
+    const all = new Map<string, OfferedCourse>(codes.map((c, i) => [c, course(c, [section(String(10 + i), CHEAP)])]));
+    const pool = codes.map((c) => ({ code: c, title: c }));
+    const run = (siblings: boolean) =>
+      chunk(pool, 4).flatMap((part) => candidates(pseudoBlock(part), all, [], {}, { ...opts, siblings }).candidates.map((c) => c.code));
+    // the pitfall: with expansion on, each chunk emits both siblings
+    expect(run(true).filter((c) => c === 'COR-STAT1202-X')).toHaveLength(2);
+    // what Plan B does: no expansion, then one entry per code
+    const got = run(false);
+    expect(got.sort()).toEqual([...codes].sort());
+    expect(uniqueByCode(chunk(pool, 4).flatMap((part) => candidates(pseudoBlock(part), all, [], {}, { ...opts, siblings: true }).candidates)).map((c) => c.code).sort()).toEqual([...codes].sort());
   });
 });

@@ -12,6 +12,7 @@
 !/tests/test_forecast_fit.py
 !/tests/test_forecast_sim.py
 !/tests/test_build_site_data.py
+!/tests/test_course_split.py
 !/tests/test_site_data_s1.py
 !/tests/test_evalharness.py
 !/tests/test_evalscore.py

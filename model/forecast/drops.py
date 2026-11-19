@@ -25,6 +25,11 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
+try:  # model/course_split.py: a sibling package module, or top-level when build_site_data.py puts model/ on sys.path
+    from ..course_split import model_course_key
+except ImportError:
+    from course_split import model_course_key  # type: ignore[no-redef]
+
 KAPPA = 5.0
 MIN_OWN = 5
 
@@ -44,7 +49,7 @@ def collect_counts(rows, window_order: list[str], base: str, targets: list[str],
                    full_at: str = "before"):
     """Count cases full in `base` (full_at "before": started full; "after": ended full) and whether a seat was offered again by each target window.
 
-    rows: dicts with term, window, class_number, course_code, before_process_vacancy, after_process_vacancy.
+    rows: dicts with term, window, class_number, course_code (and instructor, description, which matter only while course_split.MODEL_SPLIT is on), before_process_vacancy, after_process_vacancy.
     window_order: every window label in the order BOSS runs them within a term.
     Returns {k: {("g",): [n, x], ("s", subject): [n, x], ("c", course): [n, x]}} for each target k.
     """
@@ -62,7 +67,7 @@ def collect_counts(rows, window_order: list[str], base: str, targets: list[str],
             continue
         key = (r["term"], r["class_number"])
         series[key][rank[w]] = (before, after)
-        owner[key] = r["course_code"]
+        owner[key] = model_course_key(r)
     rb = rank[base]
     col = 0 if full_at == "before" else 1
     out: dict[str, dict[tuple, list[int]]] = {k: defaultdict(lambda: [0, 0]) for k in targets if k in rank and rank[k] > rb}

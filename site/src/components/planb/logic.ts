@@ -2,6 +2,7 @@
 import { parseBalance, slotsOf } from '../planner/plan';
 import { TARGETS } from '../../lib/sim/forecast';
 import { formatExam } from '../../lib/format/exam';
+import { bossCodeOf, splitFamily } from '../../lib/data/bossCode';
 import type { Block, Candidate, OfferedCourse, ReqTree, Requisites, SectionOption } from '../../lib/gradreq';
 
 export { parseBalance as parseMoney, TARGETS };
@@ -70,7 +71,7 @@ export function otherRows(rows: readonly PlanRow[], taken: ReadonlySet<string>):
 /** Codes of the courses that could still fill the given blocks (not done, not made redundant by a chosen alternative). */
 export function blockCodes(blocks: readonly Block[]): Set<string> {
   const out = new Set<string>();
-  for (const b of blocks) for (const m of b.members) if (!m.done && !m.setSatisfied) out.add(m.code);
+  for (const b of blocks) for (const m of b.members) if (!m.done && !m.setSatisfied) for (const c of splitFamily(m.code)) out.add(c);
   return out;
 }
 
@@ -125,6 +126,12 @@ export function pseudoBlock(courses: readonly { code: string; title: string }[])
   };
 }
 
+/** Candidates with each course code once (the first one kept). */
+export const uniqueByCode = <T extends { code: string }>(xs: readonly T[]): T[] => {
+  const seen = new Set<string>();
+  return xs.filter((x) => !seen.has(x.code) && !!seen.add(x.code));
+};
+
 export const chunk = <T>(xs: readonly T[], n: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
@@ -175,7 +182,7 @@ const needsText = (t: ReqTree): string => (leafCount(t) <= MAX_TAG_CODES ? `Need
 
 /** The unmet prerequisite of a course given the cleared courses (null with nothing cleared, no rule, or a met rule). */
 export function unmetPrereq(code: string, reqs: Requisites, done: ReadonlySet<string>): ReqTree | null {
-  const prereq = reqs[code]?.prereq;
+  const prereq = (reqs[code] ?? reqs[bossCodeOf(code)])?.prereq;
   return done.size === 0 || prereq === undefined ? null : unmetTree(prereq, done);
 }
 
@@ -194,7 +201,7 @@ function simpleTree(t: ReqTree | undefined): string | null {
  * only the unmet part of the prerequisite; if it is met, a warning when the parse is flagged uncertain.
  */
 export function noteFor(code: string, reqs: Requisites, done: ReadonlySet<string>): string | null {
-  const r = reqs[code];
+  const r = reqs[code] ?? reqs[bossCodeOf(code)];
   if (done.size === 0) {
     if (r?.prereq === undefined) return null;
     const simple = simpleTree(r.prereq);

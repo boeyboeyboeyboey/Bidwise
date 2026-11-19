@@ -12,6 +12,8 @@ export interface WindowInfo {
 /** One row of data/real/index.json. */
 export interface CourseIndexEntry {
   code: string;
+  /** The code BOSS uses; differs from `code` only for a split course (COR-STAT1202-X -> COR-STAT1202). Absent in older data: see bossCodeOf. */
+  bossCode?: string;
   title: string;
   school: string;
   offeredNow: boolean;
@@ -128,6 +130,8 @@ export interface DropChance {
 export interface CourseData {
   drops?: DropChance;
   code: string;
+  /** The code BOSS uses (see CourseIndexEntry.bossCode). */
+  bossCode?: string;
   title: string;
   school: string;
   sectionsNow: Section[];

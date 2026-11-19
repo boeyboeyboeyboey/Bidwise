@@ -6,7 +6,7 @@ import { pInAt, recommendBid, simulate } from '../../lib/sim';
 import { FORECAST_RUNS, FORECAST_SEED, toSimParams } from '../../lib/sim/forecast';
 import type { PlanItem } from '../../lib/sim/planner';
 import {
-  BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
+  BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, rowsInSibling, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
   isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
   canStartGroup, chanceOfGroup, chanceWithheldText, planScope, inOptimisation, notCountedText, terminalText, classifyRow, type ScopeRowInput, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
@@ -145,11 +145,20 @@ describe('decodePlan', () => {
 });
 
 describe('duplicateCourses', () => {
+  const r = (course: string, role: 'required' | 'oneOf', oneOf = 'A') => ({ course, role, oneOf });
   it('flags a repeated course unless the rows are alternatives in one group', () => {
-    const r = (course: string, role: 'required' | 'oneOf', oneOf = 'A') => ({ course, role, oneOf });
     expect(duplicateCourses([r('X', 'oneOf'), r('X', 'oneOf'), r('Y', 'required')])).toEqual([]);
     expect(duplicateCourses([r('X', 'oneOf'), r('X', 'oneOf', 'B')])).toEqual(['X']);
     expect(duplicateCourses([r('X', 'required'), r('X', 'oneOf')])).toEqual(['X']);
+  });
+  it('counts COR-STAT1202 and COR-STAT1202-X as one BOSS course', () => {
+    expect(duplicateCourses([r('COR-STAT1202', 'required'), r('COR-STAT1202-X', 'required')])).toEqual(['COR-STAT1202 / COR-STAT1202-X']);
+    expect(duplicateCourses([r('COR-STAT1202', 'oneOf'), r('COR-STAT1202-X', 'oneOf')])).toEqual([]);
+    expect(duplicateCourses([r('COR-STAT1202', 'oneOf'), r('COR-STAT1202-X', 'oneOf', 'B')])).toEqual(['COR-STAT1202 / COR-STAT1202-X']);
+  });
+  it('takes the BOSS code from the data when given', () => {
+    const bossOf = (c: string) => (c === 'A-SPLIT' ? 'A' : c);
+    expect(duplicateCourses([r('A', 'required'), r('A-SPLIT', 'required')], bossOf)).toEqual(['A / A-SPLIT']);
   });
 });
 
@@ -460,6 +469,14 @@ describe('one bid per course', () => {
     const mustRow: PlanItem = { ...item('must', 'IS469', 6000), role: 'required', oneOfGroup: undefined };
     expect(oneBidPerCourse([cheapOptional, mustRow], 0.9).kept.map((i) => i.key)).toEqual(['must']);
   });
+  it('bids on one section of COR-STAT1202 and COR-STAT1202-X together (same BOSS course)', () => {
+    const items = [item('reg', 'COR-STAT1202', 6000), item('x', 'COR-STAT1202-X', 2000), item('y', 'ACCT101', 2000)];
+    const { kept, skipped } = oneBidPerCourse(items, 0.9);
+    expect(kept.map((i) => i.key)).toEqual(['x', 'y']);
+    expect(skipped.map((i) => i.key)).toEqual(['reg']);
+    const must: PlanItem = { ...item('m', 'COR-STAT1202', 6000), role: 'required', oneOfGroup: undefined };
+    expect(oneBidPerCourse([item('x2', 'COR-STAT1202-X', 2000), must], 0.9).kept.map((i) => i.key)).toEqual(['m']);
+  });
   it('leaves a plan of distinct courses unchanged', () => {
     const items = [item('a', 'A1', 2000), item('b', 'B1', 2000)];
     expect(oneBidPerCourse(items, 0.9)).toEqual({ kept: items, skipped: [] });
@@ -716,5 +733,21 @@ describe('planScope', () => {
     expect(chanceWithheldText(xs)).toBe('Not shown until every Must get and Pick one course has a bid: IS215 G1 (No forecast); IS216 G2 (Group estimates are being revised)');
     expect(notCountedText(xs.slice(0, 1))).toBe('Bids total for priced rows only. Not counted: IS215 G1 (No forecast)');
     expect(terminalText(xs)).toBe('No chance shown: IS215 G1: No forecast; IS216 G2: Group estimates are being revised');
+  });
+});
+
+describe('rowsInSibling (links from before the split)', () => {
+  const sec = (id: string) => ({ id }) as Section;
+  const regular = { sectionsNow: [sec('1283'), sec('1284')] };
+  const smux = { sectionsNow: [sec('1274'), sec('1275')] };
+  const rows = [
+    { course: 'COR-STAT1202', sectionId: '1274' },
+    { course: 'COR-STAT1202', sectionId: '1283' },
+    { course: 'COR-STAT1202', sectionId: '9999' },
+    { course: 'IS112', sectionId: '1275' },
+  ];
+  it('picks rows whose section left the course for its sibling; unknown sections and other courses stay', () => {
+    expect(rowsInSibling(rows, 'COR-STAT1202', regular, smux).map((r) => r.sectionId)).toEqual(['1274']);
+    expect(rowsInSibling(rows, 'COR-STAT1202-X', smux, regular)).toEqual([]);
   });
 });

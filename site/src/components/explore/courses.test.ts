@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildRows, R } from '../classes/logic';
 import {
-  activeFilterCount, browseDefaults, classesQueryToBrowse, courseRedirect, dayOptions, decodeBrowse, instructorLine, encodeBrowse, maskToTimes, timeOptions, timesToMask, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
+  activeFilterCount, browseDefaults, classesQueryToBrowse, courseRedirect, dayOptions, decodeBrowse, instructorLine, encodeBrowse, maskToTimes, timeOptions, timesToMask, codeFromNickname, exploreMode, filterCourses, groupCourses, shortTerm, subjectsOf, termChoices,
   type BrowseState, type CourseEntry,
 } from './courses';
 
@@ -67,6 +67,14 @@ describe('filterCourses', () => {
     const extra = groupCourses([], [{ code: 'FA100', title: '' }, { code: 'X1', title: 'Modeling & Data Analytics' }, { code: 'ACCT101', title: 'Financial Accounting' }]);
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'FA' }))).toEqual(['ACCT101', 'FA100']);
     expect(codes(filterCourses(extra, { ...browseDefaults(), q: 'modeling and data' }))).toEqual(['X1']);
+  });
+  it('finds the SMU-X statistics course by statx and stat-x; stats and the code list both, regular first', () => {
+    const st = groupCourses([], [{ code: 'COR-STAT1202', title: 'Introductory Statistics' }, { code: 'COR-STAT1202-X', title: 'Introductory Statistics (SMU-X)' }]);
+    const q = (t: string) => codes(filterCourses(st, { ...browseDefaults(), q: t }));
+    expect(q('statx')).toEqual(['COR-STAT1202-X']);
+    expect(q('stat-x')).toEqual(['COR-STAT1202-X']);
+    expect(q('stats')).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    expect(q('COR-STAT1202')).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
   });
   it('falls back to close matches, marked, only when nothing matches exactly', () => {
     const hits = f({ q: 'acounting' });
@@ -242,5 +250,22 @@ describe('classes redirect', () => {
   });
   it('is empty for a bare /classes/ link', () => {
     expect(classesQueryToBrowse('')).toBe('');
+  });
+});
+
+describe('codeFromNickname (Explore Builder)', () => {
+  const man = ['COR-STAT1202', 'COR-STAT1202-X', 'COR3301', 'COR3302', 'IS112'];
+  it('turns an exact nickname into the one course that has it', () => {
+    expect(codeFromNickname(man, 'statx')).toBe('COR-STAT1202-X');
+    expect(codeFromNickname(man, 'Stat-X')).toBe('COR-STAT1202-X');
+    expect(codeFromNickname(man, 'stats')).toBe('COR-STAT1202');
+  });
+  it('gives null for a code, a shared nickname, an unknown or empty text', () => {
+    expect(codeFromNickname(man, 'IS112')).toBeNull();
+    expect(codeFromNickname(man, 'stat1202')).toBeNull();
+    expect(codeFromNickname(man, 'ethics')).toBeNull();
+    expect(codeFromNickname(man, 'nothing')).toBeNull();
+    expect(codeFromNickname(man, '')).toBeNull();
+    expect(codeFromNickname(['IS112'], 'statx')).toBeNull();
   });
 });

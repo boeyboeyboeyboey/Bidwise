@@ -23,6 +23,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from course_split import boss_code, model_key, row_course_key, title_override  # noqa: E402
+finally:
+    sys.path.pop(0)
+
 
 def _default_csv():
     """The live dataset: data/current.json's dataset + /bids_with_schedule.csv; the old fixed path only if it is missing."""
@@ -370,7 +376,7 @@ def attach_live_seats(docs: dict, live: dict) -> int:
     n = 0
     for code, doc in docs.items():
         for s in doc["sectionsNow"]:
-            v = live.get((code, s["section"]))
+            v = live.get((boss_code(code), s["section"]))  # the scan files use BOSS's code, not the split key
             if v:
                 s["live"] = dict(v)
                 n += 1
@@ -485,7 +491,8 @@ def attach_seat_deltas(docs: dict, deltas: dict, history: dict | None = None, op
     History is kept only with 2+ points, and never if its last point disagrees with the live count.
     """
     n = 0
-    for code, doc in docs.items():
+    for key, doc in docs.items():
+        code = boss_code(key)  # the scan files use BOSS's code, not the split key
         for s in doc["sectionsNow"]:
             live = s.get("live")
             if not live or live.get("source") != "live":
@@ -505,13 +512,13 @@ def attach_seat_deltas(docs: dict, deltas: dict, history: dict | None = None, op
 
 
 def build(rows: list[dict], current_term: str) -> tuple[dict, dict]:
-    """Return (index_entries_by_code, course_docs_by_code)."""
+    """Return (index_entries_by_code, course_docs_by_code). A split course (model/course_split.py) gets its own key; `bossCode` is BOSS's real code."""
     by_course: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         for col in ("course_code", "term", "window"):
             if not r[col].strip():
                 raise BuildError(f"row missing {col}: {r}")
-        by_course[r["course_code"]].append(r)
+        by_course[row_course_key(r)].append(r)
 
     index, docs = {}, {}
     for code, crows in by_course.items():
@@ -525,16 +532,19 @@ def build(rows: list[dict], current_term: str) -> tuple[dict, dict]:
             (section_entry(r) for r in latest_by_class.values()),
             key=lambda s: (s["section"], s["classNumber"]),
         )
+        title = title_override(code) or latest["description"]
         docs[code] = {
             "code": code,
-            "title": latest["description"],
+            "bossCode": boss_code(code),
+            "title": title,
             "school": latest["school"],
             "sectionsNow": sections_now,
             "history": [history_entry(r) for r in crows],
         }
         index[code] = {
             "code": code,
-            "title": latest["description"],
+            "bossCode": boss_code(code),
+            "title": title,
             "school": latest["school"],
             "offeredNow": bool(now_rows),
             "sectionsNow": len({r["section"] for r in now_rows}),
@@ -591,13 +601,13 @@ def build_browse(rows: list[dict], index: dict, first_term: str | None = None) -
     slots: list = []
     seen = {"w": {}, "s": {}, "i": {}, "t": {}}
     by_term: dict[str, list] = defaultdict(list)
-    for r in sorted(rows, key=lambda r: (r["course_code"], sort_key(r))):
+    for r in sorted(rows, key=lambda r: (row_course_key(r), sort_key(r))):
         if min_key and term_key(r["term"]) < min_key:
             continue
         h = history_entry(r)
         vacancy, after = h["vacancy"], h["after"]
         by_term[h["term"]].append([
-            code_i[r["course_code"]],
+            code_i[row_course_key(r)],
             _lookup(windows, seen["w"], h["window"]),
             _lookup(sections, seen["s"], h["section"]),
             _lookup(instructors, seen["i"], h["instructor"]),
@@ -940,7 +950,9 @@ def attach_drops(docs: dict, rows: list[dict], window: dict, schedule: list[dict
     full_courses = [c for c, d in docs.items() if any(left(s) is not None and left(s) <= 0 for s in d["sectionsNow"])]
     try:
         from forecast import drops  # noqa: PLC0415
-        found = drops.drop_chances(rows, full_courses, WINDOW_ORDER, base, targets, skip_term=term, full_at=full_at)
+        # drops.py counts cases under the model's course key (BOSS's code while the model is pooled); the docs use the site key
+        found = drops.drop_chances(rows, sorted({model_key(c) for c in full_courses}), WINDOW_ORDER, base, targets, skip_term=term, full_at=full_at)
+        found = {c: found[model_key(c)] for c in full_courses if model_key(c) in found}
     except Exception as e:  # the drop chance is an extra: never fail a build for it
         print(f"WARNING: drop chance skipped: {type(e).__name__}: {e}", file=sys.stderr)
         return 0
@@ -1276,13 +1288,15 @@ def validate(out: Path, rows: list[dict], current_term: str) -> list[str]:
                 problems.append(f"{f.name}: history row missing code/term/window")
         for s in doc["sectionsNow"]:
             now_pairs.add((doc["code"], s["section"]))
+        if doc.get("bossCode") != boss_code(doc["code"]):
+            problems.append(f"{f.name}: bossCode {doc.get('bossCode')!r} != {boss_code(doc['code'])!r}")
     if total != len(rows):
         problems.append(f"history rows {total} != CSV rows {len(rows)}")
     for r in rows:
         if not (r["course_code"].strip() and r["term"].strip() and r["window"].strip()):
             problems.append("CSV row missing course_code/term/window")
             break
-    expected = {(r["course_code"], r["section"]) for r in rows if r["term"] == current_term}
+    expected = {(row_course_key(r), r["section"]) for r in rows if r["term"] == current_term}
     missing = expected - now_pairs
     if missing:
         problems.append(f"{len(missing)} current-term (course, section) missing from sectionsNow, e.g. {sorted(missing)[:3]}")

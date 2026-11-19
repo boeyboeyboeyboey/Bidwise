@@ -211,7 +211,7 @@ def eval_rows(sim: dict, order: list, shipped: dict, schools: dict, n_terms: int
         for j, r in enumerate(rows):
             m = r.get("cond_p50")
             row = {"term": t, "window": r["window"], "course": r["course"], "section": r["section"], "cls": r["cls"],
-                   "seats": int(r["seats"]), "school": schools.get((t, r["cls"])) or schools.get(r["course"], ""),
+                   "seats": int(r["seats"]), "school": schools.get((t, r["cls"])) or schools.get(fit.boss_code(r["course"]), ""),
                    "band": D._band(m) if m else 0, "p_fill": r["p_clf"], "p_sim": r["pfill"], "filled": int(r["filled"]),
                    "act": int(r["act"]), "floor": int(r["floor"])}
             cq = r.get("cq")

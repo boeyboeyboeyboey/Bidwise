@@ -80,6 +80,13 @@ describe('no-degree list through candidates()', () => {
     expect([...blockCodes([pseudoBlock([{ code: 'X', title: 'x' }])])]).toEqual(['X']);
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
   });
+  it('treats the SMU-X course as filling the block of its BOSS course, and reads its requisites', () => {
+    expect([...blockCodes([pseudoBlock([{ code: 'COR-STAT1202', title: 'x' }])])].sort()).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    const r: Requisites = { 'COR-STAT1202': { prereq: 'Z' } };
+    expect(noteFor('COR-STAT1202-X', r, new Set())).toBe('Needs Z');
+    expect(noteFor('COR-STAT1202-X', r, new Set(['Y']))).toBe('Needs Z');
+    expect(noteFor('COR-STAT1202-X', r, new Set(['Z']))).toBeNull();
+  });
 });
 
 describe('prerequisites with and without courses marked done', () => {

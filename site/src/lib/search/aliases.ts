@@ -2,7 +2,8 @@
 // approved by the owner, so add nothing unconfirmed. One nickname may point to several codes. Case, spaces and
 // punctuation don't matter ("stat-x" and "statx" are the same nickname).
 export const COURSE_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  'COR-STAT1202': ['stats', 'statx', 'stat-x', 'statsx', 'stats-x'],
+  'COR-STAT1202': ['stats'],
+  'COR-STAT1202-X': ['statx', 'stat-x', 'statsx', 'stats-x', 'smux'],
   'COR-STAT1203': ['stat theory'],
   'COR-IS1704': ['Python', 'CTP', 'comp thinking'],
   'COR-COMM1304': ['MC'],

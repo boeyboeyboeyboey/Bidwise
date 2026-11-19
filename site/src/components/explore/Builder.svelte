@@ -19,6 +19,7 @@
   import { drawChart } from './builder/plot';
   import { valueChoices } from './builder/query';
   import { nicknamesOf } from '../../lib/search/courseSearch';
+  import { codeFromNickname } from './courses';
   import {
     CHART_LABEL, CHART_TYPES, MAX_LINES, NARROW_KEYS, NUMBER_X_IDS, X_IDS, Y_IDS, decodeSpec, defaultSpec, emptyLine, encodeSpec, normalizeSpec,
     type ChartType, type NarrowKey,
@@ -242,6 +243,7 @@
             <input
               class="field course" type="text" list="bld-codes" placeholder="Course code" aria-label={`Line ${i + 1} course`}
               autocomplete="off" autocapitalize="characters" spellcheck="false" value={l.course} oninput={(e) => setCourse(i, val(e).trim().toUpperCase())}
+              onchange={(e) => { const c = man && !codes.has(l.course) ? codeFromNickname(codes, val(e)) : null; if (c) setCourse(i, c); }}
             />
             <button type="button" class="x" aria-label={`Remove line ${i + 1}`} onclick={() => removeLine(i)}>×</button>
           </div>

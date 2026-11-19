@@ -2,6 +2,7 @@
   import { flushSync, onMount, tick, untrack } from 'svelte';
   import type { CourseData } from '../../lib/data/types';
   import { fetchCourse } from '../../lib/data/client';
+  import { bossCodeOf, splitSibling } from '../../lib/data/bossCode';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
   import { TARGETS, bidCalibrated, bidPresets, fromCurrent, groupEstimatesHidden, suggestBid, targetToStored } from '../../lib/sim/forecast';
@@ -19,7 +20,7 @@
   import CourseAdd from './CourseAdd.svelte';
   import PlanRow from './PlanRow.svelte';
   import {
-    DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
+    DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, rowsInSibling, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
     canStartGroup, changeRole, chanceOfGroup, chanceWithheldText, planScope, joinableRows, notCountedText, terminalText, moveToGroup, planParts, whereNow, inOptimisation, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
@@ -91,6 +92,8 @@
   let failedCodes = $state.raw<string[]>([]);
 
   const uid = () => Math.random().toString(36).slice(2, 9);
+  /** BOSS code of a site course (COR-STAT1202-X is COR-STAT1202): one section per BOSS course per window. */
+  const bossOf = (code: string) => bossCodeOf(code, courses[code]?.bossCode);
   const simKey = (r: PlanRowState) => `${win}|${r.sectionId}|${r.group}`;
 
   async function loadCourse(code: string): Promise<CourseData | null> {
@@ -99,8 +102,18 @@
     loading.add(code);
     try {
       const d = await fetchCourse(code);
-      courses = { ...courses, [code]: d };
+      // A link or saved plan from before a course was split: a section that now lives in the sibling course moves there.
+      const sib = splitSibling(code);
+      let sd: CourseData | null = null;
+      if (sib && rows.some((r) => r.course === code && !d.sectionsNow.some((s) => s.id === r.sectionId))) {
+        sd = courses[sib] ?? (await fetchCourse(sib).catch(() => null));
+      }
+      courses = { ...courses, [code]: d, ...(sd ? { [sib as string]: sd } : {}) };
+      if (sd && sib) for (const r of rowsInSibling(rows, code, d, sd)) r.course = sib;
+      // Sibling file unavailable: a row whose section may live there keeps its pick rather than being swapped to another section.
+      const keepPicks = !!sib && !sd;
       for (const r of rows) {
+        if (keepPicks) break;
         if (r.course === code && !d.sectionsNow.some((s) => s.id === r.sectionId)) {
           const taken = rows.filter((x) => x.course === code && x !== r).map((x) => x.sectionId);
           r.sectionId = defaultSection(d.sectionsNow, taken, avoid)?.id ?? r.sectionId;
@@ -143,7 +156,7 @@
   });
 
   /** One bid per course: other rows of a course are alternatives (BOSS allows one section of a course per window). */
-  const onePer = $derived(oneBidPerCourse(simItems, target, win));
+  const onePer = $derived(oneBidPerCourse(simItems, target, win, bossOf));
   const planItems = $derived(onePer.kept);
 
   /** The list in its three parts: Must get rows, one card per Pick one group, Nice to have rows. */
@@ -180,7 +193,7 @@
     return o ? rowName(o) : '';
   };
 
-  const dupes = $derived(duplicateCourses(rows));
+  const dupes = $derived(duplicateCourses(rows, bossOf));
   const reqNeedCents = $derived(typicalNeedCents(planItems));
   const hasRequired = $derived(planItems.some((i) => i.role !== 'optional'));
   /** True when no row that can be simulated is a must-get or pick-one: the headline chance would be meaningless. */
@@ -533,6 +546,7 @@
       const c = curves[simKey(r)];
       return planReportRow({
         code: r.course,
+        bossCode: bossOf(r.course),
         title: courses[r.course]?.title ?? '',
         section: info[i].sec!,
         role: r.role,

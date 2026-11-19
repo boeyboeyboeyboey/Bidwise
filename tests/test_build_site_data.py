@@ -1091,3 +1091,113 @@ class MeasuredSummary(unittest.TestCase):
     def test_emitted_by_window_bid_fields(self):
         p = {"measuredWin": self._measured(), "terms": {"test": "a", "heldOut": "b"}}
         self.assertEqual(bsd.window_bid_fields(p)["measuredWinSummary"]["terms"], ["a", "b"])
+
+
+class CourseSplitSiteData(unittest.TestCase):
+    """COR-STAT1202 sections taught by Rosie Ching, or titled "(SMU-X", become the separate course COR-STAT1202-X."""
+    TERM = "2026-27 Term 2"
+    WIN = "Round 1B Window 1"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        base = bsd.load_rows(FIXTURE)[0]
+
+        def row(term, code, desc, section, cn, instr, after):
+            r = dict(base)
+            r.update(term=term, window=cls.WIN, course_code=code, description=desc, section=section, class_number=cn,
+                     instructor=instr, school="SOE", median_bid="12.00", min_bid="10.50", no_bids="0", vacancy="40",
+                     opening_vacancy="40", before_process_vacancy="40", after_process_vacancy=after, days="MON",
+                     start_times="08:15", end_times="11:30", venues="R1", meeting_count="1", schedule_instructors=instr,
+                     start_date="12-Jan-2026", end_date="19-Apr-2026")
+            return r
+        T = cls.TERM
+        cls.rows = [
+            row("2025-26 Term 2", "COR-STAT1202", "Introductory Statistics", "G3", "1003", "WU ZHENGXIAO", "0"),
+            row("2025-26 Term 2", "COR-STAT1202", "Introductory Statistics (SMU-X)", "G8", "1008", "ROSIE CHING", "0"),
+            row(T, "COR-STAT1202", "Introductory Statistics", "G10", "2010", "WU ZHENGXIAO", "3"),
+            row(T, "COR-STAT1202", "Introductory Statistics (SMU-X)", "G1", "2001", "ROSIE CHING", "5"),
+            row(T, "COR-STAT1202", "Introductory Statistics", "SG84", "2084", "ROSIE CHING", "0"),
+            row(T, "MGMT102", "Management (SMU-X)", "G1", "2500", "KIM, SO", "2"),
+        ]
+        csv_path = tmp / "bids.csv"
+        import csv as _csv
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            w = _csv.DictWriter(f, fieldnames=list(base))
+            w.writeheader()
+            w.writerows(cls.rows)
+        avail = tmp / "current_availability.csv"
+        avail.write_text(LiveSeats.HEADER +
+                         f"{T},{cls.WIN},2026-11-19T09:01:39+08:00,live_scan,COR-STAT1202,G10,2010,40,34,0,6,Open,x\n"
+                         f"{T},{cls.WIN},2026-11-19T09:01:39+08:00,live_scan,COR-STAT1202,G1,2001,40,32,0,8,Open,x\n"
+                         f"{T},{cls.WIN},2026-11-19T09:01:39+08:00,approx_previous_window,COR-STAT1202,SG84,2084,40,,,0,,x\n"
+                         f"{T},{cls.WIN},2026-11-19T09:01:39+08:00,live_scan,MGMT102,G1,2500,40,38,0,2,Open,x\n", encoding="utf-8")
+        cfg = tmp / "w.json"
+        cfg.write_text(json.dumps({"currentTerm": T, "current": {"round": "1B", "window": 1, "status": "open"},
+                                   "schedule": [{"round": "1B", "window": 1, "opensAt": "c", "closesAt": "d"}]}))
+        cls.out = tmp / "real"
+        cls.rc = bsd.main(["--csv", str(csv_path), "--out", str(cls.out), "--window-config", str(cfg),
+                           "--availability", str(avail), "--generated-at", "2026-11-19T12:00:00+08:00"])
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def doc(self, code):
+        return json.loads((self.out / "courses" / f"{code}.json").read_text())
+
+    def test_builds_and_validates(self):
+        self.assertEqual(self.rc, 0)  # main() runs validate() and returns non-zero on any problem
+        self.assertEqual(bsd.validate(self.out, [dict(r) for r in self.rows], self.TERM), [])
+
+    def test_two_files_and_index_entries_with_boss_code(self):
+        index = {e["code"]: e for e in json.loads((self.out / "index.json").read_text())}
+        self.assertEqual(set(index), {"COR-STAT1202", "COR-STAT1202-X", "MGMT102"})
+        self.assertEqual((index["COR-STAT1202-X"]["bossCode"], index["COR-STAT1202-X"]["title"]),
+                         ("COR-STAT1202", "Introductory Statistics (SMU-X)"))
+        self.assertEqual((index["COR-STAT1202"]["bossCode"], index["COR-STAT1202"]["title"]),
+                         ("COR-STAT1202", "Introductory Statistics"))
+        self.assertEqual(index["MGMT102"]["bossCode"], "MGMT102")
+        self.assertEqual(index["MGMT102"]["title"], "Management (SMU-X)")  # only COR-STAT1202 is split
+        self.assertEqual((index["COR-STAT1202-X"]["sectionsNow"], index["COR-STAT1202"]["sectionsNow"]), (2, 1))
+
+    def test_sections_and_history_are_separated(self):
+        x, base = self.doc("COR-STAT1202-X"), self.doc("COR-STAT1202")
+        self.assertEqual((x["code"], x["bossCode"]), ("COR-STAT1202-X", "COR-STAT1202"))
+        self.assertEqual(base["bossCode"], "COR-STAT1202")
+        self.assertEqual([s["section"] for s in x["sectionsNow"]], ["G1", "SG84"])
+        self.assertEqual([s["section"] for s in base["sectionsNow"]], ["G10"])
+        self.assertEqual({h["instructor"] for h in x["history"]}, {"ROSIE CHING"})
+        self.assertEqual(sorted(h["section"] for h in x["history"]), ["G1", "G8", "SG84"])
+        self.assertEqual(sorted(h["section"] for h in base["history"]), ["G10", "G3"])
+
+    def test_live_seats_join_on_the_boss_code(self):
+        x, base = self.doc("COR-STAT1202-X"), self.doc("COR-STAT1202")
+        live = {s["section"]: s["live"] for s in x["sectionsNow"]}
+        self.assertEqual((live["G1"]["available"], live["G1"]["source"]), (8, "live"))
+        self.assertEqual((live["SG84"]["available"], live["SG84"]["source"]), (0, "approx"))
+        self.assertEqual(base["sectionsNow"][0]["live"]["available"], 6)
+
+    def test_seat_deltas_join_on_the_boss_code(self):
+        docs = {"COR-STAT1202-X": {"sectionsNow": [{"section": "G1", "live": {"source": "live", "available": 8}}]}}
+        n = bsd.attach_seat_deltas(docs, {("COR-STAT1202", "G1"): {"sinceOpen": 3, "sinceLast": -1}})
+        self.assertEqual(n, 1)
+        live = docs["COR-STAT1202-X"]["sectionsNow"][0]["live"]
+        self.assertEqual((live["sinceOpen"], live["sinceLast"]), (3, -1))
+
+    def test_browse_lists_the_split_course_on_its_own(self):
+        man = json.loads((self.out / "browse.json").read_text())
+        self.assertEqual(man["codes"], ["COR-STAT1202", "COR-STAT1202-X", "MGMT102"])
+        shard = json.loads((self.out / "browse/2026-27-term-2.json").read_text())
+        col = {n: i for i, n in enumerate(man["columns"])}
+        self.assertEqual(sorted((man["codes"][r[col["course"]]], man["sections"][r[col["section"]]]) for r in shard["rows"]),
+                         [("COR-STAT1202", "G10"), ("COR-STAT1202-X", "G1"), ("COR-STAT1202-X", "SG84"), ("MGMT102", "G1")])
+
+    def test_validate_catches_a_section_left_on_the_wrong_course(self):
+        rows = [dict(r) for r in self.rows]
+        for r in rows:
+            r["instructor"] = "NOBODY" if r["section"] == "G1" and r["course_code"] == "COR-STAT1202" else r["instructor"]
+            if r["section"] == "G1" and r["course_code"] == "COR-STAT1202":
+                r["description"] = "Introductory Statistics"
+        self.assertTrue(bsd.validate(self.out, rows, self.TERM))

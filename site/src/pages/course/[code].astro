@@ -4,7 +4,7 @@ import CourseView from '../../components/course/CourseView.svelte';
 import RecordView from '../../components/RecordView.svelte';
 import ResultsNotice from '../../components/ResultsNotice.svelte';
 import Requisites from '../../components/course/Requisites.svelte';
-import { dataMeta, getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../../lib/data';
+import { bossCodeOf, dataMeta, getCourseIndex, getForecastMeta, getWindow, splitSibling, windowLabel } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
 import { buildRowSeed } from '../../components/course/rowSeed';
 import { DEFAULT_STYLE } from '../../lib/sim/presets';
@@ -27,16 +27,28 @@ const forecastMeta = getForecastMeta();
 // Each open section's bid and chance for the build's window, simulated here so they are in the HTML (CourseView uses them while they still apply).
 const rowSeed = await buildRowSeed(course.sectionsNow, forecastMeta.windows, windowName, DEFAULT_STYLE);
 // Requisite rows are rendered here, so the island only gets small, finished props. No data file or no entry: no block.
+// Requisites are filed under the BOSS code, so a split site course (COR-STAT1202-X) reads its BOSS course's entry.
+const bossCode = bossCodeOf(course.code, course.bossCode);
 const reqData = readRequisites();
+const reqEntry = reqData ? (reqData.courses[course.code] ?? reqData.courses[bossCode]) : undefined;
 const reqRows = reqData
-  ? buildRows(reqData.courses[course.code], { siteKeys: new Set(getCourseIndex().map((c) => c.code)), names: reqData.names, asOf: reqData.asOf })
+  ? buildRows(reqEntry, { siteKeys: new Set(getCourseIndex().map((c) => c.code)), names: reqData.names, asOf: reqData.asOf })
   : [];
-const reqNote = reqData && reqRows.length ? catalogueNote(reqData.courses[course.code], reqData.asOf) : [];
+const reqNote = reqData && reqRows.length ? catalogueNote(reqEntry, reqData.asOf) : [];
+// A course split into two site pages (Rosie Ching's SMU-X statistics sections) says how the two relate.
+const siblingCode = splitSibling(course.code);
+const sibling = siblingCode ? getCourseIndex().find((c) => c.code === siblingCode) : undefined;
+const splitNote = sibling
+  ? bossCode !== course.code
+    ? { lead: `Same BOSS course as `, code: bossCode, mid: ', listed separately here.' }
+    : { lead: `Rosie Ching's SMU-X sections are listed separately: `, code: sibling.code, mid: '' }
+  : null;
 ---
 <Base title={`${course.code} · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
   <header>
     <h1>{course.code}</h1>
     <p>{course.title}</p>
+    {splitNote && <p class="split">{splitNote.lead}<a href={`/course/${splitNote.code}/`}>{splitNote.code}</a>{splitNote.mid}</p>}
   </header>
   {reqRows.length > 0 && <Requisites client:idle rows={reqRows} note={reqNote} />}
   <!-- A visitor who chose another window sees "Calculating" in the seeded cells until the page has recomputed (CourseView removes the class). -->
@@ -48,11 +60,13 @@ const reqNote = reqData && reqRows.length ? catalogueNote(reqData.courses[course
   </script>
   <RecordView client:load code={course.code} />
   <ResultsNotice partial={dataMeta.resultsPartial ?? null} />
-  <CourseView client:load code={course.code} title={course.title} sections={sections} {windowName} currentTerm={dataMeta.currentTerm} latestWindow={dataMeta.latestResultsWindow} resultsPartial={dataMeta.resultsPartial ?? null} openScanAt={dataMeta.seats?.openScanAt ?? null} prevScanAt={dataMeta.seats?.prevScanAt ?? null} {forecastMeta} {rowSeed} />
+  <CourseView client:load code={course.code} bossCode={bossCode} title={course.title} sections={sections} {windowName} currentTerm={dataMeta.currentTerm} latestWindow={dataMeta.latestResultsWindow} resultsPartial={dataMeta.resultsPartial ?? null} openScanAt={dataMeta.seats?.openScanAt ?? null} prevScanAt={dataMeta.seats?.prevScanAt ?? null} {forecastMeta} {rowSeed} />
 </Base>
 
 <style>
   header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); padding-bottom: var(--s3); }
   h1 { font-size: 30px; font-weight: 600; }
   p { margin: 0; color: var(--muted); font-size: 17px; }
+  .split { flex-basis: 100%; margin-top: var(--s1); font-size: 15px; }
+  .split a { color: var(--accent); }
 </style>

@@ -27,9 +27,11 @@
   import { formatSlot } from '../../lib/format/slot';
   import { modeFromUrl, modeToSearch, orderForSwap, SWAP_DISCLAIMER, type Mode, type SwapCell } from './swapUi';
 
-  let { code, title = '', sections, windowName, currentTerm, latestWindow, resultsPartial = null, openScanAt = null, prevScanAt = null, forecastMeta, rowSeed = undefined }: {
+  let { code, bossCode = undefined, title = '', sections, windowName, currentTerm, latestWindow, resultsPartial = null, openScanAt = null, prevScanAt = null, forecastMeta, rowSeed = undefined }: {
     /** Row bids worked out at build time for the build's window and the default chance; used while they still apply. */
     rowSeed?: RowSeed;
+    /** BOSS code when it differs from `code` (a split course); the report's course column uses it. */
+    bossCode?: string;
     /** Set while the newest window's results are only partly released. */
     resultsPartial?: ResultsPartial | null; code: string; title?: string; sections: Section[]; windowName: string; currentTerm: string; latestWindow: string; openScanAt?: string | null; prevScanAt?: string | null; forecastMeta: ForecastMeta } = $props();
   const ordered = $derived(orderSections(sections));
@@ -294,7 +296,7 @@
           const job = seatsLeftNow(s) > 0 ? simSection(s, win, 1) : null;
           const r = job ? await job : null;
           const bids = r ? (Object.fromEntries(TARGETS.map((t) => [t, suggestBid(r, t, win)])) as ReportRow['bids']) : NO_BIDS;
-          return { ...sectionFacts(code, title, s), window: wins.length ? win : '', bids, note: courseNote(s, wins.length > 0) };
+          return { ...sectionFacts(code, title, s, bossCode), window: wins.length ? win : '', bids, note: courseNote(s, wins.length > 0) };
         }),
       );
       const now = new Date();

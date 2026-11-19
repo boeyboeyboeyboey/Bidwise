@@ -327,7 +327,7 @@ def target_rows(rows: list[dict], term: str, sections: dict, first_window: str, 
         for w in fit.WINDOWS[start:]:
             if w not in params["classes"][cn]["windows"]:
                 continue
-            out.append(dict(term=term, tidx=ti, ttype=int(tt), window=w, widx=WI[w], cls=cn, course=r["course_code"],
+            out.append(dict(term=term, tidx=ti, ttype=int(tt), window=w, widx=WI[w], cls=cn, course=fit.model_course_key(r),
                             subject=fit.subject_of(r["course_code"]), section=r["section"], instr=r["instructor"].strip(),
                             slot=fit.slot_key(r["start_times"], r.get("days")), seats=int(seats),
                             cap=int(total or 0), floor=int(params["classes"][cn]["minBidCents"])))

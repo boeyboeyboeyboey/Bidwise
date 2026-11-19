@@ -26,6 +26,14 @@ const row = (over: Partial<ReportRow> = {}): ReportRow => ({
   ...over,
 });
 
+describe('sectionFacts course column', () => {
+  it('holds the BOSS code for a split course (from the data or, for old data, the known suffix) and the code itself otherwise', () => {
+    expect(sectionFacts('COR-STAT1202-X', 'T', section(), 'COR-STAT1202').course).toBe('COR-STAT1202');
+    expect(sectionFacts('COR-STAT1202-X', 'T', section()).course).toBe('COR-STAT1202');
+    expect(sectionFacts('COR3304', 'T', section()).course).toBe('COR3304');
+  });
+});
+
 describe('csvCell', () => {
   it('quotes commas, quotes and newlines', () => {
     expect(csvCell('a,b')).toBe('"a,b"');

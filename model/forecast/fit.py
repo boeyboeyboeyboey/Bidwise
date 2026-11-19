@@ -33,6 +33,11 @@ from statistics import NormalDist
 
 from .sim import SimParams, calibrate_filled, mixture_quantile, sample_cutoffs
 
+try:  # model/course_split.py: a sibling package module, or top-level when build_site_data.py puts model/ on sys.path
+    from ..course_split import boss_code, model_course_key  # noqa: F401
+except ImportError:
+    from course_split import boss_code, model_course_key  # type: ignore[no-redef]  # noqa: F401
+
 ND = NormalDist()
 WINDOWS = [
     "Round 1 Window 1", "Round 1A Window 1", "Round 1A Window 2", "Round 1A Window 3", "Round 1B Window 1", "Round 1B Window 2",
@@ -107,7 +112,7 @@ def course_floors(rows) -> dict:
         if r["no_bids"] == "0" and r["min_bid"]:
             v = cents(r["min_bid"])
             if v > 0:
-                vals[r["course_code"]].append(v)
+                vals[model_course_key(r)].append(v)
     out = {}
     for c, vs in vals.items():
         low = min(vs)
@@ -148,10 +153,10 @@ def build_obs(rows, floors=None) -> list:
             continue  # inconsistent row (none observed in practice)
         out.append(Obs(
             term=r["term"], tidx=ti[0], ttype=ti[1], window=r["window"], cls=r["class_number"],
-            course=r["course_code"], subject=subject_of(r["course_code"]), section=r["section"],
+            course=model_course_key(r), subject=subject_of(r["course_code"]), section=r["section"],
             instr=r["instructor"].strip(), seats=before, succ=before - after, filled=filled,
             med=cents(r["median_bid"]), mn=cents(r["min_bid"]) if r["no_bids"] == "0" else 0,
-            floor=floors.get(r["course_code"], 1000), slot=slot_key(r["start_times"], r.get("days")),
+            floor=floors.get(model_course_key(r), 1000), slot=slot_key(r["start_times"], r.get("days")),
         ))
     return out
 
@@ -797,14 +802,15 @@ def make_params_json(rows, all_obs, cfg, term, floors):
     classes = {}
     for cn, r in current_sections(rows, term).items():
         slot = slot_key(r["start_times"], r.get("days"))
-        floor = floors.get(r["course_code"], 1000)
+        ckey = model_course_key(r)
+        floor = floors.get(ckey, 1000)
         wins = {}
         for w in WINDOWS:
-            sp, meta = model.params_for(r["course_code"], r["instructor"].strip(), w, slot, floor)
+            sp, meta = model.params_for(ckey, r["instructor"].strip(), w, slot, floor)
             d = sp.to_dict()
             d.update(pooledLevel=meta["pooledLevel"], nObs=meta["nObs"])
             wins[w] = d
-        classes[cn] = {"course": r["course_code"], "section": r["section"], "instructor": r["instructor"],
+        classes[cn] = {"course": ckey, "section": r["section"], "instructor": r["instructor"],
                        "minBidCents": floor, "slot": slot, "windows": wins}
     return classes, model
 

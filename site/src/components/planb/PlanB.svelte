@@ -4,6 +4,7 @@
   import { candidates, deriveBlocks, findDegree, pickViews, withoutCoveredDegree } from '../../lib/gradreq';
   import type { Block, GradIndex, GradView, LoadedView, OfferedCourse, Requisites } from '../../lib/gradreq';
   import { fetchIndex } from '../../lib/data/client';
+  import { bossCodeOf, toBossCodes } from '../../lib/data/bossCode';
   import { flatText, searchCourses } from '../../lib/search/courseSearch';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { liveWindow } from '../../lib/data/window';
@@ -20,7 +21,7 @@
   import { styleName } from '../../lib/sim/presets';
   import {
     ALL_TAB, MIN_BID_CENTS, OTHER_TAB, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
-    avoidSlots, budgetLabel, countLabel, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, unmetLast, withNotes,
+    avoidSlots, budgetLabel, countLabel, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, uniqueByCode, unmetLast, withNotes,
     type PlanRow,
   } from './logic';
 
@@ -214,7 +215,8 @@
     // Every course the site knows, plus any course a selected view lists that the site has no page for.
     const all = new Map<string, string>(allCourses.map((c) => [c.code, c.title]));
     for (const [code, title] of poolCourses) if (!all.has(code)) all.set(code, title);
-    const open = [...all].filter(([code]) => !completed.includes(code)).sort((a, b) => a[0].localeCompare(b[0]));
+    const doneBoss = new Set(toBossCodes(completed));
+    const open = [...all].filter(([code]) => !completed.includes(code) && !doneBoss.has(bossCodeOf(code))).sort((a, b) => a[0].localeCompare(b[0]));
     const { items: ranked, close } = searchCourses(open, q, (e) => e);
     // Courses in the selected views first, each group in match order (code, nickname, title).
     return { list: [...ranked.filter(([c]) => poolCourses.has(c)), ...ranked.filter(([c]) => !poolCourses.has(c))].slice(0, 6), close };
@@ -255,7 +257,7 @@
   /** Avoided slots still in the grid: a saved slot at a start time no longer offered can't be unticked, so it doesn't filter. */
   const activeAvoid = $derived(avoid.filter((a) => startTimes.includes(a.slice(4))));
 
-  const derived = $derived(loaded ? deriveBlocks(loaded.views, loaded.intake, completed) : null);
+  const derived = $derived(loaded ? deriveBlocks(loaded.views, loaded.intake, toBossCodes(completed)) : null);
   const groups = $derived(derived ? groupBlocks(derived.open, viewLabel) : []);
   const multiView = $derived(new Set(groups.map((g) => g.blocks[0].viewId)).size > 1);
   const degreeActive = $derived(!!pick);
@@ -301,12 +303,12 @@
     const cands = [];
     for (let i = 0; i < parts.length; i++) {
       if (tok !== runTok) return;
-      cands.push(...candidates(pseudoBlock(parts[i]), byCode, done, reqs, opts).candidates);
+      cands.push(...candidates(pseudoBlock(parts[i]), byCode, done, reqs, { ...opts, siblings: false }).candidates);
       progress = (i + 1) / parts.length;
       await yieldToUi();
     }
     if (tok !== runTok) return;
-    const rows = unmetLast(withNotes(affordableRows(cands, budget), allReqs, doneSet));
+    const rows = unmetLast(withNotes(affordableRows(uniqueByCode(cands), budget), allReqs, doneSet));
     const perBlock: Record<string, PlanRow[]> = {};
     for (const b of blocks) {
       if (tok !== runTok) return;
@@ -323,7 +325,8 @@
     const budget = capCents;
     const chance = target;
     const data = offered;
-    const done = [...completed];
+    // BOSS codes: requirements and prerequisites name them, so COR-STAT1202-X cleared counts as COR-STAT1202.
+    const done = toBossCodes(completed);
     const blocks = listBlocks;
     const onlyNoFinal = noFinal;
     const avoided = [...activeAvoid];

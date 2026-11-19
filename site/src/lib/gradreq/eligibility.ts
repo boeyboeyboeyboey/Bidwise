@@ -1,3 +1,4 @@
+import { bossCodeOf } from '../data/bossCode';
 import type { ReqTree, Requisites } from './types';
 
 export type Eligibility = 'ok' | 'blocked' | 'check';
@@ -19,7 +20,7 @@ export function treeMet(tree: ReqTree, completed: ReadonlySet<string>): boolean 
  * ok: no entry, or no problem found. A prerequisite tree that is unmet stays blocked even when flagged uncertain.
  */
 export function eligibility(code: string, completedCourses: Iterable<string>, requisites: Requisites): Eligibility {
-  const r = requisites[code];
+  const r = requisites[code] ?? requisites[bossCodeOf(code)];
   if (!r) return 'ok';
   const completed = completedCourses instanceof Set ? (completedCourses as ReadonlySet<string>) : new Set(completedCourses);
   if (r.antireq !== undefined && treeMet(r.antireq, completed)) return 'blocked';

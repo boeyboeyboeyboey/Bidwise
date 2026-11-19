@@ -3,10 +3,12 @@
 import meta from '../../data/real/meta.json';
 import index from '../../data/real/index.json';
 import forecastMeta from '../../data/real/forecast-meta.json';
+import { bossCodeOf } from './bossCode';
 import type { Accuracy, CourseIndexEntry, ForecastMeta, ResultsPartial, ScheduleEntry, SearchEntry, WindowInfo } from './types';
 
 export * from './types';
 export * from './format';
+export * from './bossCode';
 
 export const dataMeta = meta as {
   generatedAt: string;
@@ -30,9 +32,9 @@ export function getSchedule(): ScheduleEntry[] {
 }
 
 export function getCourseIndex(): CourseIndexEntry[] {
-  return (index as { code: string; title: string; school: string; offeredNow: boolean; sectionsNow: number; termsWithData: number }[])
+  return (index as { code: string; bossCode?: string; title: string; school: string; offeredNow: boolean; sectionsNow: number; termsWithData: number }[])
     .map((c) => ({
-      code: c.code, title: c.title, school: c.school, offeredNow: c.offeredNow,
+      code: c.code, bossCode: bossCodeOf(c.code, c.bossCode), title: c.title, school: c.school, offeredNow: c.offeredNow,
       sectionCount: c.sectionsNow, termsWithData: c.termsWithData,
     }));
 }

@@ -31,7 +31,8 @@ describe('courseRank', () => {
   });
   it('treats nickname punctuation and spacing as equal', () => {
     expect(courseRank('COR1100', 'Writing and Reasoning', 'w & r', aliasesOf('COR1100'))).toBe(1);
-    expect(courseRank('COR-STAT1202', 'Introductory Statistics', 'Stat-X', aliasesOf('COR-STAT1202'))).toBe(1);
+    expect(courseRank('COR-STAT1202-X', 'Introductory Statistics (SMU-X)', 'Stat-X', aliasesOf('COR-STAT1202-X'))).toBe(1);
+    expect(courseRank('COR-STAT1202', 'Introductory Statistics', 'Stat-X', aliasesOf('COR-STAT1202'))).toBe(-1);
   });
   it('does not let a joined nickname match unrelated titles word by word or across words', () => {
     expect(courseRank('X1', 'Wealth and Risk', 'w&r', [])).toBe(-1);
@@ -66,6 +67,27 @@ describe('shared nicknames', () => {
   it('finds every course that shares a nickname', () => {
     const index: [string, string][] = [['CS206', 'Software Product Management'], ['IS212', 'Software Project Management'], ['IS213', 'Enterprise Solution Development']];
     expect(rankCourses(index, 'spm', (e) => e).map((e) => e[0])).toEqual(['CS206', 'IS212']);
+  });
+});
+
+describe('Stat-X split', () => {
+  // Real alias table; regular course first, as the index orders them.
+  const index: [string, string][] = [
+    ['COR-STAT1202', 'Introductory Statistics'],
+    ['COR-STAT1202-X', 'Introductory Statistics (SMU-X)'],
+    ['COR-STAT1203', 'Statistical Theory'],
+  ];
+  const codes = (q: string) => searchCourses(index, q, (e) => e).items.map((e) => e[0]);
+  it('finds only the SMU-X course by statx, stat-x, Stat X and the other spellings', () => {
+    for (const q of ['statx', 'stat-x', 'Stat X', 'STAT-X', 'statsx', 'stats-x', 'smux']) expect(codes(q), q).toEqual(['COR-STAT1202-X']);
+  });
+  it('lists both for "stats" with the regular course first', () => {
+    expect(codes('stats')).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+  });
+  it('ranks the exact code first and still lists the SMU-X course; stat1202 lists both', () => {
+    expect(codes('COR-STAT1202')).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    expect(codes('stat1202')).toEqual(['COR-STAT1202', 'COR-STAT1202-X']);
+    expect(codes('COR-STAT1202-X')).toEqual(['COR-STAT1202-X']);
   });
 });
 

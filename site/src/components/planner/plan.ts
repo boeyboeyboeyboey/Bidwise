@@ -1,6 +1,7 @@
 // Pure planner logic (no DOM, no worker): mapping real sections to simulator inputs, balance validation,
 // and the stored-plan format. Unit tested in plan.test.ts.
-import type { Meeting, Section } from '../../lib/data/types';
+import type { CourseData, Meeting, Section } from '../../lib/data/types';
+import { bossCodeOf } from '../../lib/data/bossCode';
 import { isLikelyFull, seatsLeftNow, seatsOf } from '../../lib/data/seats';
 import type { SimInput } from '../../lib/sim';
 import { pInAt } from '../../lib/sim';
@@ -370,18 +371,29 @@ export function decodePlan(raw: unknown): StoredPlan | null {
 
 /**
  * Courses that appear in more than one row without being alternatives of each other. You can only take
- * one section of a course, so those rows must be "one of" in the same group.
+ * one section of a course, so those rows must be "one of" in the same group. Split sites of one BOSS course
+ * (COR-STAT1202 and COR-STAT1202-X) count as one course; such a group is named by all its site codes.
  */
-export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'oneOf'>[]): string[] {
+export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'oneOf'>[], bossOf: (course: string) => string = bossCodeOf): string[] {
   const by = new Map<string, typeof rows>();
-  for (const r of rows) by.set(r.course, [...(by.get(r.course) ?? []), r]);
+  for (const r of rows) {
+    const k = bossOf(r.course);
+    by.set(k, [...(by.get(k) ?? []), r]);
+  }
   const out: string[] = [];
-  for (const [code, rs] of by) {
+  for (const rs of by.values()) {
     if (rs.length < 2) continue;
     const alt = rs.every((r) => r.role === 'oneOf' && r.oneOf === rs[0].oneOf);
-    if (!alt) out.push(code);
+    if (!alt) out.push(courseLabel(rs.map((r) => r.course)));
   }
   return out;
+}
+
+/** Rows of `code` whose section is not in its own course file but is in the split sibling's (an old link or saved plan from before the split): they belong to the sibling. */
+export function rowsInSibling<T extends { course: string; sectionId: string }>(
+  rows: readonly T[], code: string, own: Pick<CourseData, 'sectionsNow'>, sibling: Pick<CourseData, 'sectionsNow'>,
+): T[] {
+  return rows.filter((r) => r.course === code && !own.sectionsNow.some((s) => s.id === r.sectionId) && sibling.sectionsNow.some((s) => s.id === r.sectionId));
 }
 
 /** Chance the student wants, same choices and default as the course page. */
@@ -496,18 +508,19 @@ export function belowStyle(target: number, bid: number | null, fullBid: number |
  * extra chances. Of each course only the row with the cheapest recommended bid for `target` is kept (the first on a
  * tie); the others are returned as skipped and must bid e$0 and add no chance.
  */
-export function oneBidPerCourse(items: PlanItem[], target: number, window?: string | null): { kept: PlanItem[]; skipped: PlanItem[] } {
+export function oneBidPerCourse(items: PlanItem[], target: number, window?: string | null, bossOf: (course: string) => string = bossCodeOf): { kept: PlanItem[]; skipped: PlanItem[] } {
   // A row the student must get (Must / Pick one) is never displaced by a cheaper Nice to have row of the same course.
   const rank = (r: Role) => (r === 'required' ? 0 : r === 'oneOf' ? 1 : 2);
   const best = new Map<string, PlanItem>();
   for (const it of items) {
-    const cur = best.get(it.courseCode);
+    const k = bossOf(it.courseCode);
+    const cur = best.get(k);
     if (!cur || rank(it.role) < rank(cur.role) || (rank(it.role) === rank(cur.role) && suggestBid(it.curve, target, window) < suggestBid(cur.curve, target, window))) {
-      best.set(it.courseCode, it);
+      best.set(k, it);
     }
   }
-  const kept = items.filter((it) => best.get(it.courseCode) === it);
-  return { kept, skipped: items.filter((it) => best.get(it.courseCode) !== it) };
+  const kept = items.filter((it) => best.get(bossOf(it.courseCode)) === it);
+  return { kept, skipped: items.filter((it) => best.get(bossOf(it.courseCode)) !== it) };
 }
 
 /** `result` for the kept items, with each skipped row at a bid of e$0 and no chance. */

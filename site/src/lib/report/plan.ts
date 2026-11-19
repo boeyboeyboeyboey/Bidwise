@@ -12,6 +12,8 @@ export const ROLE_TEXT: Record<Role, string> = { required: 'Must get', oneOf: 'P
 
 export interface PlanReportInput {
   code: string;
+  /** BOSS code when it differs from the site code (a split course). */
+  bossCode?: string;
   title: string;
   section: Section;
   role: Role;
@@ -107,7 +109,7 @@ export function planReportRow(i: PlanReportInput): ReportRow {
   const why = i.issue ? ISSUE_TEXT[i.issue] : (i.unpricedReason ?? (i.groupHidden ? GROUP_NOTICE : ''));
   if (why) {
     return {
-      ...sectionFacts(i.code, i.title, i.section),
+      ...sectionFacts(i.code, i.title, i.section, i.bossCode),
       window: i.window,
       bids: NO_BIDS,
       note: i.clashes.join(' · '),
@@ -121,7 +123,7 @@ export function planReportRow(i: PlanReportInput): ReportRow {
   }
   const bidOn = !i.none && i.bid !== null && i.bid > 0;
   return {
-    ...sectionFacts(i.code, i.title, i.section),
+    ...sectionFacts(i.code, i.title, i.section, i.bossCode),
     window: i.window,
     bids: i.bids,
     note: [planNote(i), ...i.clashes].filter(Boolean).join(' · '),

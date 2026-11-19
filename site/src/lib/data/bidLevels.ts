@@ -3,19 +3,29 @@ import type { BidLevel, BidLevels, ForecastMeta, MeasuredWinCell, MeasuredWinSum
 
 const NAMES = ['cheap', 'balanced', 'safe'] as const;
 
+/**
+ * A plain JSON object: the only thing accepted where a container keyed by style, window or band names is expected. An array would
+ * answer numeric-string lookups ("0".."4") and Object.entries, so it reads as malformed, as in scripts/claim_view.py (dict only).
+ */
+export const isPlainObject = (v: unknown): v is Record<string, unknown> => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const numOrNull = (v: unknown): v is number | null => v === null || num(v);
 
 function level(v: unknown): BidLevel | null {
-  if (!v || typeof v !== 'object') return null;
-  const o = v as Record<string, unknown>;
+  if (!isPlainObject(v)) return null;
+  const o = v;
   if (!num(o.level) || !num(o.lossAll) || !num(o.meanOverpay) || !numOrNull(o.lossFilled) || !numOrNull(o.winAboveFloor) || typeof o.reached !== 'boolean') return null;
   return { level: o.level, lossFilled: o.lossFilled, lossAll: o.lossAll, winAboveFloor: o.winAboveFloor, meanOverpay: o.meanOverpay, reached: o.reached };
 }
 
 /** All three levels, only when the calibration is on and ok and every level reads cleanly; otherwise null (show nothing). */
 export function bidLevels(m: Pick<ForecastMeta, 'distCalibration' | 'bidLevels'> | null | undefined): BidLevels | null {
-  if (!m?.bidLevels || m.distCalibration?.ok !== true) return null;
+  if (!m?.bidLevels || m.distCalibration?.ok !== true || !isPlainObject(m.bidLevels)) return null;
   const [cheap, balanced, safe] = NAMES.map((n) => level(m.bidLevels?.[n]));
   return cheap && balanced && safe ? { cheap, balanced, safe } : null;
 }
@@ -31,12 +41,12 @@ export interface BidWindowData {
 const rate = (v: unknown): v is number | null => v === null || (num(v) && v >= 0 && v <= 1);
 
 function windowLevels(v: unknown): BidWindowData['levels'] {
-  if (!v || typeof v !== 'object') return null;
+  if (!isPlainObject(v)) return null;
   const out: NonNullable<BidWindowData['levels']> = {};
-  for (const [w, cell] of Object.entries(v as Record<string, unknown>)) {
-    const c = cell as Record<string, Record<string, unknown> | undefined> | null;
-    const parts = NAMES.map((n) => c?.[n]);
-    if (parts.every((p) => p && num(p.level) && p.level > 0 && p.level < 1 && numOrNull(p.lossFilled))) {
+  for (const [w, cell] of Object.entries(v)) {
+    if (!isPlainObject(cell)) continue;
+    const parts = NAMES.map((n) => cell[n]);
+    if (parts.every((p): p is Record<string, unknown> => isPlainObject(p) && num(p.level) && p.level > 0 && p.level < 1 && numOrNull(p.lossFilled))) {
       const [cheap, balanced, safe] = parts.map((p) => ({ level: p!.level as number, lossFilled: p!.lossFilled as number | null, ...(typeof p!.reached === 'boolean' ? { reached: p!.reached } : {}) }));
       out[w] = { cheap, balanced, safe };
     }
@@ -51,15 +61,15 @@ const upperOf = (v: unknown): number | null => (num(v) && v >= 0 && v <= 1 ? v :
 const countOf = (v: unknown, integer: boolean): number | undefined => (num(v) && v > 0 && (!integer || Number.isInteger(v)) ? v : undefined);
 
 function windowMeasured(v: unknown): BidWindowData['measured'] {
-  if (!v || typeof v !== 'object') return null;
+  if (!isPlainObject(v)) return null;
   const out: NonNullable<BidWindowData['measured']> = {};
-  for (const [w, bands] of Object.entries(v as Record<string, unknown>)) {
-    const b = bands as Record<string, Record<string, unknown> | undefined> | null;
+  for (const [w, b] of Object.entries(v)) {
+    if (!isPlainObject(b)) continue;
     const cells: Record<string, MeasuredWinCell> = {};
     for (let i = 0; i < 5; i++) {
-      const c = b?.[String(i)];
-      if (c && rate(c.cheap) && rate(c.balanced) && rate(c.safe) && num(c.nFilled)) {
-        const up = c.upper && typeof c.upper === 'object' ? (c.upper as Record<string, unknown>) : null;
+      const c = b[String(i)];
+      if (isPlainObject(c) && rate(c.cheap) && rate(c.balanced) && rate(c.safe) && num(c.nFilled)) {
+        const up = isPlainObject(c.upper) ? c.upper : null;
         const upper = up ? { cheap: upperOf(up.cheap), balanced: upperOf(up.balanced), safe: upperOf(up.safe) } : null;
         const nCourses = countOf(c.nCourses, true);
         const effCourses = countOf(c.effCourses, false);
@@ -91,9 +101,9 @@ export function bidWindowData(m: Pick<ForecastMeta, 'distCalibration' | 'bidLeve
  *  the overall rates do not read cleanly. Rounds that do not read cleanly are dropped. */
 export function measuredSummary(m: Pick<ForecastMeta, 'distCalibration' | 'measuredWinSummary'> | null | undefined): MeasuredWinSummary | null {
   const s = m?.measuredWinSummary;
-  if (m?.distCalibration?.ok !== true || !s || typeof s !== 'object') return null;
+  if (m?.distCalibration?.ok !== true || !isPlainObject(s)) return null;
   const ok = (o: unknown): o is Record<(typeof NAMES)[number], number> =>
-    !!o && typeof o === 'object' && NAMES.every((n) => { const v = (o as Record<string, unknown>)[n]; return num(v) && v >= 0 && v <= 1; });
+    isPlainObject(o) && NAMES.every((n) => { const v = (o as Record<string, unknown>)[n]; return num(v) && v >= 0 && v <= 1; });
   if (!ok(s.overall)) return null;
   const byRound = (Array.isArray(s.byRound) ? s.byRound : []).filter((r) => ok(r) && typeof r.label === 'string' && num(r.nFilled));
   const t = s.terms;

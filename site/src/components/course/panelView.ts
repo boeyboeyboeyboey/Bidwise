@@ -5,7 +5,7 @@ import { bidLevels, bidWindowData } from '../../lib/data/bidLevels';
 import type { BidStyleKey, ForecastMeta } from '../../lib/data/types';
 import { EXAMPLE_BUDGET_CENTS as TERM_BUDGET_CENTS } from '../../lib/planner/example';
 import type { LowConfidenceReason } from '../../lib/sim/presets';
-import { claimsAt, ifFillsFrom, type PastRate } from '../../lib/sim/windowBids';
+import { claimsAt, ifFillsFrom, styleIndexOf, type PastRate } from '../../lib/sim/windowBids';
 import { FLOOR_TEXT, GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, pastRateText, sameBidText, unreachedText } from './bidStyle';
 import { pct } from './fmt';
 
@@ -22,8 +22,11 @@ export interface PanelViewInput {
   minBidCents: number;
   /** Suggested bid of each preset in preset order (Cheap, Balanced, Safe; or 80, 90, 95% without calibration), cents. */
   recs: readonly [number, number, number];
-  /** Which preset is chosen (index into `recs`). */
-  styleIndex: number;
+  /**
+   * The style the person chose, by key ('cheap' | 'balanced' | 'safe', or 't80' | 't90' | 't95' without calibration), not by level: styles
+   * can share a pooled level. Its position among the presets is its index into `recs`. Any other value throws.
+   */
+  styleKey: string;
   /** P(win) at the chosen bid, 0..1, and the simulated chance the section fills. */
   pNow: number;
   pFill: number;
@@ -67,10 +70,12 @@ export interface PanelView {
 
 export function panelView(i: PanelViewInput): PanelView {
   const levels = bidLevels(i.meta);
-  const rec = i.recs[i.styleIndex];
+  const styleIndex = styleIndexOf(i.styleKey);
+  if (styleIndex < 0) throw new Error(`panelView: unknown style key ${JSON.stringify(i.styleKey)}`);
+  const rec = i.recs[styleIndex];
   const claims = claimsAt({
     group: i.group, calibrated: levels !== null, windowData: levels ? bidWindowData(i.meta) : null, window: i.window, minBid: i.minBidCents,
-    recs: i.recs, rec, styleIndex: i.styleIndex, medianCents: i.conditionalMedianCents,
+    recs: i.recs, rec, styleIndex, medianCents: i.conditionalMedianCents,
   });
   if (claims.groupHidden) {
     return {

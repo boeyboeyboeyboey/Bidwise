@@ -947,6 +947,17 @@ class WindowBidFields(unittest.TestCase):
         cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1A Window 2"]["2"]
         self.assertEqual(set(cell), {"cheap", "balanced", "safe", "nFilled", "source", "upper"})  # both guard fields invalid: left out
 
+    def test_eff_courses_passes_through_unrounded(self):
+        # H10: 21025 / 1053 = 19.96676... must reach the site as is, not as 20.0
+        p = self._payload()
+        for g in self.GROUPS:
+            for c in p["measuredWin"][g].values():
+                c["upper"] = {st: round(c[st] + 0.05, 4) for st in ("cheap", "balanced", "safe")}
+                c["nCourses"], c["effCourses"] = 30, 21025 / 1053
+        cell = bsd.window_bid_fields(p)["measuredWin"]["Round 1A Window 2"]["2"]
+        self.assertEqual(cell["effCourses"], 21025 / 1053)
+        self.assertLess(cell["effCourses"], 20)
+
     def test_guard_fields_are_left_out_without_upper(self):
         p = self._payload()
         for g in self.GROUPS:
@@ -1012,6 +1023,24 @@ class WindowBidFields(unittest.TestCase):
 
     def test_json_serialisable(self):
         json.dumps(bsd.window_bid_fields(self._payload()))
+
+
+class LoadRefitNoteTests(unittest.TestCase):
+    def note(self, meta):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "fit-meta.json"
+            path.write_text(json.dumps(meta))
+            return bsd.load_refit_note(path)
+
+    def test_fit_stamp_is_the_fit_meta_stamp(self):
+        note = self.note({"refitAt": "2027-01-10T20:28:19+08:00", "stamp": "20270110T201900", "afterWindow": None, "newBids": 3})
+        self.assertEqual(note["fitStamp"], "20270110T201900")
+        self.assertEqual(note["refitAt"], "2027-01-10T20:00:00+08:00")
+
+    def test_fit_stamp_is_left_out_without_a_stamp(self):
+        note = self.note({"refitAt": "2027-01-10T20:28:19+08:00"})
+        self.assertIn("refitAt", note)
+        self.assertNotIn("fitStamp", note)
 
 
 class MeasuredSummary(unittest.TestCase):

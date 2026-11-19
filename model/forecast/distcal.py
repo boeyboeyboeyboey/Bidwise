@@ -395,12 +395,14 @@ def _course_ids_ok(course_ids) -> bool:
 
 
 def _course_counts(course_ids) -> tuple:
-    """(nCourses, effCourses): the distinct courses, and (sum n_i)^2 / sum n_i^2 over their row counts n_i, rounded to 1 dp."""
+    """(nCourses, effCourses): the distinct courses, and (sum n_i)^2 / sum n_i^2 over their row counts n_i, as a full float. It is not
+    rounded: the page compares it with the 20 threshold, and rounding to 1 dp shipped 19.96676 (sizes 11, 22 and 28 courses of size 4)
+    as 20.0 (H10, 19 Nov 2026)."""
     cnt = {}
     for c in course_ids:
         cnt[c] = cnt.get(c, 0) + 1
     tot = sum(cnt.values())
-    return len(cnt), round(tot * tot / sum(v * v for v in cnt.values()), 1)
+    return len(cnt), tot * tot / sum(v * v for v in cnt.values())
 
 
 def upper_bounds(wins: dict, course_ids, n_boot: int = BOOT_N, seed: int = BOOT_SEED, q: float = BOOT_Q):

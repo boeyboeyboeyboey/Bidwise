@@ -8,28 +8,28 @@ import { rowLowConfidence, suggestBid } from '../../lib/sim/presets';
 import type { RowBid } from './sections';
 import { simSection } from './sectionSim';
 
-/** A row's bid, as CourseView shows it: the suggested bid for `target`, its chance, and whether the forecast deserves less trust. */
-export function rowBidOf(r: SimResult, target: number, seats: number, win: string): RowBid {
-  const cents = suggestBid(r, target, win);
+/** A row's bid, as CourseView shows it: the suggested bid for the style `style` (a key), its chance, and whether the forecast deserves less trust. */
+export function rowBidOf(r: SimResult, style: string, seats: number, win: string): RowBid {
+  const cents = suggestBid(r, style, win);
   return { cents, p: pInAt(r, cents), low: rowLowConfidence(seats, win, true).length > 0 };
 }
 
 export interface RowSeed {
   /** The window the numbers are for: the build's current window. */
   window: string;
-  /** The chance the suggested bids aim for. */
-  target: number;
+  /** The key of the style the suggested bids are for. */
+  style: string;
   /** By class number, for sections with seats left; null = no forecast for the section. */
   bySection: Record<string, RowBid | null>;
 }
 
 /** Whether the seed's numbers are the ones the page would compute for the window and chance now in force. */
-export function seedUsable(seed: RowSeed | undefined | null, currentName: string, chosen: string | null, target: number): seed is RowSeed {
-  return !!seed && seed.target === target && currentName === seed.window && (chosen === null || chosen === seed.window);
+export function seedUsable(seed: RowSeed | undefined | null, currentName: string, chosen: string | null, style: string): seed is RowSeed {
+  return !!seed && seed.style === style && currentName === seed.window && (chosen === null || chosen === seed.window);
 }
 
 /** Build time: one simulation per open section for the current window (sections carry their forecast parameters here). */
-export async function buildRowSeed(sections: readonly Section[], forecastWindows: readonly string[], window: string, target: number): Promise<RowSeed> {
+export async function buildRowSeed(sections: readonly Section[], forecastWindows: readonly string[], window: string, style: string): Promise<RowSeed> {
   const bySection: RowSeed['bySection'] = {};
   for (const s of sections) {
     const seats = seatsLeftNow(s);
@@ -41,7 +41,7 @@ export async function buildRowSeed(sections: readonly Section[], forecastWindows
     } catch {
       r = null;
     }
-    bySection[s.classNumber] = r ? rowBidOf(r, target, seats, win) : null;
+    bySection[s.classNumber] = r ? rowBidOf(r, style, seats, win) : null;
   }
-  return { window, target, bySection };
+  return { window, style, bySection };
 }

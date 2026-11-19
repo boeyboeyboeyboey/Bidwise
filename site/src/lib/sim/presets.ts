@@ -49,6 +49,30 @@ export const DEFAULT_TARGET: number = levels ? PRESETS[1].level : 0.9;
 
 export const presetFor = (level: number): BidPreset | null => PRESETS.find((p) => p.level === level) ?? null;
 
+/** The preset with this key ('cheap' | 'balanced' | 'safe', or 't80' | 't90' | 't95' without calibration); null for anything else. */
+export const presetByKey = (key: unknown): BidPreset | null => PRESETS.find((p) => p.key === key) ?? null;
+
+/**
+ * The key of the style the page starts on (Balanced, or 90%). The course page tracks the selected style by this key, never by its
+ * pooled level: two styles can share a pooled level (independent loss thresholds can pick the same grid row) while their
+ * per-window levels differ, so a level cannot say which style was clicked.
+ */
+export const DEFAULT_STYLE: string = PRESETS[1].key;
+
+/**
+ * The style key for a stored or legacy value. A current key is kept. A number is a legacy save: calibrated, it is an old
+ * "80 / 90 / 95%" and gives the default style (targetFromStored's rule); not calibrated, the nearest of 80 / 90 / 95% (the planner's
+ * snapTarget rule, first on a tie). Anything else gives the default.
+ */
+export function styleKeyOf(stored: unknown): string {
+  const hit = presetByKey(stored);
+  if (hit) return hit.key;
+  if (levels || typeof stored !== 'number' || !Number.isFinite(stored)) return DEFAULT_STYLE;
+  let best = PRESETS[0];
+  for (const p of PRESETS) if (Math.abs(p.level - stored) < Math.abs(best.level - stored)) best = p;
+  return best.key;
+}
+
 /** The style name ("Safe") for a chance level; null when the presets are not calibrated (they are plain percentages then). */
 export const styleName = (level: number): string | null => (levels ? (presetFor(level)?.label ?? null) : null);
 
@@ -75,13 +99,16 @@ export function targetFromStored(stored: unknown, fallback: number = DEFAULT_TAR
 }
 
 /**
- * The bid every screen suggests for `target` (a preset's pooled level). Calibrated: a bid above the minimum goes up to the next
+ * The bid every screen suggests for `target`: a style key (what the course page passes, see DEFAULT_STYLE; an unknown key reads as
+ * the default style) or a preset's pooled level (first style with that level; the planner still passes levels). Calibrated: a bid above the minimum goes up to the next
  * whole e$ plus one cent, since about 30% of real clearing bids are whole e$ amounts; with a `window` that has its own levels,
  * the bid is read at that window's level for the style. No window, or no per-window levels: the pooled level, as before.
  * Not calibrated: exactly recommendBid.
  */
-export function suggestBid(result: SimResult, target: number, window?: string | null): number {
-  const bid = recommendBid(result, levelForWindow(windowData, window, levels ? presetFor(target)?.key : null) ?? target);
+export function suggestBid(result: SimResult, target: number | string, window?: string | null): number {
+  const preset = typeof target === 'string' ? (presetByKey(target) ?? PRESETS[1]) : levels ? presetFor(target) : null;
+  const pooled = typeof target === 'string' ? preset!.level : target;
+  const bid = recommendBid(result, levelForWindow(windowData, window, levels ? preset?.key : null) ?? pooled);
   if (!levels) return bid;
   const min = result.histogram.startCents;
   if (bid <= (min % 2 === 0 ? min + 1 : min)) return bid;
@@ -101,11 +128,11 @@ export function measuredIfFills(window: string | null | undefined, result: SimRe
  * bid, an unreached aim, the styles with the same bid, or nothing at all for a group of 2 or more (see bidClaims).
  * `result` is the simulation for `group`; the measured rates are for one bidder, so they are never offered for a group.
  */
-export function claimsFor(result: SimResult, window: string | null | undefined, group: number, target: number, minBid: number | null): BidClaims {
-  const recs = PRESETS.map((p) => suggestBid(result, p.level, window));
+export function claimsFor(result: SimResult, window: string | null | undefined, group: number, target: number | string, minBid: number | null): BidClaims {
+  const recs = PRESETS.map((p) => suggestBid(result, p.key, window));
   return claimsAt({
     group, calibrated: levels !== null, windowData, window, minBid, recs, rec: suggestBid(result, target, window),
-    styleIndex: PRESETS.findIndex((p) => p.level === target), medianCents: conditionalMedianCents(result),
+    styleIndex: typeof target === 'string' ? PRESETS.findIndex((q) => q.key === target) : PRESETS.findIndex((q) => q.level === target), medianCents: conditionalMedianCents(result),
   });
 }
 

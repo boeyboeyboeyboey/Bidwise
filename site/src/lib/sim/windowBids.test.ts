@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BidWindowData } from '../data/bidLevels';
 import type { SimResult } from './index';
-import { STYLE_TARGET, bandOf, belowAim, bidClaims, conditionalMedianCents, levelForWindow, measuredCell, measuredRate, reachedForWindow, type ClaimInput, type MeasuredCell } from './windowBids';
+import { STYLE_TARGET, styleIndexOf, bandOf, belowAim, bidClaims, conditionalMedianCents, levelForWindow, measuredCell, measuredRate, reachedForWindow, type ClaimInput, type MeasuredCell } from './windowBids';
 
 const sim = (xs: number[], ys: number[], pFill: number): SimResult => ({
   runs: 1000, pFill, percentilesCents: { p50: 0, p80: 0, p90: 0, p95: 0, p99: 0 },
@@ -57,6 +57,27 @@ describe('measuredRate', () => {
     expect(measuredRate({ ...DATA, edges: null }, 'W1', s20, 'cheap')).toBeNull();
     expect(measuredRate({ ...DATA, measured: null }, 'W1', s20, 'cheap')).toBeNull();
     expect(measuredRate({ ...DATA, measured: { W1: { '0': cell(0) } } }, 'W1', s20, 'cheap')).toBeNull();
+  });
+});
+
+describe('belowAim effCourses is compared unrounded (H10)', () => {
+  const cell = (effCourses: number) => ({ rate: 0.5, upper: 0.6, nCourses: 30, effCourses });
+  it('course sizes 11, 22 and 28 courses of 4 give 19.96676, which fails the 20 threshold; it used to ship as 20.0', () => {
+    const sizes = [11, 22, ...Array(28).fill(4)] as number[];
+    const total = sizes.reduce((a, b) => a + b, 0);
+    const eff = (total * total) / sizes.reduce((a, b) => a + b * b, 0);
+    expect(eff).toBeCloseTo(19.96676, 5);
+    expect(belowAim('balanced', cell(eff))).toBe(false);
+    expect(belowAim('balanced', cell(Math.round(eff * 10) / 10))).toBe(true); // the rounded value would have passed
+    expect(belowAim('balanced', cell(20))).toBe(true);
+  });
+});
+
+describe('styleIndexOf', () => {
+  it('maps the calibrated and the uncalibrated keys to the same positions, anything else to -1', () => {
+    expect(['cheap', 'balanced', 'safe'].map(styleIndexOf)).toEqual([0, 1, 2]);
+    expect(['t80', 't90', 't95'].map(styleIndexOf)).toEqual([0, 1, 2]);
+    expect([0.9, 'x', '', 'Balanced', 'constructor', null, undefined].map(styleIndexOf)).toEqual(Array(7).fill(-1));
   });
 });
 

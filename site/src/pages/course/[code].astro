@@ -7,7 +7,7 @@ import Requisites from '../../components/course/Requisites.svelte';
 import { dataMeta, getCourseIndex, getForecastMeta, getWindow, windowLabel } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
 import { buildRowSeed } from '../../components/course/rowSeed';
-import { DEFAULT_TARGET } from '../../lib/sim/presets';
+import { DEFAULT_STYLE } from '../../lib/sim/presets';
 import { readRequisites } from '../../lib/requisites/server';
 import { buildRows, catalogueNote } from '../../lib/requisites/render';
 import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
@@ -25,7 +25,7 @@ const pageUrl = new URL(`/course/${course.code}/`, Astro.site).href;
 const sections = course.sectionsNow.map(({ forecast: _f, ...s }) => s);
 const forecastMeta = getForecastMeta();
 // Each open section's bid and chance for the build's window, simulated here so they are in the HTML (CourseView uses them while they still apply).
-const rowSeed = await buildRowSeed(course.sectionsNow, forecastMeta.windows, windowName, DEFAULT_TARGET);
+const rowSeed = await buildRowSeed(course.sectionsNow, forecastMeta.windows, windowName, DEFAULT_STYLE);
 // Requisite rows are rendered here, so the island only gets small, finished props. No data file or no entry: no block.
 const reqData = readRequisites();
 const reqRows = reqData

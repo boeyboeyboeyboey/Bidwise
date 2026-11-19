@@ -28,6 +28,16 @@ describe('panelView against the shared fixture (scripts/claim_view.py must give 
     expect(JSON.parse(JSON.stringify(panelView(c.input)))).toEqual(c.expected);
   });
 
+  it('the style is chosen by key: every case carries a key and the bid shown is the one at that key\'s position', () => {
+    const pos: Record<string, number> = { cheap: 0, t80: 0, balanced: 1, t90: 1, safe: 2, t95: 2 };
+    for (const c of cases) {
+      expect(c.input).not.toHaveProperty('styleIndex');
+      expect(Object.keys(pos)).toContain(c.input.styleKey);
+      if (!c.expected.groupHidden) expect(c.expected.bidCents).toBe(c.input.recs[pos[c.input.styleKey]]);
+    }
+    expect(() => panelView({ ...get('normal_above_floor').input, styleKey: 'Balanced' })).toThrow(/unknown style key/);
+  });
+
   it('the claims the page may make hold in the cases that matter most', () => {
     const e = (n: string) => get(n).expected;
     expect(e('floor_distinct')).toMatchObject({ floor: true, ifFills: null, past: [], minBidOnly: false });

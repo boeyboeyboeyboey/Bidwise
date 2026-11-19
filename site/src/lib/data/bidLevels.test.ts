@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { bidLevels, bidWindowData } from './bidLevels';
+import { bidLevels, bidWindowData, isPlainObject, measuredSummary } from './bidLevels';
 import type { BidLevel } from './types';
 
 // This file tests the real loader, so it opts out of the forced-calibrated setup mock (src/test-setup.ts).
@@ -84,5 +84,42 @@ describe('bidWindowData', () => {
   it('accepts null rates and loss', () => {
     const d = bidWindowData({ ...full, measuredWin: { 'Round 1 Window 1': Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, { ...cell, safe: null }])) } });
     expect(d?.measured?.['Round 1 Window 1']['0'].safe).toBeNull();
+  });
+});
+
+describe('arrays where an object keyed by style, window or band names is expected (H11)', () => {
+  const W = 'Round 1 Window 1';
+  const lvl = (level: number) => ({ level, lossFilled: 0.2 });
+  const cell = { cheap: 0.7, balanced: 0.8, safe: 0.9, nFilled: 60 };
+  const five = [cell, cell, cell, cell, cell]; // an array answers the numeric-string lookups "0".."4"
+  const good = {
+    ...meta,
+    bidLevelsByWindow: { [W]: { cheap: lvl(0.5), balanced: lvl(0.7), safe: lvl(0.9) } },
+    measuredWin: { [W]: { '0': cell, '1': cell, '2': cell, '3': cell, '4': cell } },
+    bandEdges: [15, 25, 40, 60],
+  };
+  it('isPlainObject accepts only plain objects', () => {
+    expect([{}, { a: 1 }, Object.create(null)].map(isPlainObject)).toEqual([true, true, true]);
+    expect([[], [1], null, undefined, 'x', 3, new Date(), new Map(), Object.create({})].map(isPlainObject)).toEqual(Array(9).fill(false));
+  });
+  it('a window given as an array of five valid band cells reads as no measured data', () => {
+    expect(bidWindowData(good)?.measured?.[W]['3']).toBeDefined();
+    expect(bidWindowData({ ...good, measuredWin: { [W]: five } } as never)?.measured ?? null).toBeNull();
+  });
+  it('the windows, the bands, the upper bounds and the style tables must be objects too', () => {
+    expect(bidWindowData({ ...good, measuredWin: [good.measuredWin[W]] } as never)?.measured ?? null).toBeNull();
+    expect(bidWindowData({ ...good, measuredWin: { [W]: { ...good.measuredWin[W], '2': [0.7, 0.8, 0.9, 60] } } } as never)?.measured ?? null).toBeNull();
+    expect(bidWindowData({ ...good, measuredWin: { [W]: Object.fromEntries(['0', '1', '2', '3', '4'].map((k) => [k, { ...cell, upper: [0.8, 0.9, 0.95] }])) } } as never)?.measured?.[W]['0']).toEqual(cell);
+    expect(bidWindowData({ ...good, bidLevelsByWindow: [good.bidLevelsByWindow[W]] } as never)?.levels ?? null).toBeNull();
+    const l = good.bidLevelsByWindow[W];
+    expect(bidWindowData({ ...good, bidLevelsByWindow: { [W]: [l.cheap, l.balanced, l.safe] } } as never)?.levels ?? null).toBeNull();
+    expect(bidLevels({ ...meta, bidLevels: [meta.bidLevels.cheap, meta.bidLevels.balanced, meta.bidLevels.safe] } as never)).toBeNull();
+    expect(bidLevels({ ...meta, bidLevels: { ...meta.bidLevels, cheap: [0.9] } } as never)).toBeNull();
+  });
+  it('the summary rates must be an object keyed by style', () => {
+    const ok = { overall: { cheap: 0.7, balanced: 0.8, safe: 0.9 }, byRound: [] };
+    expect(measuredSummary({ ...meta, measuredWinSummary: ok } as never)).not.toBeNull();
+    expect(measuredSummary({ ...meta, measuredWinSummary: { ...ok, overall: [0.7, 0.8, 0.9] } } as never)).toBeNull();
+    expect(measuredSummary({ ...meta, measuredWinSummary: [ok] } as never)).toBeNull();
   });
 });

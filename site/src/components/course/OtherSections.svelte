@@ -2,7 +2,7 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import type { Section } from '../../lib/data/types';
-  import { bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
+  import { bidCalibrated, presetByKey, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import type { ForecastCtx } from './forecast-ctx';
   import SeatDelta from './SeatDelta.svelte';
   import { APPROX_NOTE, fullText, SEATS_HELP_HREF, seatsLeftNow, seatsOf } from '../../lib/data/seats';
@@ -11,7 +11,7 @@
   import { formatSlot } from '../../lib/format/slot';
   import { simSection } from './sectionSim';
 
-  let { section, win, group, target, fit = 0, onall }: { section: Section; win: string; group: number; target: number; fit?: number; onall?: () => void } = $props();
+  let { section, win, group, styleKey, fit = 0, onall }: { section: Section; win: string; group: number; styleKey: string; fit?: number; onall?: () => void } = $props();
   const ctx = getContext<ForecastCtx>('forecast');
   const SHOWN = 7;
 
@@ -29,7 +29,7 @@
     const list = others;
     const g = group;
     const w = win;
-    const t = target;
+    const t = styleKey;
     const my = ++token;
     sims = null;
     const jobs = list.map((s) => simSection(s, w, g));
@@ -62,8 +62,8 @@
       return dir * c || natural(a.s.section, b.s.section);
     });
   });
-  const style = $derived(bidCalibrated() ? presetFor(target) : null);
-  const bidHead = $derived(style ? `${style.label} bid` : `Bid for ${pct(target)}`);
+  const style = $derived(bidCalibrated() ? presetByKey(styleKey) : null);
+  const bidHead = $derived(style ? `${style.label} bid` : `Bid for ${pct(presetByKey(styleKey)?.level ?? 0.9)}`);
   const shown = $derived(all ? rows : rows.slice(0, SHOWN));
 
   function sortBy(k: Key) {

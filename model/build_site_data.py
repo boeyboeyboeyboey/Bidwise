@@ -995,6 +995,9 @@ def load_refit_note(path: Path) -> dict:
     out = {}
     if isinstance(meta.get("refitAt"), str) and meta["refitAt"]:
         out["refitAt"] = round_to_hour(meta["refitAt"])
+        # the exact fit run behind these forecasts (fit-meta `stamp`), so a forecast record can name the fit it came from
+        if isinstance(meta.get("stamp"), str) and meta["stamp"]:
+            out["fitStamp"] = meta["stamp"]
         if isinstance(meta.get("afterWindow"), str) and meta["afterWindow"]:
             out["afterWindow"] = meta["afterWindow"]
         n = meta.get("newBids")

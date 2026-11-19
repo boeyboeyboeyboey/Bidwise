@@ -8,7 +8,7 @@
   import { orderSections, type RowBid } from './sections';
   import { anyApprox, APPROX_NOTE, latestScan, scanDayText, seatsLeftNow } from '../../lib/data/seats';
   import type { SimResult } from '../../lib/sim';
-  import { DEFAULT_TARGET, TARGETS, bidCalibrated, presetFor, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
+  import { DEFAULT_STYLE, TARGETS, bidCalibrated, presetByKey, rowLowConfidence, suggestBid } from '../../lib/sim/presets';
   import { styleMeaning } from './bidStyle';
   import { effectiveWindow, fromCurrent } from '../../lib/sim/forecast';
   import { liveWindow } from '../../lib/data/window';
@@ -44,8 +44,8 @@
   let drops = $state<DropChance | null>(null);
   // The bidding window chosen on this site; null = the open window.
   let chosen = $state<string | null>(null);
-  // The chance the suggested bids aim for. Shared by every row and the detail.
-  let target = $state<number>(DEFAULT_TARGET);
+  // The bid style the suggestions are for, by key (not by pooled level: two styles can share one). Shared by every row and the detail.
+  let styleKey = $state<string>(DEFAULT_STYLE);
   // This term's results for each class, from the latest window with results.
   const latestBy = $derived.by(() => {
     const m = new Map<string, HistoryRow>();
@@ -67,8 +67,8 @@
     latestFor(classNumber: string) { return latestBy.get(classNumber) ?? null; },
     pendingFor(classNumber: string) { return !!history && resultsPending(resultsPartial, latestWindow, latestBy.has(classNumber)); },
     get desktop() { return desktop; },
-    get target() { return target; },
-    setTarget(t: number) { target = t; },
+    get style() { return styleKey; },
+    setStyle(key: string) { if (presetByKey(key)) styleKey = key; },
     select(id: string) { choose(id, true); },
     get canReport() { return !!withForecast; },
     get reporting() { return reporting; },
@@ -78,7 +78,7 @@
   // One simulation per open section (group of 1, the chosen window), run as soon as the course file has loaded, so every row can show
   // its bid without a click. Results land row by row; null = this section has no forecast. sectionSim caches them for the detail panel.
   // Rows the build already worked out (same window, same chance) need no simulation here.
-  const seedOn = $derived(seedUsable(rowSeed, currentName, chosen, target));
+  const seedOn = $derived(seedUsable(rowSeed, currentName, chosen, styleKey));
   let sims = $state.raw(new Map<string, SimResult | null>());
   let simToken = 0;
   $effect(() => {
@@ -121,7 +121,7 @@
       if (!r) continue;
       const s = withForecast?.get(cn);
       const win = s ? effectiveWindow(chosen, currentName, fromCurrent(forecastMeta.windows, currentName).filter((w) => !!s.forecast?.[w])) : '';
-      out.set(cn, rowBidOf(r, target, s ? seatsLeftNow(s) : 0, win));
+      out.set(cn, rowBidOf(r, styleKey, s ? seatsLeftNow(s) : 0, win));
     }
     return out;
   });
@@ -139,7 +139,8 @@
     return id;
   });
   // The selected style's name, when the bids come from the named presets (null otherwise).
-  const style = $derived(bidCalibrated() ? presetFor(target) : null);
+  const preset = $derived(presetByKey(styleKey));
+  const style = $derived(bidCalibrated() ? preset : null);
   const bestSection = $derived(ordered.find((s) => s.id === bestId));
   const bestBid = $derived(bestSection ? (bids.get(bestSection.classNumber) ?? null) : null);
   const openSections = $derived(ordered.filter((s) => seatsLeftNow(s) > 0));
@@ -353,7 +354,7 @@
       </label>
       <p class="disc" role="note">{SWAP_DISCLAIMER}</p>
     {/if}
-    <p class="sortnote">{#if scanText}<span>Seats as of {scanText}</span>{/if}{#if !swapping}<InfoTip label="About these bids and seat counts" lines={[style ? `Open sections first. ${styleMeaning(style)}` : `Open sections first. Bids are for 1 person, aiming for about a ${pct(target)} chance of a seat.`, ...(approxAny ? [`Seat counts marked “about” are estimates. ${APPROX_NOTE}`] : [])]} />{/if}</p>
+    <p class="sortnote">{#if scanText}<span>Seats as of {scanText}</span>{/if}{#if !swapping}<InfoTip label="About these bids and seat counts" lines={[style ? `Open sections first. ${styleMeaning(style)}` : `Open sections first. Bids are for 1 person, aiming for about a ${pct(preset?.level ?? 0.9)} chance of a seat.`, ...(approxAny ? [`Seat counts marked “about” are estimates. ${APPROX_NOTE}`] : [])]} />{/if}</p>
     {#if approxAny}<p class="sortnote">Seats marked ≈ are estimates.</p>{/if}
     {#if !swapping && bestSection && bestBid}
       <button type="button" class="btn best" data-seeded={seedOn || undefined} aria-label={`Show ${bestSection.section}, lowest bid ${eS(bestBid.cents)}, ${pct(bestBid.p)} chance`} onclick={() => choose(bestSection.id, true)}>

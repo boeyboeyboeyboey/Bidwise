@@ -23,9 +23,9 @@ export interface ForecastCtx {
   latestFor(classNumber: string): HistoryRow | null;
   /** True when the latest window's results are still being released and this class has none yet. */
   pendingFor(classNumber: string): boolean;
-  /** Chance the suggested bids aim for (0.8, 0.9 or 0.95), shared by the section list and the detail. */
-  readonly target: number;
-  setTarget(t: number): void;
+  /** The bid style the suggested bids are for, by key ('cheap' | 'balanced' | 'safe', or 't80' | 't90' | 't95'), shared by the section list and the detail. */
+  readonly style: string;
+  setStyle(key: string): void;
   /** True on a wide screen, where the detail sits beside the list instead of under its row. */
   readonly desktop: boolean;
   /** Shows another section of the same course. */

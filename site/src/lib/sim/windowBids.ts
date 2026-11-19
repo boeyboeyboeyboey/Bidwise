@@ -20,6 +20,12 @@ export const MIN_EFF_COURSES = 20;
 
 const STYLE_ORDER: readonly BidStyleKey[] = ['cheap', 'balanced', 'safe'];
 
+/** Preset position of every style key the page uses: the calibrated names and the uncalibrated 80 / 90 / 95% keys share positions. */
+const STYLE_INDEX: ReadonlyMap<string, number> = new Map([['cheap', 0], ['t80', 0], ['balanced', 1], ['t90', 1], ['safe', 2], ['t95', 2]]);
+
+/** Position (0, 1, 2) in `recs` of the style with this key; -1 for anything that is not a style key. */
+export const styleIndexOf = (key: unknown): number => (typeof key === 'string' ? (STYLE_INDEX.get(key) ?? -1) : -1);
+
 /**
  * The chance level for a style in a window: that window's own level, else null so the caller keeps the pooled level.
  * No window, no per-window data or an unknown window all give null.

@@ -2,6 +2,7 @@
 // for each. panelView.test.ts checks the TypeScript still gives these outputs; tests/test_claim_view.py (private) checks the Python
 // mirror scripts/claim_view.py gives the same. Change an input or a rule here, regenerate, and review the diff of the expected values.
 // regenerate (from repo/site): npx vite-node src/components/course/__fixtures__/claim_view_parity_gen.ts > src/components/course/__fixtures__/claim_view_parity.json
+import { bidLevels } from '../../../lib/data/bidLevels';
 import { panelView, type PanelViewInput } from '../panelView';
 
 const W = 'Round 2 Window 1';
@@ -129,8 +130,40 @@ const cases = [
   make('pct_half_rounds_up', (i) => { i.pNow = 0.0095; i.pFill = 0.285; i.conditionalMedianCents = null; }),
   make('pct_thousandth_then_whole', (i) => { i.pNow = 0.6749; i.pFill = 0.6751; }),
   make('if_fills_clamped_to_zero', (i) => { i.pNow = 0.1; i.pFill = 0.5; i.conditionalMedianCents = null; }),
+  // H5: the style is chosen by key. Cheap and Balanced share a pooled level (0.9) but have their own window levels; the bid shown is the chosen key's
+  make('tied_pooled_levels_balanced_chosen_shows_balanced_bid', (i) => {
+    i.meta.bidLevels.balanced.level = 0.9; i.recs = [2101, 2601, 3101]; i.styleIndex = 1; levelOf(i, 'cheap').level = 0.8; levelOf(i, 'balanced').level = 0.99;
+  }),
+  make('tied_pooled_levels_cheap_chosen_shows_cheap_bid', (i) => {
+    i.meta.bidLevels.balanced.level = 0.9; i.recs = [2101, 2601, 3101]; i.styleIndex = 0; levelOf(i, 'cheap').level = 0.8; levelOf(i, 'balanced').level = 0.99;
+  }),
+  make('fallback_safe_chosen_by_key', (i) => { i.meta = {}; i.recs = [2001, 2301, 2701]; i.styleIndex = 2; }),
+  // H10: effCourses is read unrounded; 21025 / 1053 = 19.96676 (course sizes 11, 22 and 28 of 4) is under the 20 threshold
+  make('below_aim_false_effcourses_19_96676_unrounded', (i) => { Object.assign(cellOf(i), { balanced: 0.75, nCourses: 30, effCourses: 21025 / 1053 }); cellOf(i).upper.balanced = 0.8; }),
+  make('below_aim_true_effcourses_20_0000001', (i) => { Object.assign(cellOf(i), { balanced: 0.75, nCourses: 30, effCourses: 20.0000001 }); cellOf(i).upper.balanced = 0.8; }),
+  // H11: a JSON array where an object keyed by window, band or style names is expected is malformed, in both readers
+  make('malformed_measured_window_is_array_of_five_cells', (i) => { i.meta.measuredWin[W] = [0, 1, 2, 3, 4].map(cell); }),
+  make('malformed_measured_win_is_array_of_windows', (i) => { i.meta.measuredWin = [i.meta.measuredWin[W]]; }),
+  make('malformed_band_cell_is_array', (i) => { i.meta.measuredWin[W]['2'] = [0.6, 0.8, 0.9, 100]; }),
+  make('malformed_upper_is_array', (i) => { cellOf(i).upper = [0.7, 0.9, 0.95]; Object.assign(cellOf(i), { balanced: 0.75, nCourses: 40, effCourses: 25 }); }),
+  make('malformed_window_levels_is_array_of_three_styles', (i) => {
+    i.recs = [1001, 1001, 1001]; i.styleIndex = 1; const c = i.meta.bidLevelsByWindow[W]; i.meta.bidLevelsByWindow[W] = [c.cheap, c.balanced, c.safe];
+    i.meta.bidLevels.cheap.reached = false;
+  }),
+  make('malformed_bid_levels_by_window_is_array', (i) => { i.recs = [1001, 1001, 1001]; i.meta.bidLevelsByWindow = [i.meta.bidLevelsByWindow[W]]; }),
+  make('malformed_pooled_bid_levels_is_array', (i) => { i.meta.bidLevels = [i.meta.bidLevels.cheap, i.meta.bidLevels.balanced, i.meta.bidLevels.safe]; }),
 ];
 
-const out = cases.map((c) => ({ name: c.name, input: clone(c.input), expected: JSON.parse(JSON.stringify(panelView(c.input as unknown as PanelViewInput))) }));
+// The cases above say which preset is chosen by position (`styleIndex`); the page passes its key, so each input leaves with `styleKey`
+// instead: cheap / balanced / safe, or t80 / t90 / t95 when the meta does not read as calibrated.
+const keyed = (input: Obj): Obj => {
+  const { styleIndex, ...rest } = input;
+  const keys = bidLevels(input.meta as never) ? ['cheap', 'balanced', 'safe'] : ['t80', 't90', 't95'];
+  return { ...rest, styleKey: keys[styleIndex] };
+};
+const out = cases.map((c) => {
+  const input = keyed(clone(c.input));
+  return { name: c.name, input, expected: JSON.parse(JSON.stringify(panelView(input as unknown as PanelViewInput))) };
+});
 // one case per line, so a changed case shows as one changed line
 console.log('[\n' + out.map((c) => ' ' + JSON.stringify(c)).join(',\n') + '\n]');

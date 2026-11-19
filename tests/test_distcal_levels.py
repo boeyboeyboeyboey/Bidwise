@@ -174,8 +174,19 @@ class MeasuredWin(unittest.TestCase):
         self.assertEqual(D._course_counts(["a", "a", "a", "b"]), (2, 1.6))
         # three courses with 2 rows each: 6^2 / 12 = 3.0
         self.assertEqual(D._course_counts(["a", "a", "b", "b", "c", "c"]), (3, 3.0))
-        # 4 + 2 + 2 rows: 64 / 24 = 2.666... -> 2.7
-        self.assertEqual(D._course_counts(["a"] * 4 + ["b"] * 2 + ["c"] * 2), (3, 2.7))
+        # 4 + 2 + 2 rows: 64 / 24 = 2.666..., shipped unrounded (H10)
+        self.assertEqual(D._course_counts(["a"] * 4 + ["b"] * 2 + ["c"] * 2), (3, 64 / 24))
+
+    def test_course_counts_not_rounded_across_the_20_threshold(self):
+        # H10: one course of 11 rows, one of 22 and 28 courses of 4: (11 + 22 + 112)^2 / (121 + 484 + 448) = 21025 / 1053 = 19.96676...,
+        # which 1-dp rounding shipped as 20.0 and so passed the page's effCourses >= 20 guard
+        ids = ["x"] * 11 + ["y"] * 22 + [f"c{i}" for i in range(28) for _ in range(4)]
+        n, eff = D._course_counts(ids)
+        self.assertEqual(n, 30)
+        self.assertEqual(eff, 21025 / 1053)
+        self.assertAlmostEqual(eff, 19.96676, places=5)
+        self.assertLess(eff, 20)
+        self.assertNotEqual(eff, round(eff, 1))
 
     def test_guard_fields_for_every_cell_and_an_even_population(self):
         # rows_in cycles 5 courses evenly, so all 1880 filled rows of both terms give 376 rows per course: nCourses 5, effCourses 5.0

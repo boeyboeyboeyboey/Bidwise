@@ -4,7 +4,7 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, TARGETS, bidCalibrated, bidPresets, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
+  import { MAX_FRIENDS_GROUP, bidCalibrated, bidPresets, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { conditionalMedianCents } from '../../lib/sim/windowBids';
   import { measuredSummary } from '../../lib/data/bidLevels';
@@ -39,8 +39,8 @@
   let group = $state(1);
   // The group size the person asked for when it was more than the seats left (0 = none): shown in the note and used for "Other sections".
   let tried = $state(0);
-  // The chance the bids aim for is shared with the section list, so a row and this answer never disagree.
-  const target = $derived(ctx.target);
+  // The bid style is shared with the section list, so a row and this answer never disagree. It is a key, not a level: styles can share a pooled level.
+  const styleKey = $derived(ctx.style);
   type Tab = 'past' | 'others';
   // Beside the list the past results show at once; under a row on a phone they stay folded until asked for (they run to thousands of pixels).
   let picked = $state<Tab | 'none' | null>(null);
@@ -83,7 +83,7 @@
   const sim = $derived(res?.r ?? null);
   // After a window or group change the previous result stays (dimmed, under its own window label) until the new one arrives.
   const stale = $derived(!!res && (res.win !== win || res.group !== group));
-  const rec = $derived(sim ? suggestBid(sim, target, res?.win) : 0);
+  const rec = $derived(sim ? suggestBid(sim, styleKey, res?.win) : 0);
   const lowRel = $derived(!soldOut && isLowConfidence(ctx.meta.byWindow[win]));
   // Calibrated: the chips are the named bid styles, and the headline carries two chances plus the fill chance.
   const calibrated = bidCalibrated();
@@ -96,8 +96,8 @@
     sim && res && minBid !== null
       ? panelView({
           meta: ctx.meta, window: res.win, group: res.group, minBidCents: minBid,
-          recs: TARGETS.map((t) => suggestBid(sim, t, res!.win)) as [number, number, number],
-          styleIndex: Math.max(0, TARGETS.indexOf(target)), pNow, pFill: sim.pFill, conditionalMedianCents: conditionalMedianCents(sim),
+          recs: presets.map((p) => suggestBid(sim, p.key, res!.win)) as [number, number, number],
+          styleKey, pNow, pFill: sim.pFill, conditionalMedianCents: conditionalMedianCents(sim),
           reasons, hardWindow: lowRel,
         })
       : null,
@@ -137,7 +137,7 @@
     {#if calibrated && styleTip.length}<InfoTip label="About the bid styles" lines={styleTip} />{/if}
     <div class="seg aim">
       {#each presets as p (p.key)}
-        <button type="button" class:num={!calibrated} aria-pressed={target === p.level} onclick={() => ctx.setTarget(p.level)}>{calibrated ? p.label : pct(p.level)}</button>
+        <button type="button" class:num={!calibrated} aria-pressed={styleKey === p.key} onclick={() => ctx.setStyle(p.key)}>{calibrated ? p.label : pct(p.level)}</button>
       {/each}
     </div>
   </div>
@@ -270,7 +270,7 @@
         <div class="answer">{@render groupNotice()}</div>
       {:else}
         {#if !soldOut && live && sim}{@render aim()}{/if}
-        <OtherSections {section} {win} group={soldOut ? 1 : othersGroup} {target} fit={!soldOut && othersGroup > group ? othersGroup : 0} onall={() => setGroup(group)} />
+        <OtherSections {section} {win} group={soldOut ? 1 : othersGroup} {styleKey} fit={!soldOut && othersGroup > group ? othersGroup : 0} onall={() => setGroup(group)} />
       {/if}
     {:else}
       <p class="none">No forecast available</p>

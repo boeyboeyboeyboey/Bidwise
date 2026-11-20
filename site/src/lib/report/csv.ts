@@ -22,12 +22,11 @@ export interface ReportRow {
   window: string;
   seats: number;
   seatsBasis: SeatSource;
-  /** Bid in cents per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe), per person; null when there is no forecast. */
+  /** Bid in cents per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe); null when there is no forecast. */
   bids: Record<number, number | null>;
   note: string;
   /** Planner only. */
   priority?: string;
-  group?: number;
   /** The bid the plan uses after fitting the balance, cents; null when the row is not bid on. */
   planBidCents?: number | null;
   /** Chance of a seat at the plan bid, as the planner shows it ("87%"); '' when none. */
@@ -93,7 +92,6 @@ const COLUMNS: { head: string; plan: boolean; get: (r: ReportRow) => Cell }[] = 
   { head: 'Seats left', plan: false, get: (r) => seatsText(r.seats, r.seatsBasis) },
   { head: 'Seats basis', plan: false, get: (r) => BASIS_TEXT[r.seatsBasis] },
   { head: 'Priority', plan: true, get: (r) => r.priority ?? '' },
-  { head: 'Group size', plan: true, get: (r) => r.group },
   ...bidPresets().map((p) => ({ head: bidCalibrated() ? `${p.label} bid (e$)` : `Bid for ${p.label} chance (e$)`, plan: false, get: (r: ReportRow) => cents(r.bids[p.level]) })),
   { head: 'Plan bid (e$)', plan: true, get: (r) => cents(r.planBidCents) },
   { head: 'Chance at plan bid', plan: true, get: (r) => r.planChance ?? '' },
@@ -119,7 +117,7 @@ export function buildReportCsv(rows: readonly ReportRow[], meta: ReportMeta): st
     csvLine([`Generated ${meta.generatedAt}`]),
     csvLine([REPORT_CREDIT]),
     csvLine([REPORT_DISCLAIMER]),
-    csvLine(['Bids are e$ per person.']),
+    csvLine(['Bids are in e$.']),
     ...(meta.notes ?? []).map((n) => csvLine([n])),
     '',
     csvLine(reportColumns(meta.plan)),

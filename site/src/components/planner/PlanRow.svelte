@@ -1,16 +1,15 @@
 <script lang="ts">
   import type { CourseData } from '../../lib/data/types';
-  import { isLikelyFull, seatsLeftNow, seatsOf, seatsPhrase } from '../../lib/data/seats';
-  import { MAX_FRIENDS_GROUP, groupEstimatesHidden } from '../../lib/sim/forecast';
+  import { isLikelyFull, seatsLeftNow, seatsOf } from '../../lib/data/seats';
   import type { Role } from '../../lib/sim/planner';
   import { styleName } from '../../lib/sim/presets';
-  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines } from '../course/bidStyle';
+  import { lowConfidenceLines } from '../course/bidStyle';
   import { rowLowConfidence } from '../../lib/sim/presets';
   import { aboutPctParts, eS } from '../course/fmt';
   import { orderSections } from '../course/sections';
   import { seatLabel } from '../course/seatLabel';
   import SeatRing from '../course/SeatRing.svelte';
-  import { FAILED_REASON, ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
+  import { FAILED_REASON, ISSUE_TEXT, belowStyle, chanceTint, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
   import { codeLabel } from '../../lib/data/bossCode';
   import InfoTip from '../ui/InfoTip.svelte';
@@ -41,14 +40,9 @@
   }: { row: PlanRowState; course: CourseData | undefined; issue?: RowIssue | null; failed?: boolean; avoid: string[]; grouped?: boolean; onrole: (role: Role) => void; bid: number | null; p: number | null; busy?: boolean; covered?: string; none?: boolean; fullBid?: number | null; capMode?: boolean; target?: number; win?: string; windowFlagged?: boolean; canPick?: boolean; canStart?: boolean; reason?: string; clashes?: string[]; onremove: () => void } = $props();
 
   const sec = $derived(course?.sectionsNow.find((x) => x.id === row.sectionId));
-  /** Most people the group can be: capped by the seats left. */
-  const maxGroup = $derived(Math.max(1, Math.min(MAX_FRIENDS_GROUP, sec ? seatsLeftNow(sec) : MAX_FRIENDS_GROUP)));
-  const limitNote = $derived(sec ? groupLimitNote(seatsLeftNow(sec), row.group, seatsPhrase(sec)) : '');
   const skip = $derived(bid === 0);
-  /** A group's bid and chance are withheld (see groupEstimatesHidden). */
-  const groupHidden = $derived(groupEstimatesHidden(row.group));
   /** "Below Safe" when the balance cut this bid under the style's bid (calibrated only). */
-  const below = $derived(issue || none || groupHidden ? '' : belowStyle(target, bid, fullBid, capMode));
+  const below = $derived(issue || none ? '' : belowStyle(target, bid, fullBid, capMode));
   /** The row's "?" text: the default one explains a chance level, which a named style is not. */
   const tipLines = $derived.by(() => {
     const style = styleName(target);
@@ -99,19 +93,9 @@
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z" /></svg>
     </button>
     <div class="l2">
-    <div class="step" role="group" aria-label="{name} group size">
-      <span class="stl"><span class="lab">Bidding group size</span><InfoTip label="About bidding group size" lines={['Friends bidding for the same section together.', 'Everyone in the group needs a seat.']} /></span>
-      <div class="ctl">
-        <button type="button" class="btn btn-icon" aria-label="Fewer people for {name}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
-        <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
-        <button type="button" class="btn btn-icon" aria-label="More people for {name}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
-        {#if limitNote}<span class="lab left" id="lim-{row.id}">{limitNote}</span>{/if}
-      </div>
-    </div>
     <div class="res num" aria-live="polite" aria-busy={busy}>
       {#if failed}<span class="cant">{FAILED_REASON}</span>
       {:else if issue}<span class="cant">{ISSUE_TEXT[issue]}</span>
-      {:else if groupHidden}<span class="cant">{GROUP_NOTICE}</span> <button type="button" class="btn" onclick={() => (row.group = 1)}>{GROUP_NOTICE_ACTION}</button>
       {:else if none && fullBid !== null && fullBid > 0}<span class="need">Needs <s>{eS(fullBid)}</s></span>
       {:else if bid === null || (!skip && p === null)}<span class="calc">Calculating…</span>
       {:else if skip}
@@ -119,9 +103,9 @@
         {:else if capMode && fullBid !== null && fullBid > 0}<span class="need">Needs <s>{eS(fullBid)}</s></span>
         {:else}<span class="skip cant">Can't win a seat</span>{/if}
       {:else}
-        <span class="lab">Bid</span> <b class:busy>{eS(bid)}</b>{#if row.group > 1} <span class="lab">each</span>{/if} <span class="arrow" aria-hidden="true">→</span>
+        <span class="lab">Bid</span> <b class:busy>{eS(bid)}</b> <span class="arrow" aria-hidden="true">→</span>
         <span class="lab">{aboutPctParts(p ?? 0)[0]}</span><b class="tint" class:busy style="background: {chanceTint(p ?? 0)}">{aboutPctParts(p ?? 0)[1]}</b>
-        <span class="lab">{row.group > 1 ? `chance all ${row.group}` : 'chance'}</span>
+        <span class="lab">chance</span>
         <InfoTip lines={tipLines} />
       {/if}
     </div>
@@ -148,7 +132,7 @@
   .line {
     display: grid; align-items: center; gap: var(--s1) var(--s2); min-width: 0;
     grid-template-columns: minmax(0, 1fr) 44px;
-    grid-template-areas: 'id rm' 'sec sec' 'role role' 'step step' 'res res';
+    grid-template-areas: 'id rm' 'sec sec' 'role role' 'res res';
   }
   .id { grid-area: id; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s2); min-width: 0; }
   .code { font-size: 17px; font-weight: 600; white-space: nowrap; }
@@ -161,15 +145,6 @@
   .l2 { display: contents; }
   .role { grid-area: role; display: inline-flex; width: max-content; max-width: 100%; justify-self: start; }
   .role > button { flex: 0 1 auto; min-width: 0; padding: 0 8px; min-height: 44px; white-space: nowrap; }
-  .step { grid-area: step; display: grid; justify-self: start; min-width: 0; }
-  /* The tip's 44px tap box sits inside this row (its default negative margins would overlap the role control and the + button). */
-  .stl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); min-height: 44px; }
-  .stl :global(.q) { margin: 0; }
-  .stl .lab { font-size: 13px; white-space: nowrap; }
-  .ctl { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s1); }
-  .left { margin-left: var(--s1); }
-  .step .btn-icon { flex: none; width: 44px; height: 44px; min-height: 44px; }
-  .step output { min-width: 22px; text-align: center; font-size: 17px; font-weight: 600; }
   .res { grid-area: res; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 0 var(--s2); font-size: 15px; }
   .arrow { color: var(--muted); }
   .lab { font-size: 14px; color: var(--muted); }
@@ -188,16 +163,7 @@
   .tag { display: inline-flex; align-items: center; min-height: 26px; padding: 0 var(--s2); white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 4px; }
   .clash { padding-left: var(--s3); border-left: 3px solid var(--danger); color: var(--text); font-weight: 600; }
   .calc { color: var(--muted); }
-  /* Disabled stepper: muted text on the page colour (at least 4.5:1), not faded by opacity. */
-  .step .btn-icon:disabled { color: var(--muted); opacity: 1; }
 
-  /* Mid width (the planner column beside the summary): Must get / Pick one / Nice to have and the group size block share one row. */
-  @container (min-width: 430px) and (max-width: 619.98px) {
-    .line {
-      grid-template-columns: max-content minmax(0, 1fr) 44px;
-      grid-template-areas: 'id id rm' 'sec sec sec' 'role step step' 'res res res';
-    }
-  }
   @container (min-width: 620px) {
     .role > button { flex: 0 1 104px; width: 104px; padding: 0 var(--s1); }
     .line {
@@ -205,17 +171,16 @@
       grid-template-areas: 'id sec role rm' 'l2 l2 l2 l2';
       column-gap: var(--s3);
     }
-    .l2 { grid-area: l2; display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: center; gap: var(--s2) var(--s3); }
+    .l2 { grid-area: l2; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: var(--s2) var(--s3); }
     .res { justify-content: flex-start; white-space: nowrap; }
   }
   @container (min-width: 620px) and (max-width: 999.98px) {
-    .step, .res { grid-area: auto; }
-    .step { justify-self: stretch; }
+    .res { grid-area: auto; }
   }
   @container (min-width: 1000px) {
     .line {
-      grid-template-columns: 150px minmax(110px, 1fr) 314px 240px 340px 44px;
-      grid-template-areas: 'id sec role step res rm';
+      grid-template-columns: 150px minmax(110px, 1fr) 314px 340px 44px;
+      grid-template-areas: 'id sec role res rm';
     }
     .l2 { display: contents; }
     .res { justify-content: flex-start; }

@@ -29,7 +29,7 @@
   {#if meta.totals?.length}
     <dl>{#each meta.totals as t (t.label)}<div><dt>{t.label}</dt><dd>{t.value}</dd></div>{/each}</dl>
   {/if}
-  <p class="rp-foot">Bids are e$ per person.{#if approx} ≈ {APPROX_NOTE}.{/if}</p>
+  <p class="rp-foot">Bids are in e$.{#if approx} ≈ {APPROX_NOTE}.{/if}</p>
   {#each meta.notes ?? [] as n (n)}<p class="rp-foot">{n}</p>{/each}
   <p class="rp-foot">{REPORT_CREDIT}</p>
   <p class="rp-foot">{REPORT_DISCLAIMER}</p>

@@ -104,7 +104,7 @@ function lookup(data: OfferedData, code: string): OfferedCourse | undefined {
 function sectionOption(s: Section, o: CandidateOptions, bid: number, target: number): SectionOption | 'full' {
   const forecastKeys = Object.keys(s.forecast ?? {});
   const win = effectiveWindow(o.chosenWindow ?? null, o.window, forecastKeys);
-  const issue = rowIssue(s, win, 1);
+  const issue = rowIssue(s, win);
   if (issue === 'full' || issue === 'estfull') return 'full';
   const seats = seatsOf(s);
   const base: SectionOption = {

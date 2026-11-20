@@ -9,8 +9,8 @@ import type { PlanItem } from '../../lib/sim/planner';
 import {
   BALANCE_EMPTY_MARK, DEFAULT_BALANCE_CENTS, balanceFromCents, balanceFromStored, blockedMustGets, blockedText, blurBalance, decodePlan, defaultSection, duplicateCourses, rowsInSibling, freeLetter, MAX_BALANCE_CENTS, overBalance, parseBalance, restoreBalance, typeBalance,
   biddableItems, bidSummary, bidsAtTarget, chanceOfAll, clampToRecommended, snapTarget, samePlan, dropToFit, encodeShare, decodeShare,
-  isCapped, oneBidPerCourse, withSkipped, groupLimitNote, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
-  canStartGroup, chanceOfGroup, chanceWithheldText, planScope, inOptimisation, notCountedText, terminalText, classifyRow, type ScopeRowInput, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
+  isCapped, oneBidPerCourse, withSkipped, needSaver, needSentence, balanceLabel, courseLabel, chanceTint, findClashes, clashText, clashLines, clashSummary, rowIssue, sectionLabel, sectionOption, slotsOf, startTimesOf, hiddenSections, toPlanSimInput, typicalNeedCents,
+  canStartGroup, chanceOfGroup, chanceWithheldText, planScope, notCountedText, terminalText, classifyRow, type ScopeRowInput, type StoredPlan, changeRole, joinableRows, moveToGroup, newGroupLetter, planParts, whereNow,
 } from './plan';
 
 // These tests pin today's 80 / 90 / 95% mode whatever the shipped data says; the calibrated twins are in *.calibrated.test.ts.
@@ -35,26 +35,25 @@ describe('toPlanSimInput', () => {
   });
   it('uses live seats over the last window when present', () => {
     const live = (available: number, source: 'live' | 'approx' = 'live') => ({ available, total: 40, source, capturedAt: '2026-11-07T09:42:39+08:00', window: W });
-    expect(rowIssue(sec({ seatsLeft: 12, live: live(0) }), W, 1)).toBe('full');
-    expect(rowIssue(sec({ seatsLeft: 0, live: live(5) }), W, 1)).toBeNull();
+    expect(rowIssue(sec({ seatsLeft: 12, live: live(0) }), W)).toBe('full');
+    expect(rowIssue(sec({ seatsLeft: 0, live: live(5) }), W)).toBeNull();
     expect(toPlanSimInput(sec({ seatsLeft: 12, live: live(3) }), W, 1)?.seats).toBe(3);
     expect(sectionLabel(sec({ live: live(4, 'approx') }))).toContain('≈4 left');
   });
   it('treats an estimated zero as likely full, not a hard full', () => {
     const est = { available: 0, total: 40, source: 'approx' as const, capturedAt: '2026-11-07T09:42:39+08:00', window: W };
-    expect(rowIssue(sec({ live: est }), W, 1)).toBe('estfull');
+    expect(rowIssue(sec({ live: est }), W)).toBe('estfull');
     expect(toPlanSimInput(sec({ live: est }), W, 1)).toBeNull();
     expect(sectionOption(sec({ live: est }))).toContain('(likely full, est.)');
     expect(sectionLabel(sec({ live: est }))).toContain('(likely full, est.)');
-    expect(rowIssue(sec({ live: { ...est, source: 'live' } }), W, 1)).toBe('full');
+    expect(rowIssue(sec({ live: { ...est, source: 'live' } }), W)).toBe('full');
   });
   it('refuses rows it cannot simulate', () => {
-    expect(rowIssue(sec({ seatsLeft: 0 }), W, 1)).toBe('full');
-    expect(rowIssue(sec(), 'Round 2 Window 1', 1)).toBe('nofc');
-    expect(rowIssue(sec({ minBidCents: undefined }), W, 1)).toBe('nofc');
-    expect(rowIssue(sec({ seatsLeft: 2 }), W, 3)).toBe('group');
+    expect(rowIssue(sec({ seatsLeft: 0 }), W)).toBe('full');
+    expect(rowIssue(sec(), 'Round 2 Window 1')).toBe('nofc');
+    expect(rowIssue(sec({ minBidCents: undefined }), W)).toBe('nofc');
     expect(toPlanSimInput(sec({ seatsLeft: 0 }), W, 1)).toBeNull();
-    expect(rowIssue(sec(), W, 1)).toBeNull();
+    expect(rowIssue(sec(), W)).toBeNull();
   });
 });
 
@@ -140,7 +139,7 @@ describe('decodePlan', () => {
     expect(p.s).toBe(1);
     // Old time-of-day slots, other days and impossible times are dropped.
     expect(p.a).toEqual(['Mon-08:15', 'Tue-19:00']);
-    expect(p.r).toEqual([{ c: 'ACCT101', i: '1', g: 6, o: 'required', l: 'A' }]);
+    expect(p.r).toEqual([{ c: 'ACCT101', i: '1', g: 1, o: 'required', l: 'A' }]);
     expect(decodePlan({}) !.b).toBeNull();
   });
 });
@@ -238,12 +237,12 @@ describe('starting balance', () => {
 });
 
 describe('Must get rows with no seats', () => {
-  const row = (role: 'required' | 'oneOf' | 'optional', issue: 'full' | 'estfull' | 'nofc' | 'group' | null, label = 'IS215 G1') => ({ role, issue, label });
+  const row = (role: 'required' | 'oneOf' | 'optional', issue: 'full' | 'estfull' | 'nofc' | null, label = 'IS215 G1') => ({ role, issue, label });
   it('a full Must get blocks the plan', () => {
     expect(blockedMustGets([row('required', 'full'), row('required', null, 'IS216 G2')])).toEqual(['IS215 G1']);
   });
   it('other issues on a Must get do not block', () => {
-    expect(blockedMustGets([row('required', 'estfull'), row('required', 'nofc'), row('required', 'group')])).toEqual([]);
+    expect(blockedMustGets([row('required', 'estfull'), row('required', 'nofc')])).toEqual([]);
   });
   it('a full Pick one or Nice to have does not block', () => {
     expect(blockedMustGets([row('oneOf', 'full'), row('optional', 'full')])).toEqual([]);
@@ -277,8 +276,8 @@ describe('chance you want', () => {
 
 describe('same numbers as the course page', () => {
   const s = sec();
-  const course = simulate({ seats: s.seatsLeft, group: 2, minBidCents: s.minBidCents!, params: toSimParams(s.forecast![W]), runs: FORECAST_RUNS, seed: FORECAST_SEED });
-  const item = (key: string, role: PlanItem['role'], oneOfGroup?: string): PlanItem => ({ key, courseCode: key, role, oneOfGroup, curve: simulate(toPlanSimInput(s, W, 2)!) });
+  const course = simulate({ seats: s.seatsLeft, group: 1, minBidCents: s.minBidCents!, params: toSimParams(s.forecast![W]), runs: FORECAST_RUNS, seed: FORECAST_SEED });
+  const item = (key: string, role: PlanItem['role'], oneOfGroup?: string): PlanItem => ({ key, courseCode: key, role, oneOfGroup, curve: simulate(toPlanSimInput(s, W, 1)!) });
   it('plans a section with the course page run, so bid and chance match', () => {
     const r = bidsAtTarget([item('a', 'required')], 0.9, 12500);
     const bid = recommendBid(course, 0.9);
@@ -489,27 +488,6 @@ describe('one bid per course', () => {
   });
 });
 
-describe('groupLimitNote', () => {
-  it('says why "+" is disabled when the seats are the limit, even at group size 1', () => {
-    expect(groupLimitNote(1, 1, '1 seat')).toBe('Only 1 seat left');
-    expect(groupLimitNote(1, 1, 'about 1 seat')).toBe('Only about 1 seat left');
-  });
-  it('says nothing when there are no seats: the row already says so, and "Only 0 seats left" would be noise', () => {
-    expect(groupLimitNote(0, 1, '0 seats')).toBe('');
-    expect(groupLimitNote(0, 3, '0 seats')).toBe('');
-    expect(groupLimitNote(-1, 1, '-1 seats')).toBe('');
-  });
-  it('explains the limit once the group is as big as the seats allow', () => {
-    expect(groupLimitNote(2, 2, '2 seats')).toBe('Only 2 seats left');
-    expect(groupLimitNote(3, 2, '3 seats')).toBe('');
-    expect(groupLimitNote(2, 1, '2 seats')).toBe('');
-  });
-  it('mentions the usual maximum only when seats are not the limit', () => {
-    expect(groupLimitNote(20, 6, '20 seats')).toBe('Max group 6');
-    expect(groupLimitNote(20, 5, '20 seats')).toBe('');
-  });
-});
-
 describe('needSaver', () => {
   const item = (key: string, p50: number, role: PlanItem['role'], oneOfGroup?: string): PlanItem => ({
     key, courseCode: key.toUpperCase(), role, oneOfGroup, curve: simulate({ seats: 5, group: 1, minBidCents: 1000, params: { ...params, priceLevelCents: p50 }, runs: 3000, seed: 1 }),
@@ -650,23 +628,16 @@ describe('decodePlan group letters', () => {
   });
 });
 
-describe('group rows and the optimisation', () => {
-  const s = sec();
-  const row = (id: string, group: number) => ({ id, group, curve: simulate(toPlanSimInput(s, W, group)!) });
-  const items = (rs: { id: string; curve: ReturnType<typeof simulate> }[]): PlanItem[] => rs.map((r) => ({ key: r.id, courseCode: r.id, role: 'required', curve: r.curve }));
-  it('a row for 2+ people is left out, and the others plan exactly as without it', () => {
-    const rows = [row('a', 1), row('g', 3), row('b', 1)];
-    expect(inOptimisation(rows).map((r) => r.id)).toEqual(['a', 'b']);
-    // a balance that forces the optimiser to cut: the group row must not take any of it
-    const withGroup = bidsAtTarget(items(inOptimisation(rows)), 0.9, 2500);
-    const without = bidsAtTarget(items(rows.filter((r) => r.id !== 'g')), 0.9, 2500);
-    expect(withGroup).toEqual(without);
-    expect(Object.keys(withGroup.bids)).not.toContain('g');
+describe('decoding a stored group size', () => {
+  const stored = { b: 12500, s: 0.9, w: '', a: [], r: [{ c: 'IS215', i: '1', g: 3, o: 'required', l: 'A' }, { c: 'IS216', i: '2', g: 6, o: 'required', l: 'A' }, { c: 'IS217', i: '3', o: 'required', l: 'A' }] };
+  it('loads every row as a bid for one person, whatever the saved or linked size was', () => {
+    expect(decodePlan(stored)?.r.map((x) => x.g)).toEqual([1, 1, 1]);
+    expect(decodeShare(encodeShare(stored as StoredPlan))?.r.map((x) => x.g)).toEqual([1, 1, 1]);
   });
 });
 
 describe('planScope', () => {
-  const r = (name: string, over: Partial<ScopeRowInput> = {}): ScopeRowInput => ({ name, role: 'required', oneOf: 'A', group: 1, courseLoaded: true, failed: false, sec: true, issue: null, curveReady: true, ...over });
+  const r = (name: string, over: Partial<ScopeRowInput> = {}): ScopeRowInput => ({ name, role: 'required', oneOf: 'A', courseLoaded: true, failed: false, sec: true, issue: null, curveReady: true, ...over });
   it('classifies each row: priced, loading, unpriced with a reason, no seats', () => {
     expect(classifyRow(r('A'))).toEqual({ state: 'priced', reason: '' });
     expect(classifyRow(r('A', { courseLoaded: false }))).toEqual({ state: 'loading', reason: 'loading' });
@@ -676,11 +647,6 @@ describe('planScope', () => {
     expect(classifyRow(r('A', { issue: 'full' })).state).toBe('infeasible');
     expect(classifyRow(r('A', { courseLoaded: false, failed: true }))).toEqual({ state: 'unpriced', reason: "Couldn't load this course" });
     expect(classifyRow(r('A', { sec: false })).state).toBe('unpriced');
-  });
-  it('a group row is unpriced with the group notice, but a seat issue is named first', () => {
-    expect(classifyRow(r('A', { group: 2, curveReady: false }))).toEqual({ state: 'unpriced', reason: 'Group estimates are being revised.' });
-    expect(classifyRow(r('A', { group: 2, issue: 'group' })).reason).toBe('Group too big');
-    expect(classifyRow(r('A', { group: 2, issue: 'full' })).state).toBe('infeasible');
   });
   it('a Must get still loading withholds the chance and the "left" figure, and is loading', () => {
     const s = planScope([r('A'), r('B', { courseLoaded: false })]);
@@ -735,10 +701,10 @@ describe('planScope', () => {
     expect(s).toMatchObject({ chanceWithheld: false, adviceWithheld: false, leftWithheld: false, terminal: false, loading: false, priced: 3, hasChance: true, blocked: [] });
   });
   it('words the notices with a name (reason) list', () => {
-    const xs = [{ name: 'IS215 G1', reason: 'No forecast' }, { name: 'IS216 G2', reason: 'Group estimates are being revised.' }];
-    expect(chanceWithheldText(xs)).toBe('Not shown until every Must get and Pick one course has a bid: IS215 G1 (No forecast); IS216 G2 (Group estimates are being revised)');
+    const xs = [{ name: 'IS215 G1', reason: 'No forecast' }, { name: 'IS216 G2', reason: 'Section no longer offered' }];
+    expect(chanceWithheldText(xs)).toBe('Not shown until every Must get and Pick one course has a bid: IS215 G1 (No forecast); IS216 G2 (Section no longer offered)');
     expect(notCountedText(xs.slice(0, 1))).toBe('Bids total for priced rows only. Not counted: IS215 G1 (No forecast)');
-    expect(terminalText(xs)).toBe('No chance shown: IS215 G1: No forecast; IS216 G2: Group estimates are being revised');
+    expect(terminalText(xs)).toBe('No chance shown: IS215 G1: No forecast; IS216 G2: Section no longer offered');
   });
 });
 

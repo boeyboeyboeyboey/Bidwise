@@ -4,7 +4,6 @@ import type { Role } from '../sim/planner';
 import type { SimResult } from '../sim';
 import { ISSUE_TEXT, isCapped, reasonList, type NamedReason, type RowIssue } from '../../components/planner/plan';
 import { styleName } from '../sim/presets';
-import { GROUP_NOTICE } from '../../components/course/bidStyle';
 import { eS, pct } from '../../components/course/fmt';
 import { NO_BIDS, sectionFacts, type ReportRow, type ReportTotal } from './csv';
 
@@ -19,7 +18,6 @@ export interface PlanReportInput {
   role: Role;
   /** Courses of the Pick one group ("IS469 / IS470"); '' when not a Pick one row. */
   pickOf: string;
-  group: number;
   window: string;
   issue: RowIssue | null;
   /** Bid and chance from the plan result (after fitting the balance); null while not computed. */
@@ -33,7 +31,7 @@ export interface PlanReportInput {
   none: boolean;
   /** The recommended bids add up to more than the balance. */
   capMode: boolean;
-  /** Bid per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe) at this group size. */
+  /** Bid per preset level (80 / 90 / 95% chance, or Cheap / Balanced / Safe). */
   bids: ReportRow['bids'];
   /** The chance level wanted: a preset level (0.8 / 0.9 / 0.95, or Cheap / Balanced / Safe when calibrated). */
   target: number;
@@ -41,8 +39,6 @@ export interface PlanReportInput {
   reason: string;
   /** Lines naming the sections this one clashes with in time (clashLines). */
   clashes: string[];
-  /** The row is bid for 2 or more people while group estimates are withheld: it exports no bid figure, only the group notice. */
-  groupHidden?: boolean;
   /** Any other reason the row is not priced (e.g. loading): no bid figures, this text in "Why this bid". */
   unpricedReason?: string;
 }
@@ -105,8 +101,7 @@ export function planNote(i: Pick<PlanReportInput, 'issue' | 'bid' | 'p' | 'fullB
 }
 
 export function planReportRow(i: PlanReportInput): ReportRow {
-  // A hard fact (a seat issue) comes before the group notice.
-  const why = i.issue ? ISSUE_TEXT[i.issue] : (i.unpricedReason ?? (i.groupHidden ? GROUP_NOTICE : ''));
+  const why = i.issue ? ISSUE_TEXT[i.issue] : (i.unpricedReason ?? '');
   if (why) {
     return {
       ...sectionFacts(i.code, i.title, i.section, i.bossCode),
@@ -114,7 +109,6 @@ export function planReportRow(i: PlanReportInput): ReportRow {
       bids: NO_BIDS,
       note: i.clashes.join(' · '),
       priority: i.role === 'oneOf' && i.pickOf ? `${ROLE_TEXT.oneOf} of ${i.pickOf}` : ROLE_TEXT[i.role],
-      group: i.group,
       planBidCents: null,
       planChance: '',
       planP: null,
@@ -128,7 +122,6 @@ export function planReportRow(i: PlanReportInput): ReportRow {
     bids: i.bids,
     note: [planNote(i), ...i.clashes].filter(Boolean).join(' · '),
     priority: i.role === 'oneOf' && i.pickOf ? `${ROLE_TEXT.oneOf} of ${i.pickOf}` : ROLE_TEXT[i.role],
-    group: i.group,
     planBidCents: bidOn ? i.bid : null,
     planChance: bidOn && i.p !== null ? pct(i.p) : '',
     planP: bidOn ? i.p : null,

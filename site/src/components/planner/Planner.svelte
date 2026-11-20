@@ -5,8 +5,8 @@
   import { bossCodeOf, codeLabel, splitSibling } from '../../lib/data/bossCode';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
-  import { TARGETS, bidCalibrated, bidPresets, fromCurrent, groupEstimatesHidden, suggestBid, targetToStored } from '../../lib/sim/forecast';
-  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, lowConfidenceLines, styleTipLines } from '../course/bidStyle';
+  import { TARGETS, bidCalibrated, bidPresets, fromCurrent, suggestBid, targetToStored } from '../../lib/sim/forecast';
+  import { lowConfidenceLines, styleTipLines } from '../course/bidStyle';
   import { isFarWindow, isLateWindow } from '../../lib/sim/presets';
   import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
   import { liveWindow } from '../../lib/data/window';
@@ -21,7 +21,7 @@
   import PlanRow from './PlanRow.svelte';
   import {
     DEFAULT_BALANCE_CENTS, DEFAULT_TARGET, balanceFromCents, balanceFromStored, blockedText, chanceTint, bidSummary, bidsAtTarget, biddableItems, balanceLabel, blurBalance, clampToRecommended, clashLines, clashSummary, courseLabel, findClashes, needSaver, needSentence, decodeShare, defaultSection, duplicateCourses, rowsInSibling, encodeShare, freeLetter, isCapped, overBalance, oneBidPerCourse, withSkipped,
-    canStartGroup, changeRole, chanceOfGroup, chanceWithheldText, planScope, joinableRows, notCountedText, terminalText, moveToGroup, planParts, whereNow, inOptimisation, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
+    canStartGroup, changeRole, chanceOfGroup, chanceWithheldText, planScope, joinableRows, notCountedText, terminalText, moveToGroup, planParts, whereNow, rowIssue, samePlan, snapTarget, toPlanSimInput, typeBalance, typicalNeedCents, type BalanceState, type StoredPlan,
   } from './plan';
   import { DAYS, GROUP_LETTERS, type PlanRowState } from './types';
 
@@ -135,14 +135,12 @@
   const info = $derived(
     rows.map((r) => {
       const sec = courses[r.course]?.sectionsNow.find((s) => s.id === r.sectionId);
-      return { sec, issue: sec ? rowIssue(sec, win, r.group) : null };
+      return { sec, issue: sec ? rowIssue(sec, win) : null };
     }),
   );
-  // A group row sits out of the optimisation and totals while group estimates are withheld (as if not yet bid).
-  const eligibleRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
-  const okRows = $derived(inOptimisation(eligibleRows));
+  const okRows = $derived(rows.filter((_, i) => info[i].sec && !info[i].issue));
   /** Every selected row classified (priced, loading, unpriced, no seats): what the plan may claim about the whole plan follows from it. */
-  const scope = $derived(planScope(rows.map((r, i) => ({ name: rowName(r), role: r.role, oneOf: r.oneOf, group: r.group, courseLoaded: !!courses[r.course], failed: failedCodes.includes(r.course), sec: !!info[i].sec, issue: info[i].issue, curveReady: !!curves[simKey(r)] }))));
+  const scope = $derived(planScope(rows.map((r, i) => ({ name: rowName(r), role: r.role, oneOf: r.oneOf, courseLoaded: !!courses[r.course], failed: failedCodes.includes(r.course), sec: !!info[i].sec, issue: info[i].issue, curveReady: !!curves[simKey(r)] }))));
   const notCounted = $derived(scope.uncounted.length ? notCountedText(scope.uncounted) : '');
   const excluded = $derived(info.filter((x) => x.issue).length);
   /** Must get rows (or Pick one groups) with no seats: the chance of getting everything is zero, so no percentage is shown. */
@@ -203,9 +201,6 @@
   const allSimmed = $derived(okRows.length > 0 && simItems.length === okRows.length);
   /** Every row at the course page's recommended bid for the chance you want. */
   const full = $derived(allSimmed ? bidsAtTarget(planItems, target, balanceCents ?? 0, win) : null);
-  /** Some row is bid for 2 or more people: it is left out of the plan's bids and chances, and says so. */
-  const groupRows = $derived(rows.some((r) => groupEstimatesHidden(r.group)));
-  const singleBidder = () => rows.forEach((r) => (r.group = 1));
   /** The recommended bids add up to more than the balance, so they have to be cut to fit. */
   const needsFit = $derived(!!full && balanceCents !== null && full.bidTotalCents > balanceCents);
   const result = $derived.by(() => {
@@ -457,7 +452,7 @@
     rows.forEach((r, i) => {
       const sec = info[i].sec;
       const k = simKey(r);
-      if (!sec || info[i].issue || groupEstimatesHidden(r.group) || curves[k] || inflight.has(k)) return;
+      if (!sec || info[i].issue || curves[k] || inflight.has(k)) return;
       const input = toPlanSimInput(sec, win, r.group);
       if (!input) return;
       inflight.add(k);
@@ -553,7 +548,6 @@
         section: info[i].sec!,
         role: r.role,
         pickOf: pickOf(r),
-        group: r.group,
         window: win,
         issue: info[i].issue,
         bid: result ? (result.bids[r.id] ?? null) : null,
@@ -565,7 +559,6 @@
         target,
         reason: reasonOf(r, i),
         clashes: clashLines(clashPairs, r.id),
-        groupHidden: groupEstimatesHidden(r.group),
         bids: Object.fromEntries(TARGETS.map((t) => [t, c ? suggestBid(c, t, win) : null])),
       });
     });
@@ -855,10 +848,6 @@
         <button type="button" class="btn" disabled={!reportReady} onclick={printReport}>Print</button>
         <button type="button" class="btn" disabled={!reportReady} onclick={downloadReport}>Download CSV</button>
       </div>
-      {#if groupRows}
-        <p class="warn" role="status">{GROUP_NOTICE}</p>
-        <div class="acts"><button type="button" class="btn" onclick={singleBidder}>{GROUP_NOTICE_ACTION}</button></div>
-      {/if}
     </section>
   </aside>
   {/if}

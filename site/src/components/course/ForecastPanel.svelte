@@ -4,11 +4,11 @@
   import { getContext, type Snippet } from 'svelte';
   import type { HistoryRow, Section } from '../../lib/data/types';
   import type { SimResult } from '../../lib/sim';
-  import { MAX_FRIENDS_GROUP, bidCalibrated, bidPresets, clampGroup, effectiveWindow, fromCurrent, groupEstimatesHidden, isFarWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
+  import { bidCalibrated, bidPresets, effectiveWindow, fromCurrent, isFarWindow, isLowConfidence, lowConfidence, suggestBid } from '../../lib/sim/forecast';
   import { pInAt } from '../../lib/sim';
   import { conditionalMedianCents } from '../../lib/sim/windowBids';
   import { measuredSummary } from '../../lib/data/bidLevels';
-  import { GROUP_NOTICE, GROUP_NOTICE_ACTION, styleTipLines } from './bidStyle';
+  import { styleTipLines } from './bidStyle';
   import { panelView } from './panelView';
   import { addToPlan, onPlanChange, planHas } from '../../lib/state';
   import type { ForecastCtx } from './forecast-ctx';
@@ -36,9 +36,8 @@
   const windows = $derived(full?.forecast ? openWindows.filter((w) => !!full.forecast![w]) : openWindows);
   // The window chosen in the site header (kept across sections); the open window if that has no forecast here.
   const win = $derived(effectiveWindow(ctx.chosenWindow, ctx.currentWindow, windows));
-  let group = $state(1);
-  // The group size the person asked for when it was more than the seats left (0 = none): shown in the note and used for "Other sections".
-  let tried = $state(0);
+  // The site only offers bids for one person; the engine still takes a group size.
+  const group = 1;
   // The bid style is shared with the section list, so a row and this answer never disagree. It is a key, not a level: styles can share a pooled level.
   const styleKey = $derived(ctx.style);
   type Tab = 'past' | 'others';
@@ -54,7 +53,6 @@
   const minBid = $derived(full?.minBidCents ?? null);
   const seats = $derived(seatsLeftNow(section));
   const soldOut = $derived(seats <= 0);
-  const maxGroup = $derived(Math.max(1, Math.min(MAX_FRIENDS_GROUP, seats)));
   const latest = $derived(ctx.latestFor(section.classNumber));
   const hasLast = $derived(!!latest && (latest.medianCents !== null || latest.minCents !== null));
   const tabs: { v: Tab; l: string }[] = [
@@ -113,21 +111,6 @@
     return onPlanChange(sync);
   });
 
-  function setGroup(g: number) {
-    const c = clampGroup(g);
-    tried = c > maxGroup ? c : 0;
-    group = Math.min(maxGroup, c);
-  }
-  function onGroup(e: Event) {
-    const el = e.currentTarget as HTMLInputElement;
-    setGroup(parseFloat(el.value));
-    el.value = String(group);
-  }
-  // "Other sections" is sized for the larger group asked for, if any other section has room for it.
-  const othersGroup = $derived(tried > group && othersFit ? tried : group);
-  // Whether some other section has room for the group the person tried (true while the other sections are still loading).
-  const othersFit = $derived(!ctx.bySection || [...ctx.bySection.values()].some((o) => o.classNumber !== section.classNumber && seatsLeftNow(o) >= tried));
-  const rangeText = $derived(`Max ${maxGroup}`);
   const showControls = $derived(!soldOut && windows.length > 0 && !!full?.forecast);
 </script>
 
@@ -143,17 +126,6 @@
   </div>
 {/snippet}
 
-{#snippet groupNotice()}
-  <p class="capline" role="status">{GROUP_NOTICE}</p>
-  <button type="button" class="btn" onclick={() => setGroup(1)}>{GROUP_NOTICE_ACTION}</button>
-{/snippet}
-
-{#snippet capmsg()}
-  {maxGroup} {maxGroup === 1 ? 'seat' : 'seats'} left, {tried} won't fit.
-  {#if othersFit}<button type="button" class="link" onclick={() => (picked = 'others')}>Sections with {tried}+ seats</button>{/if}
-  <button type="button" class="link" onclick={() => setGroup(group)}>Bid for {group}</button>
-{/snippet}
-
 <section class="fc" aria-label="Bid for this section">
   {#if soldOut}
     <div class="answer soldout">
@@ -167,10 +139,6 @@
       {/if}
       <button type="button" class="btn" onclick={() => (picked = 'others')}>See other sections</button>
     </div>
-  {:else if tried > 0}
-    <div class="answer">
-      <p class="capline" role="status">{@render capmsg()}</p>
-    </div>
   {:else if !windows.length}
     <p class="none">No forecast available</p>
   {:else if !ctx.bySection && !ctx.failed}
@@ -182,34 +150,30 @@
   {:else if live && res && view}
     <div class="answer" class:stale>
       <p class="win">{res.win}{#if ctx.currentUpcoming && res.win === ctx.currentWindow}&nbsp;· upcoming{/if}{#if stale}&nbsp;· <span class="upd">Updating…</span>{/if}</p>
-      {#if view.groupHidden || groupEstimatesHidden(group)}
-        {@render groupNotice()}
-      {:else}
-        <div class="bidrow">
-          <p class="headline num" aria-live="polite">
-            Bid <b>{eS(view.bidCents ?? rec)}</b>{#if res.group > 1}&nbsp;each{/if}
-          </p>
-          {#if view.lowConfidence.show}
-            <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={view.lowConfidence.lines} /></span>
-          {/if}
-        </div>
-        {#if view.overBudget}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
-        <p class="chances num">
-          <span><b>{view.chanceNow}</b> chance of a seat</span>
-          {#if view.ifFills !== null}<span><b>{view.ifFills}</b> if the section fills</span>{/if}
-          {#if view.fillChance}<span class="fills">Chance it fills: <b>{view.fillChance.text}</b><span class="fbar" aria-hidden="true"><span style:width="{view.fillChance.barPct}%"></span></span></span>{/if}
+      <div class="bidrow">
+        <p class="headline num" aria-live="polite">
+          Bid <b>{eS(view.bidCents ?? rec)}</b>
         </p>
-        {#if view.floorText}<p class="disc">{view.floorText}</p>{/if}
-        {#each view.past as r (r.styles.join())}<p class="disc">{r.text}</p>{/each}
-        {#if view.unreachedText}<p class="disc">{view.unreachedText}</p>{/if}
-        <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
-        {#if note}<p class="disc">{note}</p>{/if}
-        {#if view.minBidOnly}
-          <p class="sub num">Minimum bid {eS(view.minBidCents)}</p>
-        {:else}
-          {@render aim()}
-          {#if view.sameAsText}<p class="sub">{view.sameAsText}</p>{/if}
+        {#if view.lowConfidence.show}
+          <span class="lowc"><span class="tag">Low confidence</span><InfoTip label="Why low confidence" lines={view.lowConfidence.lines} /></span>
         {/if}
+      </div>
+      {#if view.overBudget}<p class="over">More than one term's e$125. You'd need e$ carried over.</p>{/if}
+      <p class="chances num">
+        <span><b>{view.chanceNow}</b> chance of a seat</span>
+        {#if view.ifFills !== null}<span><b>{view.ifFills}</b> if the section fills</span>{/if}
+        {#if view.fillChance}<span class="fills">Chance it fills: <b>{view.fillChance.text}</b><span class="fbar" aria-hidden="true"><span style:width="{view.fillChance.barPct}%"></span></span></span>{/if}
+      </p>
+      {#if view.floorText}<p class="disc">{view.floorText}</p>{/if}
+      {#each view.past as r (r.styles.join())}<p class="disc">{r.text}</p>{/each}
+      {#if view.unreachedText}<p class="disc">{view.unreachedText}</p>{/if}
+      <p class="disc">Estimated from past bids; not a guarantee: bids vary from window to window.</p>
+      {#if note}<p class="disc">{note}</p>{/if}
+      {#if view.minBidOnly}
+        <p class="sub num">Minimum bid {eS(view.minBidCents)}</p>
+      {:else}
+        {@render aim()}
+        {#if view.sameAsText}<p class="sub">{view.sameAsText}</p>{/if}
       {/if}
       {#if hasLast && latest}
         <p class="last num">Last window ({latest.window}): lowest {bidOrNone(latest.minCents)} · median {bidOrNone(latest.medianCents)}</p>
@@ -220,22 +184,13 @@
   {/if}
 
   {#if showControls}
-    <div class="step" role="group" aria-labelledby="gl-{uid}">
-      <span class="lab" id="gl-{uid}">People</span>
-      <div class="ctlrow">
-        <button type="button" class="btn btn-icon" aria-label="Fewer people" disabled={group <= 1} onclick={() => setGroup(group - 1)}>−</button>
-        <input class="field num" type="number" inputmode="numeric" min="1" max={maxGroup} step="1" value={group} aria-label="Number of people" aria-describedby="gr-{uid}" onchange={onGroup} />
-        <button type="button" class="btn btn-icon" aria-label="More people" disabled={group >= maxGroup} onclick={() => setGroup(group + 1)}>+</button>
-      </div>
-      <p class="range" id="gr-{uid}">{rangeText}</p>
-    </div>
     <div class="acts">
       {#if inPlan === null}
         <span class="btn btn-primary ghost" aria-hidden="true">Add to plan</span>
       {:else if inPlan}
         <a class="btn in" href="/planner" role="status">In plan ✓ · View plan</a>
       {:else}
-        <button type="button" class="btn btn-primary" onclick={() => { addToPlan(ctx.code, section.id, group); inPlan = true; }}>Add to plan</button>
+        <button type="button" class="btn btn-primary" onclick={() => { addToPlan(ctx.code, section.id, 1); inPlan = true; }}>Add to plan</button>
       {/if}
       <button type="button" class="btn" disabled={!ctx.canReport || ctx.reporting} onclick={() => ctx.downloadReport()}>Download all sections (CSV)</button>
     </div>
@@ -266,12 +221,8 @@
     {#if !ctx.bySection && !ctx.failed}
       <div class="skel" aria-busy="true" aria-label="Loading other sections"></div>
     {:else if windows.length}
-      {#if !soldOut && othersGroup >= 2}
-        <div class="answer">{@render groupNotice()}</div>
-      {:else}
-        {#if !soldOut && live && sim}{@render aim()}{/if}
-        <OtherSections {section} {win} group={soldOut ? 1 : othersGroup} {styleKey} fit={!soldOut && othersGroup > group ? othersGroup : 0} onall={() => setGroup(group)} />
-      {/if}
+      {#if !soldOut && live && sim}{@render aim()}{/if}
+      <OtherSections {section} {win} {group} {styleKey} />
     {:else}
       <p class="none">No forecast available</p>
     {/if}
@@ -289,13 +240,7 @@
     font-size: var(--fs-xs); font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--rule-strong); border-radius: 4px;
     justify-self: start;
   }
-  .step { display: grid; gap: var(--s1); min-width: 0; }
-  .ctlrow { display: flex; align-items: center; gap: var(--s1); }
-  .ctlrow .btn-icon { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; }
-  .ctlrow .field { width: 64px; min-height: 44px; padding: 8px 4px; text-align: center; }
-  .range { margin: 0; font-size: var(--fs-xs); color: var(--muted); }
   .seg > button { min-height: 44px; padding: 0 var(--s3); }
-  .link { min-height: 44px; padding: 0 var(--s1); font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; text-decoration: underline; cursor: pointer; }
   .acts { display: grid; gap: var(--s2); }
   .acts .btn { min-height: 44px; }
   .acts .btn-primary, .acts .in { min-height: 48px; font-size: var(--fs-md); }
@@ -311,7 +256,6 @@
   /* Selected chance: light tint, green edge, dark text, so "Add to plan" is the one filled button. */
   .aim > button[aria-pressed='true'] { color: var(--text); background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 600; }
   .aim > button[aria-pressed='true']:hover { background: var(--accent-soft); }
-  .capline { margin: 0; font-size: var(--fs-md); }
   .sub { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s2) var(--s4); margin: 0; }
   .figs div { display: grid; align-content: start; }

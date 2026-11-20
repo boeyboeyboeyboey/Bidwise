@@ -41,8 +41,8 @@ describe('chance you want, calibrated', () => {
 });
 
 describe('same numbers as the course page, calibrated', () => {
-  const course = simulate({ seats: s.seatsLeft, group: 2, minBidCents: s.minBidCents!, params: toSimParams(s.forecast![W]), runs: FORECAST_RUNS, seed: FORECAST_SEED });
-  const item = (key: string): PlanItem => ({ key, courseCode: key, role: 'required', curve: simulate(toPlanSimInput(s, W, 2)!) });
+  const course = simulate({ seats: s.seatsLeft, group: 1, minBidCents: s.minBidCents!, params: toSimParams(s.forecast![W]), runs: FORECAST_RUNS, seed: FORECAST_SEED });
+  const item = (key: string): PlanItem => ({ key, courseCode: key, role: 'required', curve: simulate(toPlanSimInput(s, W, 1)!) });
   it('bids carry the whole-e$ bump, and bid and chance still match the course page run', () => {
     for (const t of [0.9, 0.975, 0.99]) {
       const r = bidsAtTarget([item('a')], t, 99999);

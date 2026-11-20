@@ -78,12 +78,13 @@ describe('buildReportCsv', () => {
     expect(seatsText(7, 'live')).toBe('7');
   });
   it('adds the plan columns and totals for a planner report', () => {
-    const r = row({ priority: 'Must get', group: 2, planBidCents: 1100, planChance: '86%' });
+    const r = row({ priority: 'Must get', planBidCents: 1100, planChance: '86%' });
     const csv = buildReportCsv([r], { ...meta, plan: true, totals: planTotals({ balanceCents: 12500, bidTotalCents: 1100, leftCents: 11400, pAll: 0.86, needCents: null }) });
     const lines = csv.split('\r\n');
-    expect(lines[6]).toContain('Priority,Group size');
+    expect(lines[6]).toContain('Priority,');
+    expect(lines[6]).not.toContain('Group size');
     expect(lines[6]).toContain('Plan bid (e$),Chance at plan bid');
-    expect(lines[7]).toContain('Must get,2,');
+    expect(lines[7]).toContain('Must get,');
     expect(lines[7]).toContain('11.00,86%');
     expect(lines).toContain('Balance (e$),125.00');
     expect(lines).toContain('Left after bids (e$),114.00');
@@ -143,7 +144,7 @@ describe('helpers', () => {
 });
 
 describe('planner rows', () => {
-  const base = { code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', group: 1, window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: '', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 } };
+  const base = { code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: '', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 } };
   it('plain bid has no note and shows the plan figures', () => {
     const r = planReportRow(base);
     expect(r.note).toBe('');
@@ -177,7 +178,7 @@ describe('planner rows', () => {
 });
 
 describe('plan report extras', () => {
-  const base = { code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', group: 1, window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 } };
+  const base = { code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 } };
   it('carries the reason, the chance as a number and the clash into the report row', () => {
     const r = planReportRow({ ...base, clashes: ['Clashes with IS469 G2 (Mon 12:00–15:15)'] });
     expect(r.reason).toBe('Why');
@@ -231,29 +232,29 @@ describe('bidReason', () => {
 });
 
 describe('plan report with rows that have no price', () => {
-  const mk = (over: object) => ({ code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', group: 1, window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 }, ...over });
+  const mk = (over: object) => ({ code: 'COR3304', title: 'T', section: section(), role: 'required' as const, pickOf: '', window: 'Round 1B Window 1', issue: null, bid: 1200, p: 0.9, fullBid: 1200, covered: '', none: false, capMode: false, target: 0.9, reason: 'Why', clashes: [] as string[], bids: { 0.8: 1050, 0.9: 1200, 0.95: 1500 }, ...over });
   const meta = { title: 'Bidwise bid report', generatedAt: '2026-11-08 09:20 SGT', plan: true };
-  it('a mixed plan has no left total, no overall chance, a Not counted line with the reason, and no bid figures for the group row', () => {
+  it('a mixed plan has no left total, no overall chance, a Not counted line with the reason, and no bid figures for the unpriced row', () => {
     const a = planReportRow(mk({}));
-    const b = planReportRow(mk({ code: 'IS215', group: 2, groupHidden: true }));
-    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: null, pAll: null, needCents: null, notCounted: [{ name: 'IS215 G1', reason: 'Group estimates are being revised.' }] });
+    const b = planReportRow(mk({ code: 'IS215', unpricedReason: 'Section no longer offered' }));
+    const totals = planTotals({ balanceCents: 12500, bidTotalCents: 1200, leftCents: null, pAll: null, needCents: null, notCounted: [{ name: 'IS215 G1', reason: 'Section no longer offered' }] });
     expect(totals.find((t) => t.label === 'Chance of all must-get courses')).toBeUndefined();
     expect(totals.find((t) => t.label.startsWith('Left'))).toBeUndefined();
-    expect(totals).toContainEqual({ label: 'Not counted', value: 'IS215 G1 (Group estimates are being revised)' });
+    expect(totals).toContainEqual({ label: 'Not counted', value: 'IS215 G1 (Section no longer offered)' });
     expect(totals).toContainEqual({ label: 'Plan bids total, priced rows only (e$)', value: '12.00' });
-    expect(b.reason).toBe('Group estimates are being revised.');
+    expect(b.reason).toBe('Section no longer offered');
     expect(b.planBidCents).toBeNull();
     expect(b.planChance).toBe('');
     expect(b.planP).toBeNull();
     expect(Object.values(b.bids).every((v) => v === null)).toBe(true);
     const lines = buildReportCsv([a, b], { ...meta, totals }).split('\r\n');
-    const bLine = lines.find((l) => l.includes('Group estimates are being revised.'))!;
+    const bLine = lines.find((l) => l.includes('Section no longer offered'))!;
     expect(bLine).not.toMatch(/12\.00|10\.50|15\.00/);
-    expect(lines.some((l) => l.startsWith('Not counted,IS215 G1 (Group estimates are being revised)'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('Not counted,IS215 G1 (Section no longer offered)'))).toBe(true);
     expect(lines.some((l) => l.includes('Chance of all') || l.includes('Left after bids'))).toBe(false);
   });
-  it('a row with a seat issue and a group size shows the issue, not the group notice, and exports no bid figures', () => {
-    const b = planReportRow(mk({ group: 2, groupHidden: true, issue: 'nofc' }));
+  it('a row with a seat issue shows the issue and exports no bid figures', () => {
+    const b = planReportRow(mk({ issue: 'nofc' }));
     expect(b.reason).toBe('No forecast');
     expect(b.planBidCents).toBeNull();
     expect(Object.values(b.bids).every((v) => v === null)).toBe(true);

@@ -5,14 +5,13 @@ import { bossCodeOf } from '../../lib/data/bossCode';
 import { isLikelyFull, seatsLeftNow, seatsOf } from '../../lib/data/seats';
 import type { SimInput } from '../../lib/sim';
 import { pInAt } from '../../lib/sim';
-import { FORECAST_RUNS, FORECAST_SEED, MAX_FRIENDS_GROUP, TARGETS, clampGroup, groupEstimatesHidden, toSimParams } from '../../lib/sim/forecast';
+import { FORECAST_RUNS, FORECAST_SEED, TARGETS, toSimParams } from '../../lib/sim/forecast';
 import { DEFAULT_TARGET, bidCalibrated, styleName, suggestBid, targetFromStored, targetToStored } from '../../lib/sim/presets';
 import type { PlanItem, PlanResult, Role } from '../../lib/sim/planner';
 import { dayText } from '../course/history';
 import { formatSlot } from '../../lib/format/slot';
 import { eS } from '../course/fmt';
 import { titleName } from '../../lib/data/format';
-import { GROUP_NOTICE } from '../course/bidStyle';
 import { GROUP_LETTERS, isSlot, slotOf, startText, type PlanRowState } from './types';
 
 /** Same runs and seed as the course page, so a section shows the same bid and chance on both pages. */
@@ -21,19 +20,15 @@ export const PLAN_SEED = FORECAST_SEED;
 /** Upper bound for a typed balance: a typo like 1250000 should not silently run. */
 export const MAX_BALANCE_CENTS = 1_000_000;
 
-export type RowIssue = 'nofc' | 'full' | 'estfull' | 'group';
+export type RowIssue = 'nofc' | 'full' | 'estfull';
 
 /** Why a section cannot be simulated in this window, or null when it can. */
-export function rowIssue(section: Section, window: string, group: number): RowIssue | null {
+export function rowIssue(section: Section, window: string): RowIssue | null {
   if (isLikelyFull(section)) return 'estfull';
   if (seatsLeftNow(section) <= 0) return 'full';
   if (!section.forecast?.[window] || section.minBidCents === undefined) return 'nofc';
-  if (group > seatsLeftNow(section)) return 'group';
   return null;
 }
-
-/** The rows that take part in the plan's optimisation and totals: a group row (2+ people) sits out while group estimates are withheld. */
-export const inOptimisation = <T extends { group: number }>(rows: readonly T[]): T[] => rows.filter((r) => !groupEstimatesHidden(r.group));
 
 /** "A", "A and B", "A, B and C". */
 export const joinNames = (names: readonly string[]): string => (names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -50,7 +45,6 @@ export interface ScopeRowInput {
   name: string;
   role: Role;
   oneOf?: string;
-  group: number;
   /** The course file is in. */
   courseLoaded: boolean;
   /** The course file could not be fetched. */
@@ -67,13 +61,12 @@ export interface NamedReason {
   reason: string;
 }
 
-/** Pure. Where one row stands: the first fact that applies, hard facts (a seat issue) before the group notice. */
+/** Pure. Where one row stands: the first fact that applies. */
 export function classifyRow(r: ScopeRowInput): { state: ScopeState; reason: string } {
   if (!r.courseLoaded) return r.failed ? { state: 'unpriced', reason: FAILED_REASON } : { state: 'loading', reason: LOADING_REASON };
   if (!r.sec) return { state: 'unpriced', reason: GONE_REASON };
   if (r.issue === 'full') return { state: 'infeasible', reason: ISSUE_TEXT.full };
   if (r.issue) return { state: 'unpriced', reason: ISSUE_TEXT[r.issue] };
-  if (groupEstimatesHidden(r.group)) return { state: 'unpriced', reason: GROUP_NOTICE };
   if (!r.curveReady) return { state: 'loading', reason: LOADING_REASON };
   return { state: 'priced', reason: '' };
 }
@@ -157,7 +150,6 @@ export const ISSUE_TEXT: Record<RowIssue, string> = {
   nofc: 'No forecast',
   full: 'No seats left',
   estfull: 'Likely full (est.)',
-  group: 'Group too big',
 };
 
 /** Names of the Must get rows whose chosen section has no seats at all (Pick one and Nice to have rows never block the plan). */
@@ -170,7 +162,7 @@ export const blockedText = (labels: string[]): string => labels.map((l) => `${l}
 
 /** Simulator input for one row: seats = seats left now, forecast parameters of the chosen window. */
 export function toPlanSimInput(section: Section, window: string, group: number): SimInput | null {
-  if (rowIssue(section, window, group)) return null;
+  if (rowIssue(section, window)) return null;
   return {
     seats: seatsLeftNow(section),
     group,
@@ -306,19 +298,6 @@ export function sectionOption(section: Section): string {
   return [section.section, formatSlot(section.meetings) || 'Time not set', titleName(section.instructor), full].filter(Boolean).join(' · ');
 }
 
-/**
- * Note under a row's group-size stepper, or ''. Shown whenever the "+" button is disabled because the group is as big as
- * the section allows: because of the seats left ("Only 1 seat left"), or because of the usual maximum.
- * With no seats left it is '': the row already says "No seats left", and "Only 0 seats left" would be noise.
- */
-export function groupLimitNote(seatsLeft: number, group: number, seatsText: string, maxFriends: number = MAX_FRIENDS_GROUP): string {
-  if (seatsLeft <= 0) return '';
-  const max = Math.max(1, Math.min(maxFriends, seatsLeft));
-  if (group < max) return '';
-  if (seatsLeft < maxFriends) return `Only ${seatsText} left`;
-  return `Max group ${maxFriends}`;
-}
-
 /** First section with seats that is not already in the plan and not in an avoided slot. */
 export function defaultSection(sections: Section[], taken: string[], avoid: string[]): Section | undefined {
   const free = sections.filter((s) => !taken.includes(s.id));
@@ -360,7 +339,8 @@ export function decodePlan(raw: unknown): StoredPlan | null {
       r.push({
         c: x.c,
         i: typeof x.i === 'string' ? x.i : '',
-        g: typeof x.g === 'number' ? clampGroup(x.g) : 1,
+        // The site bids for one person only: a stored group size (old plan or link) loads as 1.
+        g: 1,
         o: x.o === 'oneOf' || x.o === 'optional' ? x.o : 'required',
         l: GROUP_LETTERS.some((g) => g === x.l) ? x.l : 'A',
       });
@@ -791,4 +771,3 @@ export function decodeShare(hash: string): StoredPlan | null {
   }
 }
 
-export { MAX_FRIENDS_GROUP };

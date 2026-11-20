@@ -165,7 +165,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>Each style bids at a set point in the forecast’s range, higher for Safe than for Cheap. That distance is set separately for each round, from that round’s results in two recent terms, because rounds differ: Rounds 2 and 2A, for example, need a bid much further up the range to win as often.</li>
         <li>Next to each style, the course page shows how often its bid matched or beat the lowest winning bid in past terms on similar sections (same round, and similar forecast price where there were enough past sections, otherwise all price ranges in this round), and says so where the past results fall clearly short of the aim.</li>
         <li>The headline chance also counts the times the section doesn’t fill, so it is usually higher than the “if it fills” figure.</li>
-        <li>Groups: every member needs a seat</li>
       </ul>
     </div>
     ) : (
@@ -177,7 +176,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>In {rateTerms}, on sections that filled, {styles.map((r, i) => `${r.label}${i === 0 ? ' matched or beat the lowest winning bid in' : ''} ${wonFilledPct(r)} (${r.wonFilledText})`).join(', ').replace(/, ([^,]*)$/, ' and $1')}. Over all sections: {styles.map((r) => `${r.label} ${wonAllPct(r)}`).join(', ')}.</li>
         <li>That is what they did, not a promise: the forecast for {styleTerm} was made without its results, but the style levels were chosen using that term's results, so a new term may differ</li>
         <li>Safe can show a high chance for a section that rarely fills: it also covers the case where the section fills unexpectedly</li>
-        <li>Groups: every member needs a seat</li>
       </ul>
     </div>
     )}
@@ -190,7 +188,6 @@ const bt = fm.windows.map((w) => ({ w, ...fm.byWindow[w] }));
         <li>If fewer students bid than there are seats, the minimum bid gets one; otherwise the lowest bid that got a seat is the bid needed</li>
         <li>You pay what you bid</li>
         <li>e$X won a seat in about 90 of 100 replays</li>
-        <li>Groups: every member needs a seat</li>
       </ul>
     </div>
     )}

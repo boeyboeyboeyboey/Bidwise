@@ -12,6 +12,7 @@
   import SeatRing from '../course/SeatRing.svelte';
   import { FAILED_REASON, ISSUE_TEXT, belowStyle, chanceTint, groupLimitNote, hiddenSections, sectionOption, slotsOf, type RowIssue } from './plan';
   import type { PlanRowState } from './types';
+  import { codeLabel } from '../../lib/data/bossCode';
   import InfoTip from '../ui/InfoTip.svelte';
 
   let {
@@ -71,13 +72,15 @@
       { v: 'optional', l: 'Nice to have' },
     ] as { v: Role; l: string }[]).filter((r) => r.v !== 'oneOf' || canPick || row.role === 'oneOf'),
   );
+  /** The course as the student sees it (BOSS code, tagged "(SMU-X)" for a split course); the site code stays in row.course. */
+  const name = $derived(codeLabel(row.course, course?.bossCode));
 </script>
 
 <li class="row" class:grouped class:bonus={row.role === 'optional'} data-row-id={row.id}>
   <div class="line">
-    <div class="id"><b class="code">{row.course}</b>{#if hidden}<span class="lab hid">{hidden} {hidden === 1 ? 'section' : 'sections'} hidden</span>{/if}</div>
+    <div class="id"><b class="code">{name}</b>{#if hidden}<span class="lab hid">{hidden} {hidden === 1 ? 'section' : 'sections'} hidden</span>{/if}</div>
     <div class="secwrap">
-      <select class="field sec" aria-label="{row.course} section" disabled={!course} bind:value={row.sectionId}>
+      <select class="field sec" aria-label="{name} section" disabled={!course} bind:value={row.sectionId}>
         {#if !course}<option value={row.sectionId}>{failed ? "Couldn't load" : 'Loading'}</option>{/if}
         {#each sections as s (s.id)}
           <option value={s.id} disabled={seatsLeftNow(s) <= 0 && !isLikelyFull(s) && s.id !== row.sectionId}>{sectionOption(s)}</option>
@@ -87,21 +90,21 @@
         <span class="meta" title={seatLabel(sec)}><SeatRing left={seatsLeftNow(sec)} group={row.group} approx={seatsOf(sec).source === 'approx'} /><span class="seats num">{seatLabel(sec)}</span></span>
       {/if}
     </div>
-    <div class="seg role" role="radiogroup" aria-label="How much you need {row.course}">
+    <div class="seg role" role="radiogroup" aria-label="How much you need {name}">
       {#each roles as r (r.v)}
         <button type="button" role="radio" aria-checked={row.role === r.v} disabled={r.v === 'oneOf' && !canStart && row.role !== 'oneOf'} aria-describedby={r.v === 'oneOf' && !canStart && row.role !== 'oneOf' ? 'group-limit-note' : undefined} onclick={() => onrole(r.v)}>{r.l}</button>
       {/each}
     </div>
-    <button type="button" class="btn btn-icon rm" aria-label="Remove {row.course}" onclick={onremove}>
+    <button type="button" class="btn btn-icon rm" aria-label="Remove {name}" onclick={onremove}>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z" /></svg>
     </button>
     <div class="l2">
-    <div class="step" role="group" aria-label="{row.course} group size">
+    <div class="step" role="group" aria-label="{name} group size">
       <span class="stl"><span class="lab">Bidding group size</span><InfoTip label="About bidding group size" lines={['Friends bidding for the same section together.', 'Everyone in the group needs a seat.']} /></span>
       <div class="ctl">
-        <button type="button" class="btn btn-icon" aria-label="Fewer people for {row.course}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
+        <button type="button" class="btn btn-icon" aria-label="Fewer people for {name}" disabled={row.group <= 1} onclick={() => row.group--}>−</button>
         <output class="num" aria-label="{row.group} {row.group === 1 ? 'person' : 'people'}">{row.group}</output>
-        <button type="button" class="btn btn-icon" aria-label="More people for {row.course}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
+        <button type="button" class="btn btn-icon" aria-label="More people for {name}" aria-describedby={limitNote ? `lim-${row.id}` : undefined} disabled={row.group >= maxGroup} onclick={() => row.group++}>+</button>
         {#if limitNote}<span class="lab left" id="lim-{row.id}">{limitNote}</span>{/if}
       </div>
     </div>

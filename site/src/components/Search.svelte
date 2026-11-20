@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SearchEntry } from '../lib/data/types';
   import { flatText, isExactCode, searchCourses } from '../lib/search/courseSearch';
+  import { bossCodeOf } from '../lib/data/bossCode';
 
   /** `suffix` is appended to every result link (e.g. '?mode=swap' to open course pages in Swap mode). */
   let { index, suffix = '' }: { index: SearchEntry[]; suffix?: string } = $props();
@@ -70,10 +71,10 @@
       {#if found.close}<p class="close" aria-live="polite">No exact match. Close matches:</p>{/if}
       {#if results.length}
       <ul class="list" id="q-list" role="listbox" aria-label="Matching courses">
-        {#each results as [code, title, n], i (code)}
+        {#each results as [code, title, n, boss], i (code)}
           <li id={`q-opt-${i}`} role="option" aria-selected={i === active} class:active={i === active}>
             <a class="row-link" href={`/course/${code}${suffix}`} tabindex="-1">
-              <span class="code">{code}</span>
+              <span class="code">{bossCodeOf(code, boss)}</span>
               <span class="title">{title}</span>
               <span class="count">{n > 0 ? `${n} ${n === 1 ? 'section' : 'sections'}` : 'Not offered this term'}</span>
               <span class="open">Open <span aria-hidden="true">›</span></span>

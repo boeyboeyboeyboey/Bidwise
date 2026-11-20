@@ -20,6 +20,7 @@
   import { valueChoices } from './builder/query';
   import { nicknamesOf } from '../../lib/search/courseSearch';
   import { codeFromNickname } from './courses';
+  import { codeLabel, siteCodeFromLabel } from '../../lib/data/bossCode';
   import {
     CHART_LABEL, CHART_TYPES, MAX_LINES, NARROW_KEYS, NUMBER_X_IDS, X_IDS, Y_IDS, decodeSpec, defaultSpec, emptyLine, encodeSpec, normalizeSpec,
     type ChartType, type NarrowKey,
@@ -110,6 +111,8 @@
   });
 
   const codes = $derived(new Set(man?.codes ?? []));
+  /** What is typed in a course box is a shown label ("COR-STAT1202 (SMU-X)") or a code; the line keeps the site code, which is never shown. */
+  const courseOf = (text: string) => siteCodeFromLabel(text) ?? text.trim().toUpperCase();
   const labels = $derived(lineLabels(plain.lines));
   const result = $derived(wanted && rows.length ? runLines(rows, plain) : null);
   const hasPoints = $derived(!!result && result.points.length > 0);
@@ -242,7 +245,7 @@
             <i class="chip" style:background={lineColor(i)} aria-hidden="true"></i>
             <input
               class="field course" type="text" list="bld-codes" placeholder="Course code" aria-label={`Line ${i + 1} course`}
-              autocomplete="off" autocapitalize="characters" spellcheck="false" value={l.course} oninput={(e) => setCourse(i, val(e).trim().toUpperCase())}
+              autocomplete="off" autocapitalize="characters" spellcheck="false" value={codeLabel(l.course)} oninput={(e) => setCourse(i, courseOf(val(e)))}
               onchange={(e) => { const c = man && !codes.has(l.course) ? codeFromNickname(codes, val(e)) : null; if (c) setCourse(i, c); }}
             />
             <button type="button" class="x" aria-label={`Remove line ${i + 1}`} onclick={() => removeLine(i)}>×</button>
@@ -251,7 +254,7 @@
             {#if man && !codes.has(l.course)}
               <p class="mu small">No such course</p>
             {:else}
-              {#if labels[i] !== l.course}<p class="lab" title={labels[i]}>{labels[i]}</p>{/if}
+              {#if labels[i] !== codeLabel(l.course)}<p class="lab" title={labels[i]}>{labels[i]}</p>{/if}
               {#if choices[i]}
                 <div class="narrow">
                   {#each NARROW_KEYS as k, ki}
@@ -268,7 +271,7 @@
       {/each}
     </ul>
     <!-- Nicknames as option labels, so typing "WAD" suggests IS113 (browsers match the label too). -->
-    <datalist id="bld-codes">{#each man?.codes ?? [] as c}<option value={c} label={nicknamesOf(c).join(', ') || undefined}></option>{/each}</datalist>
+    <datalist id="bld-codes">{#each man?.codes ?? [] as c}<option value={codeLabel(c)} label={nicknamesOf(c).join(', ') || undefined}></option>{/each}</datalist>
     <button type="button" class="btn add" disabled={plain.lines.length >= MAX_LINES} onclick={addLine}>+ Add line</button>
 
     <div class="more">

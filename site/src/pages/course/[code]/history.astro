@@ -2,7 +2,7 @@
 import Base from '../../../layouts/Base.astro';
 import HistoryView from '../../../components/course/HistoryView.svelte';
 import TermSections from '../../../components/course/TermSections.svelte';
-import { getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
+import { bossCodeOf, codeLabel, getCourseIndex, getWindow, windowLabel } from '../../../lib/data';
 import { getCourse } from '../../../lib/data/server';
 import { historySeed } from '../../../components/course/history';
 import { courseDataset, courseDescription, courseFacts } from '../../../lib/courseFacts';
@@ -13,17 +13,19 @@ export function getStaticPaths() {
 
 const course = getCourse(Astro.params.code!)!;
 const facts = courseFacts(course.history);
-const description = courseDescription(course.code, course.title, facts, 'history');
+// Pages show the BOSS code; a split course (COR-STAT1202-X) is told apart by its title.
+const shownCode = bossCodeOf(course.code, course.bossCode);
+const description = courseDescription(shownCode, course.title, facts, 'history');
 const pageUrl = new URL(`/course/${course.code}/history/`, Astro.site).href;
 const instructor = course.sectionsNow[0]?.instructor ?? null;
 const windowName = windowLabel(getWindow());
 const seed = historySeed(course.history, instructor, windowName) ?? undefined;
 ---
-<Base title={`${course.code} past results · Bidwise`} description={description} jsonLd={facts ? [courseDataset(course.code, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
-  <a class="back" href={`/course/${course.code}`}>‹ {course.code}</a>
+<Base title={`${shownCode !== course.code ? `${shownCode} ${course.title}` : shownCode} past results · Bidwise`} description={description} jsonLd={facts ? [courseDataset(shownCode, course.title, description, pageUrl, facts, `${Astro.site}`)] : []} active="search">
+  <a class="back" href={`/course/${course.code}`}>‹ {codeLabel(course.code, course.bossCode)}</a>
   <header>
     <h1>Past results</h1>
-    <p>{course.code} {course.title}</p>
+    <p>{shownCode} {course.title}</p>
     <a class="jump" href="#by-term">By term ↓</a>
   </header>
   <HistoryView client:load code={course.code} {windowName} {seed} {instructor} />

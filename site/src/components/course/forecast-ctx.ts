@@ -4,6 +4,8 @@ import type { DropChance, ForecastMeta, HistoryRow, Section } from '../../lib/da
 export interface ForecastCtx {
   /** Course code, e.g. "LGST201". */
   readonly code: string;
+  /** The BOSS code, which is what a student sees; differs from `code` for a split course. */
+  readonly bossCode: string;
   readonly meta: ForecastMeta;
   /** Label of the current window: the one open now, or the next to open between windows. */
   readonly currentWindow: string;

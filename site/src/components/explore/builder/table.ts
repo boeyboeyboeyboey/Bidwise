@@ -1,4 +1,5 @@
 // The merged result as a table (shown for screen readers) and as CSV. CSV is the plotted points only, never source rows.
+import { codeLabel } from '../../../lib/data/bossCode';
 import { fieldById } from './fields';
 import { fmtY, xLabel, yLabel } from './plan';
 import { xText } from './plot';
@@ -21,7 +22,7 @@ export function resultTable(spec: BuilderSpec, result: QueryResult, cap = Infini
   const heads = ['Line', ...(raw ? ['Section'] : []), xLabel(spec), yLabel(spec), ...(raw ? [] : ['n'])];
   const body = result.points.slice(0, cap).map((p) => [
     p.series ?? '',
-    ...(raw ? [p.row ? `${p.row.term} ${p.row.code} ${p.row.section}` : ''] : []),
+    ...(raw ? [p.row ? `${p.row.term} ${codeLabel(p.row.code)} ${p.row.section}` : ''] : []),
     xText(p, xf),
     fmtY(spec, p.y),
     ...(raw ? [] : [String(p.n)]),

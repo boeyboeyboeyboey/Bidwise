@@ -5,7 +5,7 @@
   import { dropLine } from './dropText';
 
   const ctx = getContext<ForecastCtx>('forecast');
-  const line = $derived(dropLine(ctx.drops, ctx.code));
+  const line = $derived(dropLine(ctx.drops, ctx.bossCode));
 </script>
 
 {#if line}

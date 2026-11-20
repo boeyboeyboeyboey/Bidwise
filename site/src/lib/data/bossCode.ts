@@ -27,3 +27,38 @@ export function splitSibling(code: string): string | null {
 export function toBossCodes(codes: Iterable<string>): string[] {
   return [...new Set([...codes].map((c) => bossCodeOf(c)))];
 }
+
+// ---- Showing a code. The site code of a split course ("COR-STAT1202-X") is not a BOSS code and is never shown: pages show the BOSS code and tell the two courses apart by title.
+
+/** Short tag of each split course, for the places that show a code with no title next to it. */
+export const SPLIT_TAGS: Readonly<Record<string, string>> = {
+  'COR-STAT1202-X': 'SMU-X',
+};
+
+/** The tag of a split course ("SMU-X"); null for a course that is not a split. */
+export function splitTag(code: string, bossCode?: string | null): string | null {
+  const boss = bossCodeOf(code, bossCode);
+  if (boss === code) return null;
+  return SPLIT_TAGS[code] ?? (code.startsWith(`${boss}-`) ? code.slice(boss.length + 1) : null);
+}
+
+/** A code as shown where no title sits beside it: the BOSS code, with the tag after it for a split course ("COR-STAT1202 (SMU-X)"). */
+export function codeLabel(code: string, bossCode?: string | null): string {
+  const boss = bossCodeOf(code, bossCode);
+  const tag = splitTag(code, bossCode);
+  return tag ? `${boss} (${tag})` : boss;
+}
+
+/** A code for a downloaded file name: the BOSS code, then the tag for a split course ("COR-STAT1202-SMU-X"). */
+export function codeSlug(code: string, bossCode?: string | null): string {
+  const boss = bossCodeOf(code, bossCode);
+  const tag = splitTag(code, bossCode);
+  return tag ? `${boss}-${tag}` : boss;
+}
+
+/** The site code a shown label stands for ("COR-STAT1202 (SMU-X)" -> "COR-STAT1202-X", case and spacing ignored); null when the text is not a split course's label. */
+export function siteCodeFromLabel(text: string): string | null {
+  const t = text.replace(/\s+/g, '').toUpperCase();
+  for (const site of Object.keys(SPLIT_TAGS)) if (codeLabel(site).replace(/\s+/g, '').toUpperCase() === t) return site;
+  return null;
+}

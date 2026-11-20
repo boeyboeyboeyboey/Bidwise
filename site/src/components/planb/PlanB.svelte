@@ -4,7 +4,7 @@
   import { candidates, deriveBlocks, findDegree, pickViews, withoutCoveredDegree } from '../../lib/gradreq';
   import type { Block, GradIndex, GradView, LoadedView, OfferedCourse, Requisites } from '../../lib/gradreq';
   import { fetchIndex } from '../../lib/data/client';
-  import { bossCodeOf, toBossCodes } from '../../lib/data/bossCode';
+  import { bossCodeOf, codeLabel, toBossCodes } from '../../lib/data/bossCode';
   import { flatText, searchCourses } from '../../lib/search/courseSearch';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { liveWindow } from '../../lib/data/window';
@@ -391,7 +391,7 @@
   <li class="cand">
     <SectionRow row={r} bidLabel={bidLabel} />
     {#if r.note}<small class="tag">{r.note}</small>{/if}
-    <button type="button" class="btn clr" onclick={() => markCleared(r.code)}>I've cleared this<span class="sr"> ({r.code})</span></button>
+    <button type="button" class="btn clr" onclick={() => markCleared(r.code)}>I've cleared this<span class="sr"> ({codeLabel(r.code)})</span></button>
   </li>
 {/snippet}
 
@@ -498,7 +498,7 @@
               <ul class="matches">
                 {#if matchSet.close}<li class="hint">No exact match. Close matches:</li>{/if}
                 {#each matches as [code, title] (code)}
-                  <li><button type="button" onclick={() => addDone(code)}><b>{code}</b> <span>{title}</span></button></li>
+                  <li><button type="button" onclick={() => addDone(code)}><b>{bossCodeOf(code)}</b> <span>{title}</span></button></li>
                 {/each}
               </ul>
             {/if}
@@ -506,7 +506,7 @@
           {#if completed.length}
             <ul class="picks">
               {#each completed as code (code)}
-                <li><button type="button" class="pick-chip" onclick={() => removeDone(code)} aria-label={`Remove ${code}`}>{code}<span aria-hidden="true">×</span></button></li>
+                <li><button type="button" class="pick-chip" onclick={() => removeDone(code)} aria-label={`Remove ${codeLabel(code)}`}>{codeLabel(code)}<span aria-hidden="true">×</span></button></li>
               {/each}
             </ul>
           {/if}
@@ -541,7 +541,7 @@
       {#if error}<p id="pb-err" class="small err" role="alert">{error}</p>{/if}
       <div class="undo" role="status">
         {#if lastCleared && completed.includes(lastCleared)}
-          <span>Cleared {lastCleared}.</span>
+          <span>Cleared {codeLabel(lastCleared)}.</span>
           <button type="button" class="undo-btn" bind:this={undoEl} onclick={() => undoCleared(lastCleared as string)}>Undo</button>
         {/if}
       </div>
@@ -617,7 +617,7 @@
                             <button type="button" class="btn more" aria-expanded={!!expanded[k]} onclick={() => toggle(k)}>{expanded[k] ? `Show top ${TOP_PER_BLOCK}` : `Show all ${rows.length}`}</button>
                           {/if}
                         {/if}
-                        {#if also.length}<p class="small">Also counts: {also.join(', ')}</p>{/if}
+                        {#if also.length}<p class="small">Also counts: {also.map((c) => codeLabel(c)).join(', ')}</p>{/if}
                       {/if}
                     </div>
                   {/each}

@@ -3,6 +3,7 @@
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { fetchIndex } from '../../lib/data/client';
   import { searchCourses } from '../../lib/search/courseSearch';
+  import { bossCodeOf } from '../../lib/data/bossCode';
 
   let { onadd, inPlan = [], label = 'Add course', placeholder = 'Add course', dropUp = false, prominent = false }: {
     /** byKey: picked with Enter, so the caller keeps the cursor in the box. */
@@ -45,7 +46,7 @@
       {#if found.close}<li class="hint">No exact match. Close matches:</li>{/if}
       {#each results as c (c.code)}
         {@const has = inPlan.includes(c.code)}
-        <li><button type="button" disabled={has} onclick={() => pick(c.code)}><b>{c.code}</b> <span>{c.title}</span><i class="num">{has ? 'In plan' : `${c.sectionCount} ${c.sectionCount === 1 ? 'section' : 'sections'}`}</i></button></li>
+        <li><button type="button" disabled={has} onclick={() => pick(c.code)}><b>{bossCodeOf(c.code, c.bossCode)}</b> <span>{c.title}</span><i class="num">{has ? 'In plan' : `${c.sectionCount} ${c.sectionCount === 1 ? 'section' : 'sections'}`}</i></button></li>
       {/each}
     </ul>
   {/if}

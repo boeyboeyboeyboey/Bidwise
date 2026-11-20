@@ -43,7 +43,7 @@ export function getCourseIndex(): CourseIndexEntry[] {
 export function getSearchIndex(): SearchEntry[] {
   return getCourseIndex()
     .sort((a, b) => Number(b.offeredNow) - Number(a.offeredNow) || a.code.localeCompare(b.code))
-    .map((c) => [c.code, c.title, c.sectionCount]);
+    .map((c): SearchEntry => (c.bossCode && c.bossCode !== c.code ? [c.code, c.title, c.sectionCount, c.bossCode] : [c.code, c.title, c.sectionCount]));
 }
 
 /** Same term number one year earlier, e.g. "2026-27 Term 2" -> "2025-26 Term 2". */

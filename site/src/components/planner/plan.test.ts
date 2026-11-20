@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Section } from '../../lib/data/types';
+import { codeLabel } from '../../lib/data/bossCode';
 import { orderSections } from '../course/sections';
 import { getBalanceText, setBalanceText } from '../../lib/state';
 import { pInAt, recommendBid, simulate } from '../../lib/sim';
@@ -155,6 +156,11 @@ describe('duplicateCourses', () => {
     expect(duplicateCourses([r('COR-STAT1202', 'required'), r('COR-STAT1202-X', 'required')])).toEqual(['COR-STAT1202 / COR-STAT1202-X']);
     expect(duplicateCourses([r('COR-STAT1202', 'oneOf'), r('COR-STAT1202-X', 'oneOf')])).toEqual([]);
     expect(duplicateCourses([r('COR-STAT1202', 'oneOf'), r('COR-STAT1202-X', 'oneOf', 'B')])).toEqual(['COR-STAT1202 / COR-STAT1202-X']);
+  });
+  it('names the two courses by what is shown, never by the site code', () => {
+    const dup = duplicateCourses([r('COR-STAT1202', 'required'), r('COR-STAT1202-X', 'required')], undefined, (c) => codeLabel(c));
+    expect(dup).toEqual(['COR-STAT1202 / COR-STAT1202 (SMU-X)']);
+    expect(courseLabel(['COR-STAT1202-X', 'IS215', 'IS215'], (c) => codeLabel(c))).toBe('COR-STAT1202 (SMU-X) / IS215');
   });
   it('takes the BOSS code from the data when given', () => {
     const bossOf = (c: string) => (c === 'A-SPLIT' ? 'A' : c);

@@ -23,7 +23,8 @@ export interface CourseIndexEntry {
 }
 
 /** Search payload sent to the browser: [code, title, sections offered now]. */
-export type SearchEntry = [code: string, title: string, sections: number];
+/** The BOSS code is set only for a split course (the site code is not a BOSS code and is not shown). */
+export type SearchEntry = [code: string, title: string, sections: number, bossCode?: string];
 
 export interface Meeting {
   day: string;

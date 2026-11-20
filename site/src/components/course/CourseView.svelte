@@ -16,6 +16,7 @@
   import { eS, pct } from './fmt';
   import { NO_BIDS, buildReportCsv, courseNote, reportFileName, sectionFacts, sgtStamp, type ReportRow } from '../../lib/report/csv';
   import { downloadCsv } from '../../lib/report/download';
+  import { bossCodeOf, codeSlug } from '../../lib/data/bossCode';
   import { simSection } from './sectionSim';
   import { rowBidOf, seedUsable, type RowSeed } from './rowSeed';
   import SectionCard from './SectionCard.svelte';
@@ -57,6 +58,7 @@
 
   setContext<ForecastCtx>('forecast', {
     get code() { return code; },
+    get bossCode() { return bossCodeOf(code, bossCode); },
     get meta() { return forecastMeta; },
     get currentWindow() { return currentName; },
     get buildWindow() { return windowName; },
@@ -300,7 +302,7 @@
         }),
       );
       const now = new Date();
-      downloadCsv(reportFileName(code, now), buildReportCsv(out, { title: `Bidwise bid report: ${code}${title ? ` ${title}` : ''}`, generatedAt: sgtStamp(now), plan: false }));
+      downloadCsv(reportFileName(codeSlug(code, bossCode), now), buildReportCsv(out, { title: `Bidwise bid report: ${bossCodeOf(code, bossCode)}${title ? ` ${title}` : ''}`, generatedAt: sgtStamp(now), plan: false }));
     } finally {
       reporting = false;
     }

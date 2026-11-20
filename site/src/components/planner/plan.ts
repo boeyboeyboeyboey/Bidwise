@@ -372,9 +372,10 @@ export function decodePlan(raw: unknown): StoredPlan | null {
 /**
  * Courses that appear in more than one row without being alternatives of each other. You can only take
  * one section of a course, so those rows must be "one of" in the same group. Split sites of one BOSS course
- * (COR-STAT1202 and COR-STAT1202-X) count as one course; such a group is named by all its site codes.
+ * (COR-STAT1202 and COR-STAT1202-X) count as one course; such a group is named by all its courses, each as `nameOf` gives it
+ * (the site code is not shown to students, so Planner passes codeLabel).
  */
-export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'oneOf'>[], bossOf: (course: string) => string = bossCodeOf): string[] {
+export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'oneOf'>[], bossOf: (course: string) => string = bossCodeOf, nameOf: (course: string) => string = (c) => c): string[] {
   const by = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = bossOf(r.course);
@@ -384,7 +385,7 @@ export function duplicateCourses(rows: Pick<PlanRowState, 'course' | 'role' | 'o
   for (const rs of by.values()) {
     if (rs.length < 2) continue;
     const alt = rs.every((r) => r.role === 'oneOf' && r.oneOf === rs[0].oneOf);
-    if (!alt) out.push(courseLabel(rs.map((r) => r.course)));
+    if (!alt) out.push(courseLabel(rs.map((r) => r.course), nameOf));
   }
   return out;
 }
@@ -639,8 +640,8 @@ export function dropToFit(items: PlanItem[], balanceCents: number): { key: strin
   return null;
 }
 
-/** Course codes of a group, each once, as "IS469 / IS470". */
-export const courseLabel = (codes: string[]): string => [...new Set(codes)].join(' / ');
+/** Course codes of a group, each once, as "IS469 / IS470"; `nameOf` turns a site code into what is shown. */
+export const courseLabel = (codes: string[], nameOf: (code: string) => string = (c) => c): string => [...new Set(codes)].map(nameOf).join(' / ');
 
 /** "e$125" for a whole-dollar balance, "e$125.50" otherwise. */
 export const balanceLabel = (cents: number): string => (cents % 100 === 0 ? `e$${cents / 100}` : `e$${(cents / 100).toFixed(2)}`);
@@ -661,7 +662,7 @@ export interface Saver {
  * One row of a group on its own frees nothing while another member stays, so groups are judged whole.
  * `fits` is judged on the typical need, not on bids for your wanted chance. Null when nothing would free anything.
  */
-export function needSaver(items: PlanItem[], balanceCents: number): Saver | null {
+export function needSaver(items: PlanItem[], balanceCents: number, nameOf: (code: string) => string = (c) => c): Saver | null {
   const need = typicalNeedCents(items);
   let best: Saver | null = null;
   const consider = (keys: string[], label: string) => {
@@ -670,10 +671,10 @@ export function needSaver(items: PlanItem[], balanceCents: number): Saver | null
     const freed = need - after;
     if (freed > 0 && (!best || freed > best.freedCents)) best = { keys, label, freedCents: freed, fits: !overBalance(after, balanceCents) };
   };
-  for (const it of items) if (it.role === 'required') consider([it.key], it.courseCode);
+  for (const it of items) if (it.role === 'required') consider([it.key], nameOf(it.courseCode));
   const groups = new Map<string, PlanItem[]>();
   for (const it of items) if (it.role === 'oneOf') groups.set(it.oneOfGroup ?? 'A', [...(groups.get(it.oneOfGroup ?? 'A') ?? []), it]);
-  for (const g of groups.values()) consider(g.map((x) => x.key), courseLabel(g.map((x) => x.courseCode)));
+  for (const g of groups.values()) consider(g.map((x) => x.key), courseLabel(g.map((x) => x.courseCode), nameOf));
   return best;
 }
 

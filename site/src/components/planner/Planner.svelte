@@ -2,7 +2,7 @@
   import { flushSync, onMount, tick, untrack } from 'svelte';
   import type { CourseData } from '../../lib/data/types';
   import { fetchCourse } from '../../lib/data/client';
-  import { bossCodeOf, splitSibling } from '../../lib/data/bossCode';
+  import { bossCodeOf, codeLabel, splitSibling } from '../../lib/data/bossCode';
   import type { SimResult } from '../../lib/sim';
   import { runOptimise, runSim } from '../../lib/sim/client';
   import { TARGETS, bidCalibrated, bidPresets, fromCurrent, groupEstimatesHidden, suggestBid, targetToStored } from '../../lib/sim/forecast';
@@ -94,6 +94,8 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   /** BOSS code of a site course (COR-STAT1202-X is COR-STAT1202): one section per BOSS course per window. */
   const bossOf = (code: string) => bossCodeOf(code, courses[code]?.bossCode);
+  /** A site code as the student sees it: the BOSS code, with "(SMU-X)" after it for a split course. The site code itself is never shown. */
+  const nameOf = (code: string) => codeLabel(code, courses[code]?.bossCode);
   const simKey = (r: PlanRowState) => `${win}|${r.sectionId}|${r.group}`;
 
   async function loadCourse(code: string): Promise<CourseData | null> {
@@ -122,7 +124,7 @@
       return d;
     } catch {
       failedCodes = [...failedCodes, code];
-      loadError = `Could not load ${code}`;
+      loadError = `Could not load ${nameOf(code)}`;
       return null;
     } finally {
       loading.delete(code);
@@ -165,7 +167,7 @@
   const shownOrder = $derived([...parts.must, ...parts.groups.flatMap((g) => g.idxs), ...parts.nice]);
   const rowName = (r: PlanRowState) => {
     const sec = courses[r.course]?.sectionsNow.find((s) => s.id === r.sectionId);
-    return sec ? `${r.course} ${sec.section}` : r.course;
+    return sec ? `${nameOf(r.course)} ${sec.section}` : nameOf(r.course);
   };
   /** Pick one always starts a new group holding just this row; refused when four groups exist (the option is disabled then). */
   async function setRole(row: PlanRowState, role: Role) {
@@ -193,7 +195,7 @@
     return o ? rowName(o) : '';
   };
 
-  const dupes = $derived(duplicateCourses(rows, bossOf));
+  const dupes = $derived(duplicateCourses(rows, bossOf, nameOf));
   const reqNeedCents = $derived(typicalNeedCents(planItems));
   const hasRequired = $derived(planItems.some((i) => i.role !== 'optional'));
   /** True when no row that can be simulated is a must-get or pick-one: the headline chance would be meaningless. */
@@ -227,11 +229,11 @@
   /** Some bid is below the bid for the chance wanted, because the balance does not stretch. */
   const anyCut = $derived(!!result && !pending && needsFit && rows.some((r) => isCapped(result.bids[r.id] ?? null, fullBidOf(r), needsFit)));
   const showCut = $derived(anyCut && !scope.adviceWithheld);
-  const saver = $derived((overAdvice || showCut) && balanceCents !== null ? needSaver(planItems, balanceCents) : null);
+  const saver = $derived((overAdvice || showCut) && balanceCents !== null ? needSaver(planItems, balanceCents, nameOf) : null);
   const showNotice = $derived(!!result && !pending && (overAdvice || (hopeless && !scope.chanceWithheld)));
   const showCallout = $derived(showCut || showNotice);
   // Pick one group of a row, named by its courses ("IS469 / IS470").
-  const pickOf = (row: PlanRowState) => (row.role === 'oneOf' ? courseLabel(rows.filter((r) => r.role === 'oneOf' && r.oneOf === row.oneOf).map((r) => r.course)) : '');
+  const pickOf = (row: PlanRowState) => (row.role === 'oneOf' ? courseLabel(rows.filter((r) => r.role === 'oneOf' && r.oneOf === row.oneOf).map((r) => r.course), nameOf) : '');
   /** One line on why the plan bids this much on a row, from its own forecast. */
   function reasonOf(row: PlanRowState, i: number): string {
     const sec = info[i]?.sec;
@@ -747,9 +749,9 @@
             </div>
             {#if addOpen === letter && (joinable.length || more.length)}
               <div class="addlist" role="group" aria-label="Add a course to this group">
-                {#each more as c (c)}<button type="button" class="btn" onclick={() => { onAddPick('sec:' + c, letter); addOpen = ''; }}>Another {c} section</button>{/each}
+                {#each more as c (c)}<button type="button" class="btn" onclick={() => { onAddPick('sec:' + c, letter); addOpen = ''; }}>Another {nameOf(c)} section</button>{/each}
                 {#each joinable as o (o.course)}
-                  <button type="button" class="btn" onclick={() => { onAddPick(o.course, letter); addOpen = ''; }}>{rows.filter((x) => x.course === o.course).length > 1 ? o.course : rowName(o)} <span class="where">{whereNow(o, letter)}</span></button>
+                  <button type="button" class="btn" onclick={() => { onAddPick(o.course, letter); addOpen = ''; }}>{rows.filter((x) => x.course === o.course).length > 1 ? nameOf(o.course) : rowName(o)} <span class="where">{whereNow(o, letter)}</span></button>
                 {/each}
               </div>
             {/if}
@@ -782,7 +784,7 @@
         {#if examples.length}
           <div class="chips" role="group" aria-label="Popular courses">
             <span class="lab">Popular</span>
-            {#each examples as c (c.code)}<button type="button" class="btn chip num" onclick={() => addRow(c.code)}>{c.code}</button>{/each}
+            {#each examples as c (c.code)}<button type="button" class="btn chip num" onclick={() => addRow(c.code)}>{nameOf(c.code)}</button>{/each}
           </div>
         {/if}
       </section>

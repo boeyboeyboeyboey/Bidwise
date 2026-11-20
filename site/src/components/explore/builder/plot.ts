@@ -1,4 +1,5 @@
 // Chart builder renderer: merged lines drawn with Observable Plot as a line, bar or scatter chart. One colour per line (lines.ts).
+import { codeLabel } from '../../../lib/data/bossCode';
 import * as Plot from '@observablehq/plot';
 import { shortLabel, type Theme } from '../chart';
 import { fieldById, type Field } from './fields';
@@ -21,7 +22,7 @@ export const xText = (p: { x: string | number }, xf: Field | undefined): string 
 export function tipText(spec: BuilderSpec, p: QueryPoint, xf: Field | undefined): string {
   const lines = [
     p.series ?? '',
-    p.row ? `${p.row.term} ${p.row.code} ${p.row.section}` : '',
+    p.row ? `${p.row.term} ${codeLabel(p.row.code)} ${p.row.section}` : '',
     `${xLabel(spec)}: ${xText(p, xf)}`,
     `${yLabel(spec)}: ${fmtY(spec, p.y)}`,
   ];

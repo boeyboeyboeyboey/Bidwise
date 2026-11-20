@@ -1,5 +1,6 @@
 // Lines: each is a course plus optional narrowing, drawn as its own series. Maps a line to filters, names it, runs the query per line and merges
 // the results into one. Pure and DOM-free.
+import { codeLabel } from '../../../lib/data/bossCode';
 import type { BrowseRow } from '../browse';
 import { fieldById, type Value } from './fields';
 import { emptyTotals, runQuery, sortXLabels, NONE, type Agg, type Filter, type QueryPoint, type QueryResult, type QuerySpec } from './query';
@@ -24,7 +25,7 @@ const valueText = (k: NarrowKey, v: string): string => (v === NONE ? (fieldById(
 
 /** "IS214", "IS214 · Mon", "IS214 · Mon · 08:15 · G1 · ANN LEE": the course, then the narrowing in day, time, section, professor order. */
 export function lineLabel(l: LineSpec): string {
-  return [l.course || 'New line', ...NARROW_KEYS.filter((k) => l[k]).map((k) => valueText(k, l[k] as string))].join(' · ');
+  return [l.course ? codeLabel(l.course) : 'New line', ...NARROW_KEYS.filter((k) => l[k]).map((k) => valueText(k, l[k] as string))].join(' · ');
 }
 
 /** Labels of all lines; a repeated label gets " (2)", " (3)" so every line is told apart. */

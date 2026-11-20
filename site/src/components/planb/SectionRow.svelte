@@ -1,6 +1,7 @@
 <svelte:options css="injected" />
 <script lang="ts">
   import { eS } from '../course/fmt';
+  import { bossCodeOf } from '../../lib/data/bossCode';
   import { titleName } from '../../lib/data/format';
   import { seatText } from './seats';
   import type { PlanRow } from './logic';
@@ -19,7 +20,7 @@
 </script>
 
 <a class="row-link" href={`/course/${row.code}`}>
-  <span class="l1"><b>{row.code}</b> <span class="title">{row.title}</span> <span class="sec">{s.section}</span></span>
+  <span class="l1"><b>{bossCodeOf(row.code)}</b> <span class="title">{row.title}</span> <span class="sec">{s.section}</span></span>
   <span class="stats num">
     <span><i>{bidLabel}</i> {eS(s.bidCents as number)}</span>
     <span><i>Seats</i> {seatText(s)}{#if badge}<span class="chg">{' · '}<SeatDelta {badge} /></span>{/if}</span>

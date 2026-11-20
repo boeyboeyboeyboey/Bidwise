@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import type { CourseIndexEntry } from '../../lib/data/types';
   import { fetchIndex } from '../../lib/data/client';
+  import { codeLabel } from '../../lib/data/bossCode';
 
   let recent = $state<string[]>([]);
   let index = $state<CourseIndexEntry[]>([]);
@@ -28,7 +29,7 @@
     <h2 id="rec-h">Recently viewed</h2>
     <ul>
       {#each entries as c (c.code)}
-        <li><a class="btn chip" href={`/course/${c.code}`} title={c.title}>{c.code}</a></li>
+        <li><a class="btn chip" href={`/course/${c.code}`} title={c.title}>{codeLabel(c.code, c.bossCode)}</a></li>
       {/each}
     </ul>
   </section>

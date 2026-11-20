@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { bossCodeOf } from '../../lib/data/bossCode';
   import { onMount, tick } from 'svelte';
   import { scanDayText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
@@ -145,7 +146,7 @@
         {#each hits.slice(0, shown) as h (h.course.code)}
           <li>
             <a class="row-link row" href={`/course/${h.course.code}/`} onclick={saveList}>
-              <span class="code">{h.course.code}</span>
+              <span class="code">{bossCodeOf(h.course.code)}</span>
               <span class="main">
                 <span class="title">{h.course.title}</span>
                 {#if h.course.professors.length}<span class="prof">{instructorLine(h.course.professors)}</span>{/if}

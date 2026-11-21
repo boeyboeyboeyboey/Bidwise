@@ -463,7 +463,7 @@
   });
 
   // Only when the recommended bids do not fit the balance: the optimiser spreads the balance over the rows in the worker,
-  // debounced, and no row is raised above its recommended bid. Stale answers are dropped.
+  // debounced, and no row is raised above its recommended bid (each row's cap; clampToRecommended stays as a safety net). Stale answers are dropped.
   let fitToken = 0;
   $effect(() => {
     const items = planItems;
@@ -479,7 +479,7 @@
     }
     fitting = true;
     const timer = setTimeout(() => {
-      runOptimise({ budgetCents: budget, items: biddableItems(items, dropOptional), certainty: 1 }).then((fit) => {
+      runOptimise({ budgetCents: budget, items: biddableItems(items, dropOptional).map((it) => ({ ...it, capCents: suggestBid(it.curve, t, win) })), certainty: 1 }).then((fit) => {
         if (my !== fitToken) return;
         fitted = clampToRecommended(items, fit, t, budget, win);
         fitting = false;

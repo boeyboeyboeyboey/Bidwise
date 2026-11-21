@@ -8,6 +8,8 @@ export interface PlanItem {
   role: Role;
   oneOfGroup?: string;
   curve: SimResult;
+  /** Highest bid the optimiser may place on this row (e.g. its recommended bid). Raised to the row's lowest allowed bid if below it. */
+  capCents?: number;
 }
 
 export interface PlanInput {
@@ -36,6 +38,8 @@ export interface TradeoffPoint {
 
 const OPTIONAL_WEIGHT = 0.1;
 const GRID = 50;
+/** Cents moved from one bid to another in a transfer move. */
+const TRANSFER_STEPS = [50, 100, 200, 500];
 const EPS = 1e-12;
 
 const oddCents = (c: number) => (c % 2 === 0 ? c + 1 : c);
@@ -43,6 +47,8 @@ const oddCents = (c: number) => (c % 2 === 0 ? c + 1 : c);
 export const kappa = (s: number): number => 1.2 * (1 - Math.min(1, Math.max(0, s))) ** 2;
 
 const minBidOf = (it: PlanItem) => it.curve.histogram.startCents;
+/** Highest bid allowed: the row's cap (odd cents, never below the lowest allowed bid), or no limit. */
+const capOf = (it: PlanItem) => (it.capCents === undefined ? Infinity : Math.max(it.capCents - (it.capCents % 2 === 0 ? 1 : 0), oddCents(minBidOf(it))));
 const maxBidOf = (it: PlanItem) => it.curve.curve.bidCents[it.curve.curve.bidCents.length - 1];
 const pOf = (it: PlanItem, bid: number) => (bid <= 0 || bid < minBidOf(it) ? 0 : pInAt(it.curve, bid));
 
@@ -102,7 +108,7 @@ function ascend(pr: Prepared, start: number[], budget: number, kap: number): { b
     let bBid = prevBid;
     let bP = prevP;
     for (const c of cands) {
-      if (c > room) continue;
+      if (c > room || c > capOf(pr.items[i])) continue;
       bids[i] = c;
       ps[i] = pOf(pr.items[i], c);
       const s = score();
@@ -146,6 +152,35 @@ function ascend(pr: Prepared, start: number[], budget: number, kap: number): { b
     }
     if (!changed) break;
   }
+  // Transfers: one-bid-at-a-time moves cannot shift e$ from one course to another, so with the budget used up they stall short of
+  // the best split. Move a step from bid i to bid j (both already placed; the total is unchanged) and keep it if the score rises.
+  for (let pass = 0; pass < 10; pass++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        for (const step of TRANSFER_STEPS) {
+          if (bids[i] === 0 || bids[j] === 0 || bids[i] - step < minBidOf(pr.items[i]) || bids[j] + step > capOf(pr.items[j])) continue;
+          const [oi, oj, pi, pj] = [bids[i], bids[j], ps[i], ps[j]];
+          bids[i] = oi - step;
+          bids[j] = oj + step;
+          ps[i] = pOf(pr.items[i], bids[i]);
+          ps[j] = pOf(pr.items[j], bids[j]);
+          const s = score();
+          if (s > best + EPS) {
+            best = s;
+            changed = true;
+          } else {
+            bids[i] = oi;
+            bids[j] = oj;
+            ps[i] = pi;
+            ps[j] = pj;
+          }
+        }
+      }
+    }
+    if (!changed) break;
+  }
   return { bids, obj: best };
 }
 
@@ -161,7 +196,7 @@ function initials(pr: Prepared, budget: number): number[][] {
     let used = 0;
     for (const i of order) {
       const it = pr.items[i];
-      const b = Math.max(bidFor(it), oddCents(minBidOf(it)));
+      const b = Math.max(Math.min(bidFor(it), capOf(it)), oddCents(minBidOf(it)));
       if (used + b <= budget) {
         bids[i] = b;
         used += b;

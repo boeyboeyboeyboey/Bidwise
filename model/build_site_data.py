@@ -75,8 +75,8 @@ SIM_PARAM_KEYS = ("demandMean", "demandDispersion", "priceLevelCents", "priceSig
                   "anchorSigma", "anchorShare", "anchorCents")
 SIM_CALIBRATION_KEYS = ("fillProb", "spreadLo", "spreadHi")  # shipped only on the section-windows distcal calibrated
 SIM_EXTRA_KEYS = ("fillProbAt1",)  # shipped beside the calibration keys but never passed to sim.SimParams
-# Same runs, seed and target as the course page (site/src/lib/sim/forecast.ts: FORECAST_RUNS, FORECAST_SEED, 90% target)
-# so a section shows the identical bid on the home lists and on its own page.
+# Same runs and seed as the course page (site/src/lib/sim/forecast.ts: FORECAST_RUNS, FORECAST_SEED). The 90% target is
+# not the calibrated Balanced level: these bids only rank the Planner's "Popular" chips and are never shown.
 HIGHLIGHT_RUNS = 20000
 HIGHLIGHT_SEED = 12345
 HIGHLIGHT_TARGET = 0.9
@@ -86,7 +86,10 @@ HIGHLIGHT_LIMIT = 8
 # between two steps lists the nearest lower step's rows, which are always among the highest bids the person can afford.
 AFFORDABLE_LADDER_CENTS = (1000, 2500, 5000, 7500, 10000, 12500, 15000, 17500, 20000, 25000, 30000, 40000, 50000)
 CONTESTED_MIN_PFILL = 0.3
-CONF_COVERAGE = (0.70, 0.90)
+# Lowest share of filled sections inside the 80% range for a window to count as ok. No upper bound: the coverage comes
+# from the pre-calibration backtest, whose range is deliberately wide (distcal narrows it), so over-coverage is not a
+# sign the window is hard to forecast (Gemini review 1, G6).
+CONF_MIN_COVERAGE = 0.70
 CONF_MIN_FILLED = 50
 SGT = timezone(timedelta(hours=8))
 
@@ -981,10 +984,9 @@ def attach_forecasts(docs: dict, params: dict) -> int:
 
 
 def window_confidence(bt: dict) -> str:
-    """'ok' when the 80% range held for filled sections 70-90% of the time on enough filled sections."""
+    """'ok' when the 80% range held for filled sections at least 70% of the time on enough filled sections."""
     cov = bt.get("coverage80Filled")
-    lo, hi = CONF_COVERAGE
-    if cov is not None and lo <= cov <= hi and bt.get("filled", 0) >= CONF_MIN_FILLED:
+    if cov is not None and cov >= CONF_MIN_COVERAGE and bt.get("filled", 0) >= CONF_MIN_FILLED:
         return "ok"
     return "low"
 

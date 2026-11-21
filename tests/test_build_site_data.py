@@ -427,13 +427,15 @@ def _backtest():
 
 
 class ForecastUnit(unittest.TestCase):
-    def test_confidence_needs_coverage_in_band_and_enough_filled(self):
+    def test_confidence_needs_enough_coverage_and_enough_filled(self):
         c = bsd.window_confidence
         self.assertEqual(c({"coverage80Filled": 0.77, "filled": 163}), "ok")
         self.assertEqual(c({"coverage80Filled": 0.90, "filled": 50}), "ok")
+        self.assertEqual(c({"coverage80Filled": 0.70, "filled": 50}), "ok")
         self.assertEqual(c({"coverage80Filled": 0.77, "filled": 49}), "low")
         self.assertEqual(c({"coverage80Filled": 0.61, "filled": 200}), "low")
-        self.assertEqual(c({"coverage80Filled": 0.95, "filled": 200}), "low")
+        # over-coverage of the wide pre-calibration range is not low confidence (Gemini review 1, G6)
+        self.assertEqual(c({"coverage80Filled": 0.95, "filled": 200}), "ok")
         self.assertEqual(c({"coverage80Filled": None, "filled": 200}), "low")
 
     def test_params_skipped_when_not_ok_or_wrong_term(self):

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type ProfEntry, searchProfs } from './profSearch';
+import { closeProfs, findProfs, type ProfEntry, searchProfs } from './profSearch';
 
 const e = (name: string, courseCount: number, teachingNow: 0 | 1 = 0): ProfEntry => [name, name.toLowerCase().replace(/\W+/g, '-'), courseCount, teachingNow];
 const names = (rows: readonly ProfEntry[]) => rows.map((r) => r[0]);
@@ -65,5 +65,54 @@ describe('professor search', () => {
     expect(names(searchProfs(many, 'wong'))).toEqual(['Wong George']);
     expect(names(searchProfs(many, 'sim', 5))).toHaveLength(5);
     expect(searchProfs(many, 'sim')[5]?.[0]).toBe('Sim P5');
+  });
+
+  describe('close matches (typos)', () => {
+    const wong = e('Wong, George', 4, 1);
+    const naqvi = e('Ijlal Naqvi', 6, 1);
+    const wang = e('Wang Lei', 2);
+
+    it('finds a professor through a swapped or wrong letter', () => {
+      expect(findProfs([wong, naqvi, wang], 'goerge wong')).toEqual({ items: [wong], close: true });
+      expect(findProfs([wong, naqvi, wang], 'naqvy')).toEqual({ items: [naqvi], close: true });
+      expect(names(findProfs([wong, naqvi], 'george wnog').items)).toEqual(['Wong, George']);
+    });
+
+    it('is used only when nothing matches exactly', () => {
+      expect(findProfs([wong, naqvi, wang], 'wong')).toEqual({ items: [wong], close: false });
+      expect(findProfs([wong, naqvi], 'zzzz')).toEqual({ items: [], close: false });
+    });
+
+    it('forgives no typo in words of three letters or fewer, but still takes them as a prefix', () => {
+      expect(closeProfs([wang, wong], 'lee')).toEqual([]);
+      expect(names(closeProfs([wang], 'lei wnag'))).toEqual(['Wang Lei']);
+    });
+
+    it('forgives one typo up to seven letters and two from eight', () => {
+      expect(closeProfs([naqvi], 'naqvyy')).toEqual([]);
+      expect(names(closeProfs([e('Christopherson Ann', 1)], 'christphersen'))).toEqual(['Christopherson Ann']);
+    });
+
+    it('ranks fewer typos first, then the usual ties', () => {
+      const wing = e('Wing Ho', 9, 1);
+      // "wonh" is one typo from "wong" but two from "wing", so only Wong shows.
+      expect(names(closeProfs([wing, wong], 'wonh'))).toEqual(['Wong, George']);
+      const a = e('Tann Ben', 1);
+      const b = e('Tann Cee', 5);
+      expect(names(closeProfs([a, b], 'tanm'))).toEqual(['Tann Cee', 'Tann Ben']);
+      // "geroge" is one typo (a swap) from "george" but two from "gorge", so fewer typos wins over more courses.
+      const w2 = e('Wong Gorge', 9, 1);
+      expect(names(closeProfs([w2, wong], 'geroge wong'))[0]).toBe('Wong, George');
+    });
+
+    it('ranks a whole-word typo before a typo against the start of a longer word', () => {
+      const chong = e('Mark Chong', 9, 1);
+      const john = e('John Sequeira', 1);
+      expect(names(closeProfs([chong, john], 'jhon'))).toEqual(['John Sequeira', 'Mark Chong']);
+    });
+
+    it('returns nothing for queries under two letters', () => {
+      expect(findProfs([wong], 'w')).toEqual({ items: [], close: false });
+    });
   });
 });

@@ -2,7 +2,7 @@
   import type { SearchEntry } from '../lib/data/types';
   import { flatText, isExactCode, searchCourses } from '../lib/search/courseSearch';
   import { bossCodeOf } from '../lib/data/bossCode';
-  import { searchProfs, type ProfEntry } from '../lib/search/profSearch';
+  import { findProfs, type ProfEntry } from '../lib/search/profSearch';
 
   /**
    * `suffix` is appended to every course link (e.g. '?mode=swap' to open course pages in Swap mode).
@@ -29,9 +29,13 @@
   // collapsed group at the end); within a tier, code order (the index is pre-sorted).
   // When nothing matches exactly, `found.close` marks typo matches.
   const found = $derived(searchCourses(index, query, (e) => [e[0], e[1]]));
-  const profHits = $derived(searchProfs(profs, query));
-  // Typo matches for courses only show when nothing else matches, so they never sit above exact professor hits.
-  const matches = $derived(found.close && profHits.length ? [] : found.items);
+  const profFound = $derived(findProfs(profs, query));
+  // Close (typo) matches of either kind show only when neither kind matches exactly, so an exact hit is never
+  // pushed below or mixed with typo guesses. `allClose` is then true and one "No exact match" line covers both groups.
+  const anyExact = $derived((found.items.length > 0 && !found.close) || (profFound.items.length > 0 && !profFound.close));
+  const matches = $derived(found.close && anyExact ? [] : found.items);
+  const profHits = $derived(profFound.close && anyExact ? [] : profFound.items);
+  const allClose = $derived(!anyExact && (matches.length > 0 || profHits.length > 0));
   const offered = $derived(matches.filter((e) => e[2] > 0));
   const notOffered = $derived(matches.filter((e) => e[2] <= 0));
   let showAll = $state(false);
@@ -98,8 +102,8 @@
   </div>
 
   {#if searching}
+    {#if allClose}<p class="close" aria-live="polite">No exact match. Close matches:</p>{/if}
     {#if matches.length}
-      {#if found.close}<p class="close" aria-live="polite">No exact match. Close matches:</p>{/if}
       {#if results.length}
       {#if profHits.length}<h2 class="group">Courses</h2>{/if}
       <ul class="list" id="q-list" role="listbox" aria-label="Matching courses">

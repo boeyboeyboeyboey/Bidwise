@@ -121,7 +121,7 @@ export function editDistance(a: string, b: string, max: number): number {
 }
 
 /** Typos between a typed word and a title word, or the start of it (a word still being typed); -1 if too many. */
-function wordEdits(w: string, t: string): number {
+export function wordEdits(w: string, t: string): number {
   const max = allowedEdits(w.length);
   if (max === 0) return t.startsWith(w) ? 0 : -1;
   let best = editDistance(w, t, max);

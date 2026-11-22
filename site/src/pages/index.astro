@@ -17,7 +17,7 @@ const builtAt = Date.now();
     <div class="lead">
       <h1>How much should I bid?</h1>
       <p class="lede">Bid forecasts for SMU BOSS, built from past results. Unofficial; not affiliated with SMU.</p>
-      <div class="find"><Search client:load index={index} profs={profs} label="Search for a course by code, title or nickname, or a professor" placeholder="Course code, title or professor" /></div>
+      <div class="find"><Search client:load index={index} profs={profs} label="Search for a course by code, title or nickname, or a professor" placeholder="Search a course or professor" /></div>
       <div class="status">
         <Countdown client:load windows={windows} builtAt={builtAt} />
       </div>

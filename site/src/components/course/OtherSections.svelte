@@ -7,7 +7,7 @@
   import SeatDelta from './SeatDelta.svelte';
   import { APPROX_NOTE, fullText, SEATS_HELP_HREF, seatsLeftNow, seatsOf } from '../../lib/data/seats';
   import { eS, pct } from './fmt';
-  import { titleName } from '../../lib/data/format';
+  import { instructorLinks } from '../../lib/data/profNames';
   import { formatSlot } from '../../lib/format/slot';
   import { simSection } from './sectionSim';
 
@@ -103,7 +103,7 @@
         {#each shown as r (r.s.id)}
           <div class="tr" class:full={seatsLeftNow(r.s) <= 0} role="row">
             <span role="cell"><button type="button" class="btn sel" onclick={() => ctx.select(r.s.id)} aria-label="Show section {r.s.section}">{r.s.section}</button></span>
-            <span role="cell" class="ins">{titleName(r.s.instructor) || 'TBA'}</span>
+            <span role="cell" class="ins">{#each instructorLinks(r.s.instructor) as p, i}{#if i}, {/if}<a class="prof" href={p.href}>{p.display}</a>{:else}TBA{/each}</span>
             <span role="cell" class="tm num">{r.time}</span>
             <span role="cell" class="r num">{#if seatsLeftNow(r.s) <= 0}<b class="badge">{fullText(r.s)}</b>{:else}{#if seatsOf(r.s).source === 'approx'}<a class="approx" href={SEATS_HELP_HREF} title={APPROX_NOTE} aria-label={APPROX_NOTE}>≈</a>{/if}{seatsLeftNow(r.s)}{/if}<SeatDelta section={r.s} /></span>
             <span role="cell" class="r num">{r.chance === null ? '—' : pct(r.chance)}</span>
@@ -131,6 +131,7 @@
   .th { align-items: end; min-height: 32px; font-size: 13px; line-height: 1.2; color: var(--muted); }
   .r { text-align: right; }
   .ins, .tm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.prof { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
   .sort { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 4px 0; font: inherit; color: inherit; text-align: inherit; background: none; border: 0; cursor: pointer; }
   .r .sort { justify-content: flex-end; }
   .sort:hover, .sort.on { color: var(--text); }

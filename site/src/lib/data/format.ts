@@ -16,10 +16,12 @@ export function formatWhen(iso: string): string {
   return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute}`;
 }
 
+/** Comparison key for a person's name: capitals and letters only, runs of anything else collapsed to one space. */
+export const instructorKey = (s: string): string => s.toUpperCase().replace(/[^A-Z]+/g, ' ').trim();
+
 /** Same person across terms: BOSS writes names in upper case, sometimes with a comma. */
 export const sameInstructor = (a: string, b: string): boolean => {
-  const n = (s: string) => s.toUpperCase().replace(/[^A-Z]+/g, ' ').trim();
-  return !!a && n(a) === n(b);
+  return !!a && instructorKey(a) === instructorKey(b);
 };
 
 /** BOSS stores instructor names in capitals: "LEE KOK THONG, TAN AH-MENG" becomes "Lee Kok Thong, Tan Ah-Meng". */

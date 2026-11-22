@@ -1,7 +1,8 @@
 <svelte:options css="injected" />
 <script lang="ts">
   import type { HistoryRowLite } from '../../lib/data/types';
-  import { sameInstructor, titleName } from '../../lib/data/format';
+  import { sameInstructor } from '../../lib/data/format';
+  import { instructorLinks } from '../../lib/data/profNames';
   import HistoryChart from './HistoryChart.svelte';
   import { defaultHistoryWindow, sortWindows, timeText, type HistorySeed } from './history';
   import { bidOrNone } from './fmt';
@@ -77,7 +78,7 @@
       {#each shown as r}
         <div class="tr" class:mine={scope === 'course' && mine(r)} role="row">
           <span role="cell" class="when"><b>{r.term}</b>{#if !win}<span class="sub">{r.window}</span>{/if}</span>
-          <span role="cell" class="sec"><b>{r.section}</b><span class="sub">{titleName(r.instructor)}</span><span class="sub num t">{timeText(r.days, r.start, r.end)}</span></span>
+          <span role="cell" class="sec"><b>{r.section}</b><span class="sub">{#each instructorLinks(r.instructor) as p, i}{#if i}, {/if}<a class="prof" href={p.href}>{p.display}</a>{/each}</span><span class="sub num t">{timeText(r.days, r.start, r.end)}</span></span>
           <span role="cell" class="r num" class:no={r.minCents === null}>{bidOrNone(r.minCents)}</span>
           <span role="cell" class="r num" class:no={r.medianCents === null}>{bidOrNone(r.medianCents)}</span>
           <span role="cell" class="r num seats">{seats(r)}</span>
@@ -112,6 +113,7 @@
   .r { text-align: right; }
   .when b, .sec b { font-weight: 600; }
   .sub { display: block; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.prof { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
   .when, .sec { min-width: 0; }
   .no { color: var(--muted); }
   .more { justify-self: start; }

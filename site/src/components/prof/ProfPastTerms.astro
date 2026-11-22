@@ -1,0 +1,129 @@
+---
+import { codeLabel } from '../../lib/data';
+import type { ProfCourse, ProfPastTerm } from '../../lib/data/professors';
+import { bidText, historyHref, pastSlotText } from './profText';
+
+interface Props { terms: ProfPastTerm[]; courses: ProfCourse[] }
+const { terms, courses } = Astro.props;
+const byCode = new Map(courses.map((c) => [c.code, c]));
+// Sections of one course are adjacent (sorted by code), so each course in a term is one group.
+const groups = terms.map((t) => {
+  const out: { course: ProfCourse; sections: ProfPastTerm['sections'] }[] = [];
+  for (const s of t.sections) {
+    const last = out[out.length - 1];
+    if (last && last.course.code === s.code) last.sections.push(s);
+    else out.push({ course: byCode.get(s.code)!, sections: [s] });
+  }
+  return out;
+});
+---
+<section aria-labelledby="past-h">
+  <h2 id="past-h">Past terms</h2>
+  {terms.length > 1 ? (
+    <div class="ctl" data-switch hidden>
+      <label class="pick">
+        <span class="lab">Term</span>
+        <select class="field">
+          {terms.map((t, i) => <option value={i} selected={i === 0}>{t.term}</option>)}
+        </select>
+      </label>
+      <div class="switch" role="group" aria-label="Term">
+        {terms.map((t, i) => <button type="button" class="tbtn" aria-pressed={i === 0 ? 'true' : 'false'} aria-controls={`pt-${i}`} data-i={i}>{t.term}</button>)}
+      </div>
+    </div>
+  ) : <p class="only">{terms[0].term}</p>}
+  <script is:inline>document.querySelectorAll('[data-switch]').forEach(function (sw) { sw.hidden = false; });</script>
+  {terms.map((_t, i) => (
+    <div class="tpanel" id={`pt-${i}`} hidden={i !== 0}>
+      <div class="colhead head" aria-hidden="true"><span>Course</span><div class="sub"><span>Section</span><span>Day and time</span><span>Bid</span></div></div>
+      <ul>
+        {groups[i].map(({ course, sections }) => (
+          <li class="grp">
+            <div class="cinfo">
+              <a class="course" href={`/course/${course.code}/`} title={course.title}><b>{codeLabel(course.code)}</b> <span>{course.title}</span></a>
+              <a class="past" href={historyHref(course)}>{course.historyComplete ? 'Past bids' : 'Course history'} <span aria-hidden="true">›</span><span class="sr-only"> for {course.title}{course.historyComplete ? ' with this professor' : ''}</span></a>
+            </div>
+            <ul class="secs">
+              {sections.map((s) => {
+                const bid = bidText(s.bid);
+                return (
+                  <li class="srow">
+                    <span class="cell sec"><span class="lab">Section</span>{s.section || '–'}</span>
+                    <span class="cell time"><span class="lab">Day and time</span>{pastSlotText(s)}</span>
+                    <span class="cell bid"><span class="lab">Bid</span>
+                      {bid ? <><span>{bid.text}</span>{bid.window && <span class="win">{bid.window}</span>}</> : <span class="none">No bids</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ))}
+</section>
+<script is:inline>
+  document.querySelectorAll('[data-switch]').forEach(function (sw) {
+    var btns = sw.querySelectorAll('button');
+    var sel = sw.querySelector('select');
+    function show(i) {
+      btns.forEach(function (o, j) {
+        o.setAttribute('aria-pressed', j === i ? 'true' : 'false');
+        document.getElementById(o.getAttribute('aria-controls')).hidden = j !== i;
+      });
+      sel.value = String(i);
+    }
+    btns.forEach(function (b, i) { b.addEventListener('click', function () { show(i); }); });
+    sel.addEventListener('change', function () { show(Number(sel.value)); });
+  });
+</script>
+
+<style>
+  section { margin-top: var(--s6); }
+  h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--s3); }
+  .ctl { margin-bottom: var(--s3); }
+  .ctl[hidden] { display: none; }
+  .pick { display: flex; flex-direction: column; gap: var(--s1); }
+  .pick .lab { font-size: var(--fs-xs); color: var(--muted); }
+  .switch { display: none; }
+  .tbtn { min-height: 44px; padding: 0 var(--s3); font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); cursor: pointer; font-variant-numeric: tabular-nums; }
+  .tbtn:hover { background: var(--accent-soft); }
+  .tbtn[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .tbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .only { margin: 0 0 var(--s3); color: var(--muted); font-size: var(--fs-sm); }
+  .tpanel[hidden] { display: none; }
+  .head { display: none; }
+  .grp { padding: var(--s3) 0; border-top: 1px solid var(--rule); }
+  .tpanel > ul > .grp:last-child { border-bottom: 1px solid var(--rule); }
+  .cinfo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--s3); }
+  .course { display: block; padding: var(--s2) 0 0; color: var(--accent); text-decoration: none; font-size: var(--fs-md); }
+  .course b { font-weight: 600; margin-right: var(--s2); }
+  .course:hover span:not(.sr-only) { text-decoration: underline; }
+  .past { display: inline-flex; align-items: center; gap: var(--s1); min-height: 40px; font-weight: 600; font-size: var(--fs-sm); color: var(--accent); text-decoration: none; }
+  .past:hover { text-decoration: underline; }
+  /* Phone: "G1  Mon 15:30-18:45" on one line, the bid under it. */
+  .srow { display: grid; grid-template-columns: auto 1fr; gap: var(--s1) var(--s3); padding: var(--s2) 0; }
+  .srow + .srow { border-top: 1px dashed var(--rule); }
+  .cell { display: flex; flex-direction: column; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .lab { font-size: var(--fs-xs); color: var(--muted); }
+  .sec { font-weight: 600; }
+  .sec .lab, .time .lab { display: none; }
+  .bid { grid-column: 1 / -1; }
+  .win, .none { color: var(--muted); }
+  @media (min-width: 768px) {
+    .pick { display: none; }
+    .switch { display: flex; flex-wrap: wrap; gap: var(--s2); }
+    .sec { font-weight: 400; }
+    .head { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: var(--s4); }
+    .sub, .srow { display: grid; grid-template-columns: 70px minmax(0, 2fr) minmax(0, 3fr); gap: var(--s3); }
+    .head .sub { align-items: baseline; }
+    .grp { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: var(--s4); align-items: start; }
+    .cinfo { display: block; }
+    .course { padding-top: var(--s2); }
+    .past { min-height: 32px; }
+    .srow { align-items: baseline; min-height: 44px; padding: var(--s2) 0; }
+    .bid { grid-column: auto; }
+    .lab { display: none; }
+  }
+</style>

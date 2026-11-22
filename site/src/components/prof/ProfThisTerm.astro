@@ -1,0 +1,52 @@
+---
+import { codeLabel } from '../../lib/data';
+import type { ProfCourse } from '../../lib/data/professors';
+import { seatsText, slotText } from './profText';
+
+interface Props { courses: ProfCourse[]; term: string }
+const { courses, term } = Astro.props;
+const rows = courses.flatMap((c) => c.nowSections.map((s) => ({ c, s })));
+---
+<section aria-labelledby="now-h">
+  <h2 id="now-h">This term <span class="term">{term}</span></h2>
+  <div class="colhead head" aria-hidden="true"><span>Course</span><span>Section</span><span>Day and time</span><span>Seats free</span></div>
+  <ul>
+    {rows.map(({ c, s }) => (
+      <li class="row">
+        <a class="course" href={`/course/${c.code}/`}><b>{codeLabel(c.code)}</b> <span>{c.title}</span></a>
+        <span class="cell sec"><span class="lab">Section</span>{s.section}</span>
+        <span class="cell time"><span class="lab">Day and time</span>{slotText(s)}</span>
+        <span class="cell seats"><span class="lab">Seats free</span>{seatsText(s.live) || '–'}</span>
+      </li>
+    ))}
+  </ul>
+</section>
+
+<style>
+  section { margin-top: var(--s5); }
+  h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--s2); }
+  .term { font-weight: 400; color: var(--muted); margin-left: var(--s2); }
+  .head { display: none; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s1) var(--s3); padding: var(--s3) 0; border-bottom: 1px solid var(--rule); }
+  .row:first-child { border-top: 1px solid var(--rule); }
+  .course { grid-column: 1 / -1; display: block; min-height: 44px; padding: var(--s2) 0; color: var(--accent); text-decoration: none; font-size: var(--fs-md); }
+  .course b { font-weight: 600; margin-right: var(--s2); }
+  .course:hover span { text-decoration: underline; }
+  .cell { display: flex; flex-direction: column; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .lab { font-size: var(--fs-xs); color: var(--muted); }
+  /* Phone: time on a second line, then section and seats side by side. */
+  @media (max-width: 767px) {
+    .time { grid-column: 1 / -1; order: 1; }
+    .time .lab { display: none; }
+    .sec { order: 2; }
+    .seats { order: 3; }
+  }
+  @media (min-width: 768px) {
+    .head, .row { grid-template-columns: minmax(0, 3fr) 80px minmax(0, 2fr) 100px; align-items: center; }
+    .head { display: grid; gap: var(--s3); }
+    .row:first-child { border-top: 0; }
+    .row { padding: 0; min-height: 52px; }
+    .course { grid-column: auto; padding: var(--s3) 0; }
+    .lab { display: none; }
+  }
+</style>

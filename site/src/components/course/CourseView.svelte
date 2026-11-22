@@ -5,7 +5,6 @@
   import type { ForecastCtx } from './forecast-ctx';
   import { fetchCourse } from '../../lib/data/client';
   import { titleName } from '../../lib/data/format';
-  import { instructorLinks } from '../../lib/data/profNames';
   import { orderSections, type RowBid } from './sections';
   import { anyApprox, APPROX_NOTE, latestScan, scanDayText, seatsLeftNow } from '../../lib/data/seats';
   import type { SimResult } from '../../lib/sim';
@@ -404,7 +403,7 @@
   {#if showDesk && current}
     <aside class="side" aria-label="Selected section">
       <div class="panel">
-        <h2>{current.section} <span>{#each instructorLinks(current.instructor) as p, i}{#if i}, {/if}<a class="prof" href={p.href}>{p.display}</a>{:else}Instructor not listed{/each}</span></h2>
+        <h2>{current.section} <span>{titleName(current.instructor) || 'Instructor not listed'}</span></h2>
         {#key current.id}
           <SectionDetail section={current} {history} {failed} {code} {currentTerm} {openScanAt} forecastCard={!swapping} />
         {/key}
@@ -424,7 +423,6 @@
   .sortnote { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin: 0; min-height: 28px; font-size: var(--fs-xs); color: var(--muted); }
   .side h2 { margin-bottom: var(--s2); font-size: var(--fs-md); font-weight: 600; }
   .side h2 span { margin-left: var(--s2); font-weight: 400; color: var(--muted); }
-  .side h2 a.prof { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
   .best { justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; width: 100%; min-height: 44px; margin: var(--s1) 0 var(--s2); font-weight: 400; text-align: left; }
   .best .go { margin-left: auto; color: var(--accent); font-weight: 600; white-space: nowrap; }
   .best b { font-weight: 600; }

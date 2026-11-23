@@ -8,7 +8,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "test": "vitest run"
+    "test": "env -u BIDWISE_FORCE_BIDLEVELS vitest run && BIDWISE_FORCE_BIDLEVELS=calibrated vitest run"
   },
   "dependencies": {
     "@astrojs/sitemap": "3.7.5",

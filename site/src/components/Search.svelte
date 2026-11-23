@@ -19,7 +19,7 @@
     index: SearchEntry[];
     suffix?: string;
     profs?: ProfEntry[];
-    /** Short name of the term the professor rows refer to, e.g. "Term 2". */
+    /** Short name of the bidding term, e.g. "Term 2"; used for course and professor rows. */
     profTerm?: string;
     label?: string;
     placeholder?: string;
@@ -115,7 +115,7 @@
             <a class="row-link" href={`/course/${code}${suffix}`} tabindex="-1">
               <span class="code">{bossCodeOf(code, boss)}</span>
               <span class="title">{title}</span>
-              <span class="count">{n > 0 ? `${n} ${n === 1 ? 'section' : 'sections'}` : 'Not offered this term'}</span>
+              <span class="count">{n > 0 ? `${n} ${n === 1 ? 'section' : 'sections'}` : `Not offered in ${profTerm || 'the bidding term'}`}</span>
               <span class="open">Open <span aria-hidden="true">›</span></span>
             </a>
           </li>
@@ -128,7 +128,7 @@
         {/if}
         {#if notOffered.length}
           <button type="button" class="btn" aria-expanded={showNot} onclick={() => (showNot = !showNot)}>
-            Not offered this term ({notOffered.length})
+            Not offered in {profTerm || 'the bidding term'} ({notOffered.length})
           </button>
         {/if}
       </div>

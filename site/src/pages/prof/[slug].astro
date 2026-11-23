@@ -12,7 +12,7 @@ export function getStaticPaths() {
 
 const prof = getProfessorBySlug(Astro.params.slug!)!;
 const nowCourses = prof.courses.filter((c) => c.nowSections.length > 0);
-const status = prof.teachingNow ? `Teaching ${courseCountText(nowCourses.length)} this term` : `Last taught ${prof.lastTerm}`;
+const status = prof.teachingNow ? `Teaching ${courseCountText(nowCourses.length)} in ${dataMeta.currentTerm}` : `Last taught ${prof.lastTerm}`;
 const codes = prof.courses.slice(0, 8).map((c) => codeLabel(c.code));
 const more = prof.courses.length - codes.length;
 const description = `Courses taught by ${prof.name} at SMU: ${codes.join(', ')}${more > 0 ? ` and ${more} more` : ''}. Past bid results for each course with this professor.`;

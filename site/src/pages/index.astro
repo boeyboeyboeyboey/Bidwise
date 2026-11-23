@@ -2,11 +2,12 @@
 import Base from '../layouts/Base.astro';
 import Search from '../components/Search.svelte';
 import Countdown from '../components/home/Countdown.svelte';
-import { getSearchIndex, getSchedule, windowLabel } from '../lib/data';
+import { dataMeta, getSearchIndex, getSchedule, windowLabel } from '../lib/data';
 import { profSearchEntries } from '../lib/data/professors';
 import { PLANNER_ENABLED } from '../lib/flags';
 
 const index = getSearchIndex();
+const profTerm = dataMeta.currentTerm.split(' ').slice(1).join(' '); // "2026-27 Term 2" -> "Term 2"
 const profs = profSearchEntries();
 // All window times are SGT with an explicit offset; the component picks the state in the browser (this is only the build-time fallback).
 const windows = getSchedule().map((s) => ({ label: windowLabel(s), opensAt: s.opensAt, closesAt: s.closesAt }));
@@ -17,7 +18,7 @@ const builtAt = Date.now();
     <div class="lead">
       <h1>How much should I bid?</h1>
       <p class="lede">Bid forecasts for SMU BOSS, built from past results. Unofficial; not affiliated with SMU.</p>
-      <div class="find"><Search client:load index={index} profs={profs} label="Search for a course by code, title or nickname, or a professor" placeholder="Search a course or professor" /></div>
+      <div class="find"><Search client:load index={index} profs={profs} profTerm={profTerm} label="Search for a course by code, title or nickname, or a professor" placeholder="Search a course or professor" /></div>
       <div class="status">
         <Countdown client:load windows={windows} builtAt={builtAt} />
       </div>

@@ -8,7 +8,7 @@ const { courses, term } = Astro.props;
 const rows = courses.flatMap((c) => c.nowSections.map((s) => ({ c, s })));
 ---
 <section aria-labelledby="now-h">
-  <h2 id="now-h">This term <span class="term">{term}</span></h2>
+  <h2 id="now-h">Teaching in {term}</h2>
   <div class="colhead head" aria-hidden="true"><span>Course</span><span>Section</span><span>Day and time</span><span>Seats free</span></div>
   <ul>
     {rows.map(({ c, s }) => (
@@ -25,7 +25,6 @@ const rows = courses.flatMap((c) => c.nowSections.map((s) => ({ c, s })));
 <style>
   section { margin-top: var(--s5); }
   h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--s2); }
-  .term { font-weight: 400; color: var(--muted); margin-left: var(--s2); }
   .head { display: none; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s1) var(--s3); padding: var(--s3) 0; border-bottom: 1px solid var(--rule); }
   .row:first-child { border-top: 1px solid var(--rule); }

@@ -12,12 +12,15 @@
     index,
     suffix = '',
     profs = [],
+    profTerm = '',
     label = 'Search for a course by code, title or nickname',
     placeholder = 'Code, title or nickname',
   }: {
     index: SearchEntry[];
     suffix?: string;
     profs?: ProfEntry[];
+    /** Short name of the term the professor rows refer to, e.g. "Term 2". */
+    profTerm?: string;
     label?: string;
     placeholder?: string;
   } = $props();
@@ -137,7 +140,7 @@
           <li id={`q-opt-${results.length + j}`} role="option" aria-selected={results.length + j === active} class:active={results.length + j === active} class="prof-row">
             <a class="row-link" href={`/prof/${slug}/`} tabindex="-1">
               <span class="code">{name}</span>
-              <span class="count">{n} {n === 1 ? 'course' : 'courses'}{now ? ' · this term' : ''}</span>
+              <span class="count">{n} {n === 1 ? 'course' : 'courses'}{now ? ` · in ${profTerm || 'the bidding term'}` : ''}</span>
               <span class="open">Open <span aria-hidden="true">›</span></span>
             </a>
           </li>

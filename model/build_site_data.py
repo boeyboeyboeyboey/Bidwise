@@ -16,6 +16,7 @@ import math
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -1130,8 +1131,42 @@ def with_affordable(ranked: list[dict], limit: int, ladder=AFFORDABLE_LADDER_CEN
     return [r for i, r in enumerate(ranked) if i in keep]
 
 
+def _hl_cache_keys(jobs: list) -> list[str]:
+    """One key per highlight job: the job itself plus the simulator's source, so any change to sim.py (or its inputs) misses."""
+    import hashlib  # noqa: PLC0415
+    import inspect  # noqa: PLC0415
+    # the wrapper's own rounding and percentile choice shape the stored triple, so its source is part of the key too
+    sim_hash = hashlib.sha256((ROOT / "model" / "forecast" / "sim.py").read_bytes() + inspect.getsource(_highlight_sim).encode()).hexdigest()
+    return [hashlib.sha256(json.dumps([sim_hash, HIGHLIGHT_SEED, HIGHLIGHT_TARGET, j[0], j[1], j[2], j[3]], sort_keys=True,
+                                      separators=(",", ":")).encode()).hexdigest() for j in jobs]
+
+
+def _hl_cache_load(path: Path) -> dict:
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        res = d["results"] if d.get("v") == 1 and isinstance(d.get("results"), dict) else {}
+        return {k: v for k, v in res.items() if isinstance(v, list) and len(v) == 3}  # anything else is a miss
+    except (OSError, ValueError, KeyError, AttributeError):
+        return {}
+
+
+def _hl_cache_save(path: Path, results: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"v": 1, "results": results}, f, separators=(",", ":"))
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+    except OSError as e:  # the cache is only a speed-up
+        print(f"highlight cache not saved: {e}", file=sys.stderr)
+
+
 def build_highlights(docs: dict, params: dict | None, window: dict, runs: int = HIGHLIGHT_RUNS,
-                     limit: int = HIGHLIGHT_LIMIT, processes: int | None = None) -> dict:
+                     limit: int = HIGHLIGHT_LIMIT, processes: int | None = None, cache_path: Path | None = None) -> dict:
     """Simulate EVERY forecast window for every current section with seats left; pick the two lists per window.
 
     Shape: {term, window (the open one), runs, targetP, byWindow: {label: {mostContested, easy}}}. Each list holds the
@@ -1163,12 +1198,30 @@ def build_highlights(docs: dict, params: dict | None, window: dict, runs: int = 
                 })
                 if live and live["source"] == "approx":
                     rows[-1]["approx"] = True
-    if processes == 1 or len(jobs) < 50:
-        results = [_highlight_sim(j) for j in jobs]
+    # Results of earlier builds are reused when the job (seats, floor, forecast params, runs) and sim.py are unchanged: the
+    # simulation is deterministic (fixed seed), so a hit equals a fresh run. Identical jobs inside one build run once.
+    keys = _hl_cache_keys(jobs) if cache_path else [None] * len(jobs)
+    cached = _hl_cache_load(cache_path) if cache_path else {}
+    todo, seen = [], {}
+    for j, k in zip(jobs, keys):
+        if k is not None and k in cached or k is not None and k in seen:
+            continue
+        if k is not None:
+            seen[k] = len(todo)
+        todo.append(j)
+    if processes == 1 or len(todo) < 50:
+        fresh = [_highlight_sim(j) for j in todo]
     else:
         from multiprocessing import Pool  # noqa: PLC0415
         with Pool(processes or os.cpu_count() or 1) as pool:
-            results = pool.map(_highlight_sim, jobs, chunksize=8)
+            fresh = pool.map(_highlight_sim, todo, chunksize=8)
+    if cache_path:
+        new = {k: list(fresh[i]) for k, i in seen.items()}
+        results = [tuple(new[k]) if k in new else tuple(cached[k]) for k in keys]
+        _hl_cache_save(cache_path, {k: (new[k] if k in new else cached[k]) for k in keys})  # drops entries no job uses any more
+        print(f"highlight sims: {len(jobs)} jobs, {len(fresh)} simulated, {len(jobs) - len(fresh)} from cache")
+    else:
+        results = fresh
     it = iter(results)
     for wlabel, rows in rows_by_w.items():
         for r in rows:
@@ -1323,6 +1376,7 @@ def main(argv=None) -> int:
                     help="distribution calibration (model/forecast/distcal.py, written by the refit); used only when DIST_CALIBRATION_ENABLED")
     ap.add_argument("--no-correction", action="store_true", help="build with the fitted params as they are (model version 'fit')")
     ap.add_argument("--highlight-runs", type=int, default=HIGHLIGHT_RUNS)
+    ap.add_argument("--highlight-cache", type=Path, help="JSON file of earlier highlight simulations to reuse (output identical; default: none)")
     ap.add_argument("--availability", type=Path, default=DEFAULT_AVAILABILITY,
                     help="merged live-seat CSV (default: `availability` in data/current.json); missing -> built without live seats")
     ap.add_argument("--current-term", help="override currentTerm from the window config")
@@ -1335,8 +1389,10 @@ def main(argv=None) -> int:
         cfg = load_window_config(args.window_config, args.current_term, _parse_when(args.now) if args.now else None)
         term = cfg["currentTerm"]
         args.params = args.params or default_params_path(term)
+        _tm = [("start", time.monotonic())]  # step timings, printed once at the end (log only)
         rows = load_rows(args.csv)
         index, docs = build(rows, term)
+        _tm.append(("load+build", time.monotonic()))
         live, seats_summary = load_live_seats(args.availability, term)
         attached_live = attach_live_seats(docs, live)
         deltas, delta_times = load_seat_deltas(args.availability, term, seats_summary["window"]) if seats_summary else ({}, None)
@@ -1348,6 +1404,7 @@ def main(argv=None) -> int:
         t_drops = datetime.now().timestamp()
         attached_drops = attach_drops(docs, rows, cfg["window"], cfg["schedule"], term)
         t_drops = datetime.now().timestamp() - t_drops
+        _tm.append(("seats+exams+drops", time.monotonic()))
         generated = round_to_hour(args.generated_at or datetime.now(SGT).isoformat(timespec="seconds"))
         meta = {
             "generatedAt": generated,
@@ -1381,17 +1438,25 @@ def main(argv=None) -> int:
                                                             live_out=live_out if DIST_CALIBRATION_ENABLED else None)
             if model_version != "fit":
                 accuracy_bt = backtest
+        _tm.append(("correction", time.monotonic()))
         if DIST_CALIBRATION_ENABLED and params:
             params, dist_meta = maybe_calibrate(params, fit_backtest, live_out if model_version != "fit" else None, args.distcal)
+        _tm.append(("distcal", time.monotonic()))
         attached = attach_forecasts(docs, params) if params else 0
+        _tm.append(("attach_forecasts", time.monotonic()))
         fmeta = build_forecast_meta(params, backtest, generated, model_version)
         if params:
             fmeta.update(load_refit_note(args.params.parent / "fit-meta.json"))
             fmeta.update(dist_meta)
-        highlights = build_highlights(docs, params, cfg["window"], runs=args.highlight_runs)
+        highlights = build_highlights(docs, params, cfg["window"], runs=args.highlight_runs, cache_path=args.highlight_cache)
+        _tm.append(("highlights", time.monotonic()))
         browse = build_browse(rows, index, args.browse_from_term)
+        _tm.append(("browse", time.monotonic()))
         write_outputs(args.out, meta, index, docs, fmeta, highlights, browse, build_accuracy(accuracy_bt, model_version))
+        _tm.append(("write_outputs", time.monotonic()))
         problems = validate(args.out, rows, term)
+        _tm.append(("validate", time.monotonic()))
+        print("step timings (s): " + ", ".join(f"{n} {b - a:.0f}" for (_, a), (n, b) in zip(_tm, _tm[1:])))
     except BuildError as e:
         print(f"FAIL: {e}", file=sys.stderr)
         return 1

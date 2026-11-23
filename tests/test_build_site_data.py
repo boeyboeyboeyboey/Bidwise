@@ -655,6 +655,33 @@ class HighlightSeats(unittest.TestCase):
         self.assertEqual(rows["G1"]["pFill"], round(want["pFill"], 3))
 
 
+class HighlightCache(unittest.TestCase):
+    def test_cached_highlights_equal_fresh_ones_and_hit(self):
+        import tempfile
+        from contextlib import redirect_stdout
+        from io import StringIO
+        secs = [{"section": f"G{i}", "classNumber": str(i), "instructor": "X", "seatsLeft": 3 + i, "seatsTotal": 40,
+                 "minBidCents": 1000, "forecast": {WINDOW: _fc(2.0, 1000.0 + 50 * i)}} for i in range(4)]
+        docs = {"AAA101": {"title": "T", "sectionsNow": secs}}
+        params = {"windows": [WINDOW]}
+        win = {"term": "2026-27 Term 2", "round": "1B", "window": 1}
+        fresh = bsd.build_highlights(docs, params, win, runs=300)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "c" / "hl.json"
+            for expect in ("4 simulated", "0 simulated"):
+                buf = StringIO()
+                with redirect_stdout(buf):
+                    got = bsd.build_highlights(docs, params, win, runs=300, cache_path=path)
+                self.assertEqual(got, fresh)
+                self.assertIn(expect, buf.getvalue())
+            self.assertEqual(oct(path.stat().st_mode & 0o777), "0o600")
+            secs[0]["forecast"][WINDOW] = _fc(2.0, 5000.0)  # one changed job misses, the rest still hit
+            buf = StringIO()
+            with redirect_stdout(buf):
+                bsd.build_highlights(docs, params, win, runs=300, cache_path=path)
+            self.assertIn("1 simulated", buf.getvalue())
+
+
 class SeatDeltas(unittest.TestCase):
     TERM = "2026-27 Term 2"
     WIN = "Round 1B Window 1"

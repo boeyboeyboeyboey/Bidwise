@@ -1,0 +1,108 @@
+---
+import type { OutlineSummary } from '../../lib/data/outlines';
+import { finalLine, gradingTotal, hasGroupInfo, isBreak, midtermLine, pct, weekText } from './outlineText';
+
+interface Props { summary: OutlineSummary }
+const { summary: s } = Astro.props;
+const total = gradingTotal(s.grading);
+const showType = hasGroupInfo(s.grading);
+const fin = s.final_exam;
+const mid = midtermLine(s.midterm);
+const hasExams = !!(fin && (fin.exists !== null || fin.weight_pct !== null || fin.take_home === true)) || mid !== null;
+const weekly = s.weekly.filter((w) => w.topics.length > 0 || w.week_label);
+---
+<div class="cols">
+  {s.grading.length > 0 && (
+    <section class="grading">
+      <h3>Grading</h3>
+      {s.weights_note && (
+        <p class="note">This outline gives different weights in different places. These are from its assessment table; check the outline.</p>
+      )}
+      <table>
+        <thead>
+          <tr><th scope="col">Component</th>{showType && <th scope="col" class="type">Type</th>}<th scope="col" class="num">Weight</th></tr>
+        </thead>
+        <tbody>
+          {s.grading.map((g) => (
+            <tr>
+              <td>{g.component}</td>
+              {showType && <td class="type">{g.group === true ? 'Group' : g.group === false ? 'Individual' : ''}</td>}
+              <td class="num">{pct(g.weight_pct)}</td>
+            </tr>
+          ))}
+        </tbody>
+        {total !== null && (
+          <tfoot><tr><th scope="row" colspan={showType ? 2 : 1}>Total</th><td class="num">{pct(total)}</td></tr></tfoot>
+        )}
+      </table>
+    </section>
+  )}
+  <div class="side">
+    {hasExams && (
+      <section>
+        <h3>Exams</h3>
+        <dl>
+          {fin && fin.exists === false && <><dt>Final exam</dt><dd>None</dd></>}
+          {fin && fin.exists !== false && (fin.exists === true || fin.weight_pct !== null) && <><dt>Final exam</dt><dd>{finalLine(fin) || 'Yes'}</dd></>}
+          {fin && fin.exists !== false && fin.cheat_sheet && <><dt>Cheat sheet</dt><dd>{fin.cheat_sheet}</dd></>}
+          {fin && fin.exists !== false && fin.calculator && <><dt>Calculator</dt><dd>{fin.calculator}</dd></>}
+          {mid !== null && <><dt>Midterm</dt><dd>{mid}</dd></>}
+        </dl>
+      </section>
+    )}
+    {s.extra_credit && (
+      <section><h3>Extra credit</h3><p>{s.extra_credit}</p></section>
+    )}
+    {s.textbooks.length > 0 && (
+      <section>
+        <h3>Textbooks</h3>
+        <ul class="books">{s.textbooks.map((b) => <li>{b}</li>)}</ul>
+      </section>
+    )}
+  </div>
+</div>
+{weekly.length > 0 && (
+  <details class="weekly">
+    <summary>Weekly topics (tentative)</summary>
+    <ol>
+      {weekly.map((w) => (
+        <li class:list={{ brk: isBreak(w.kind) }}>
+          <span class="wk">{weekText(w.week_label)}</span>
+          <ul>{w.topics.map((t) => <li>{t}</li>)}</ul>
+        </li>
+      ))}
+    </ol>
+  </details>
+)}
+
+<style>
+  .cols { display: grid; gap: var(--s5); margin-top: var(--s5); }
+  .side { display: grid; gap: var(--s5); align-content: start; }
+  h3 { margin: 0 0 var(--s2); font-size: var(--fs-md); font-weight: 600; }
+  p { margin: 0; font-size: var(--fs-sm); }
+  .note { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  th, td { padding: var(--s2) 0; text-align: left; vertical-align: baseline; border-top: 1px solid var(--rule); }
+  thead th { border-top: 0; padding-top: 0; font-size: var(--fs-xs); font-weight: 400; color: var(--muted); border-bottom: 1px solid var(--rule); }
+  tfoot th, tfoot td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
+  .num { text-align: right; padding-left: var(--s3); white-space: nowrap; }
+  .type { color: var(--muted); font-size: var(--fs-xs); padding-left: var(--s3); white-space: nowrap; }
+  thead .type { font-size: var(--fs-xs); }
+  dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: var(--s2) var(--s4); font-size: var(--fs-sm); }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .books { margin: 0; padding: 0 0 0 var(--s4); font-size: var(--fs-sm); display: grid; gap: var(--s1); }
+  .weekly { margin-top: var(--s5); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  summary { display: flex; align-items: center; min-height: 48px; cursor: pointer; font-size: var(--fs-md); font-weight: 600; }
+  summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  ol { list-style: none; margin: 0; padding: 0 0 var(--s3); }
+  ol > li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--s3); padding: var(--s2) 0; font-size: var(--fs-sm); border-top: 1px dashed var(--rule); }
+  ol > li:first-child { border-top: 0; }
+  .wk { font-variant-numeric: tabular-nums; font-weight: 600; }
+  ol ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+  .brk { color: var(--muted); }
+  .brk .wk { font-weight: 400; }
+  @media (min-width: 900px) {
+    .cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s7); }
+  }
+</style>

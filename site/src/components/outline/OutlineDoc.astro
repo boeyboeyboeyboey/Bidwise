@@ -1,0 +1,37 @@
+---
+import type { OutlineDoc } from '../../lib/data/outlines';
+import OutlineSummary from './OutlineSummary.astro';
+import { pdfName } from './outlineText';
+
+interface Props { sha: string; doc: OutlineDoc; code: string; firstSection: string; hidden: boolean }
+const { sha, doc, code, firstSection, hidden } = Astro.props;
+---
+<div class="doc" data-doc={sha} hidden={hidden}>
+  {!doc.summary && <p class="nosum">No summary yet. The outline itself:</p>}
+  <div class="actions">
+    <a class="btn btn-primary view-link" href={doc.pdf} target="_blank" rel="noopener">View outline<span class="sr-only"> (opens in a new tab)</span></a>
+    <button type="button" class="btn btn-primary view-toggle" aria-expanded="false" data-toggle>View outline</button>
+    <a class="btn" href={doc.pdf} download={pdfName(code, firstSection)}>Download PDF</a>
+  </div>
+  <div class="frame" data-src={doc.pdf} hidden></div>
+  {doc.summary && <OutlineSummary summary={doc.summary} />}
+  {doc.summary && <p class="note">Summaries are read from the SMU course outline by software and can be wrong. Check the outline before relying on them.</p>}
+</div>
+
+<style>
+  .doc[hidden] { display: none; }
+  p { margin: 0; }
+  .nosum { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--s2); }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .view-toggle { display: none; }
+  /* The in-page viewer needs the script and a screen wide enough; otherwise the PDF opens in a new tab. */
+  :global([data-js]) .view-toggle { display: none; }
+  @media (min-width: 768px) {
+    :global([data-js]) .view-toggle { display: inline-flex; }
+    :global([data-js]) .view-link { display: none; }
+  }
+  .frame { margin-top: var(--s4); }
+  .frame[hidden] { display: none; }
+  .frame :global(iframe) { display: block; width: 100%; height: min(85vh, 1000px); min-height: 520px; border: 1px solid var(--rule-strong); border-radius: var(--r-md); background: var(--surface); }
+  .note { margin-top: var(--s5); color: var(--muted); font-size: var(--fs-xs); }
+</style>

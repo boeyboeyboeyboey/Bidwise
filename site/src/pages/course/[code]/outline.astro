@@ -1,0 +1,36 @@
+---
+import Base from '../../../layouts/Base.astro';
+import OutlineView from '../../../components/outline/OutlineView.astro';
+import { outlinesDiffer } from '../../../components/outline/outlineText';
+import { bossCodeOf, codeLabel, codeSlug } from '../../../lib/data';
+import { getCourse } from '../../../lib/data/server';
+import { getOutline, outlineCodes } from '../../../lib/data/outlines';
+
+export function getStaticPaths() {
+  return outlineCodes().map((code) => ({ params: { code } }));
+}
+
+const course = getCourse(Astro.params.code!)!;
+const outline = getOutline(course.code)!;
+// Pages show the BOSS code; a split course (COR-STAT1202-X) is told apart by its title.
+const shownCode = bossCodeOf(course.code, course.bossCode);
+const differ = outlinesDiffer(outline.sections);
+const description = `Course outlines for each section of ${shownCode} ${course.title} at SMU, with the grading breakdown and exam details where available.`;
+---
+<Base title={`${shownCode} course outlines · Bidwise`} description={description} windowPicker={false} active="search">
+  <a class="back" href={`/course/${course.code}/`}>‹ {codeLabel(course.code, course.bossCode)}</a>
+  <header>
+    <h1>{shownCode} course outlines</h1>
+    <p>{course.title}</p>
+    <p class="term">{outline.term}{differ ? '. Outlines differ by section.' : ''}</p>
+  </header>
+  <OutlineView outline={outline} code={codeSlug(course.code, course.bossCode)} />
+</Base>
+
+<style>
+  .back { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; font-size: 15px; color: var(--accent); text-decoration: none; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); padding-bottom: var(--s4); }
+  h1 { font-size: 30px; font-weight: 600; }
+  p { margin: 0; color: var(--muted); font-size: 17px; }
+  .term { flex-basis: 100%; margin-top: var(--s1); font-size: 15px; }
+</style>

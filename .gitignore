@@ -80,3 +80,6 @@ AGENTS.md
 .claude/
 *.csv
 !/tests/fixtures/site_data_fixture.csv
+
+# Course outline PDFs copied into the site at build time (model/build_outline_data.py): private course documents, never committed.
+/site/public/outlines/

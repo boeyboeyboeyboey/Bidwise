@@ -1,0 +1,135 @@
+---
+import { instructorLinks } from '../../lib/data/profNames';
+import type { OutlineFile } from '../../lib/data/outlines';
+import { titleName } from '../../lib/data/format';
+import OutlineDoc from './OutlineDoc.astro';
+import { sameOutline } from './outlineText';
+
+interface Props { outline: OutlineFile; code: string }
+const { outline, code } = Astro.props;
+const { sections, docs } = outline;
+const first = Math.max(0, sections.findIndex((s) => s.sha));
+const shas = [...new Set(sections.map((s) => s.sha).filter((s): s is string => !!s))];
+const firstSectionOf = (sha: string) => sections.find((s) => s.sha === sha)!.section;
+// Instructor names go on the switch only when sections have different ones; otherwise they repeat the heading below.
+const showWho = new Set(sections.map((s) => s.instructor)).size > 1;
+const optionText = (i: number) => [sections[i].section, showWho ? titleName(sections[i].instructor) : ''].filter(Boolean).join(' · ');
+---
+<div class="outline" data-outline>
+  {sections.length > 1 && (
+    <div class="ctl" data-switch hidden>
+      <label class="pick">
+        <span class="lab">Section</span>
+        <select class="field">
+          {sections.map((_s, i) => <option value={i} selected={i === first}>{optionText(i)}</option>)}
+        </select>
+      </label>
+      <div class="switch" role="group" aria-label="Section">
+        {sections.map((s, i) => (
+          <button type="button" class="tbtn" aria-pressed={i === first ? 'true' : 'false'} aria-controls={`sec-${i}`} data-i={i} data-sec={s.section} title={titleName(s.instructor)}>
+            <span class="bs">{s.section}</span>
+            {showWho && <span class="bi">{titleName(s.instructor)}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
+  {sections.map((s, i) => {
+    const same = sameOutline(sections, i);
+    const people = instructorLinks(s.instructor);
+    return (
+      <div class="sec" id={`sec-${i}`} data-doc-ref={s.sha ?? ''} hidden={i !== first}>
+        <h2>
+          <span class="sn">{s.section}</span>
+          {people.length > 0 && <span class="by"> · {people.map((p, k) => <>{k > 0 && ', '}<a href={p.href}>{p.display}</a></>)}</span>}
+        </h2>
+        {same.length > 0 && <p class="same">Same outline as {same.join(', ')}</p>}
+        {!s.sha && <p class="none">No outline found for this section.</p>}
+      </div>
+    );
+  })}
+  {shas.map((sha) => (
+    <OutlineDoc sha={sha} doc={docs[sha]} code={code} firstSection={firstSectionOf(sha)} hidden={sha !== sections[first].sha} />
+  ))}
+</div>
+<script is:inline>
+  (function () {
+    var root = document.querySelector('[data-outline]');
+    if (!root) return;
+    root.setAttribute('data-js', '');
+    // Section switch.
+    var ctl = root.querySelector('[data-switch]');
+    var secs = root.querySelectorAll('.sec');
+    var docs = root.querySelectorAll('.doc');
+    function show(i, remember) {
+      secs.forEach(function (s, j) { s.hidden = j !== i; });
+      var sha = secs[i].getAttribute('data-doc-ref');
+      docs.forEach(function (d) { d.hidden = d.getAttribute('data-doc') !== sha; });
+      if (!ctl) return;
+      var btns = ctl.querySelectorAll('button');
+      btns.forEach(function (b, j) { b.setAttribute('aria-pressed', j === i ? 'true' : 'false'); });
+      ctl.querySelector('select').value = String(i);
+      if (remember) {
+        try {
+          var u = new URL(location.href);
+          u.searchParams.set('s', btns[i].getAttribute('data-sec'));
+          history.replaceState(null, '', u);
+        } catch (e) {}
+      }
+    }
+    if (ctl) {
+      ctl.hidden = false;
+      var btns = ctl.querySelectorAll('button');
+      var sel = ctl.querySelector('select');
+      btns.forEach(function (b, i) { b.addEventListener('click', function () { show(i, true); }); });
+      sel.addEventListener('change', function () { show(Number(sel.value), true); });
+      try {
+        var want = (new URLSearchParams(location.search).get('s') || '').toLowerCase();
+        if (want) btns.forEach(function (b, i) { if (b.getAttribute('data-sec').toLowerCase() === want) show(i, false); });
+      } catch (e) {}
+    }
+    // In-page PDF viewer (wide screens only; the button is hidden by CSS below 768px).
+    docs.forEach(function (d) {
+      var t = d.querySelector('[data-toggle]');
+      var frame = d.querySelector('.frame');
+      t.addEventListener('click', function () {
+        var open = frame.hidden;
+        if (open && !frame.firstChild) {
+          var f = document.createElement('iframe');
+          f.title = 'Course outline PDF';
+          f.src = frame.getAttribute('data-src');
+          frame.appendChild(f);
+        }
+        frame.hidden = !open;
+        t.setAttribute('aria-expanded', open ? 'true' : 'false');
+        t.textContent = open ? 'Hide outline' : 'View outline';
+      });
+    });
+  })();
+</script>
+
+<style>
+  .ctl { margin-bottom: var(--s4); }
+  .ctl[hidden] { display: none; }
+  .pick { display: flex; flex-direction: column; gap: var(--s1); }
+  .pick .lab { font-size: var(--fs-xs); color: var(--muted); }
+  .switch { display: none; }
+  .tbtn { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; min-height: 44px; max-width: 200px; padding: var(--s1) var(--s3); font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); cursor: pointer; text-align: left; font-variant-numeric: tabular-nums; }
+  .tbtn:hover { background: var(--accent-soft); }
+  .tbtn[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .tbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .bs { font-size: var(--fs-sm); font-weight: 600; }
+  .bi { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
+  .tbtn[aria-pressed='true'] .bi { color: var(--accent); }
+  .sec[hidden] { display: none; }
+  h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+  .by { font-weight: 400; }
+  .by a { color: var(--accent); text-decoration: none; }
+  .by a:hover { text-decoration: underline; }
+  p { margin: var(--s1) 0 0; color: var(--muted); font-size: var(--fs-sm); }
+  .sec { margin-bottom: var(--s4); }
+  @media (min-width: 768px) {
+    .pick { display: none; }
+    .switch { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  }
+</style>

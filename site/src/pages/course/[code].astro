@@ -10,6 +10,7 @@ import { buildRowSeed } from '../../components/course/rowSeed';
 import { DEFAULT_STYLE } from '../../lib/sim/presets';
 import { readRequisites } from '../../lib/requisites/server';
 import { buildRows, catalogueNote } from '../../lib/requisites/render';
+import { hasOutline } from '../../lib/data/outlines';
 import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
 
 export function getStaticPaths() {
@@ -38,6 +39,7 @@ const reqRows = reqData
   : [];
 const reqNote = reqData && reqRows.length ? catalogueNote(reqEntry, reqData.asOf) : [];
 // A course split into two site pages (Rosie Ching's SMU-X statistics sections) says how the two relate.
+const outlineHref = hasOutline(course.code) ? `/course/${course.code}/outline/` : null;
 const siblingCode = splitSibling(course.code);
 const sibling = siblingCode ? getCourseIndex().find((c) => c.code === siblingCode) : undefined;
 const splitNote = sibling
@@ -50,6 +52,7 @@ const splitNote = sibling
   <header>
     <h1>{shownCode}</h1>
     <p>{course.title}</p>
+    {outlineHref && <a class="outlink" href={outlineHref}>Course outlines ›</a>}
     {splitNote && <p class="split">{splitNote.lead}<a href={`/course/${splitNote.to}/`}>{splitNote.link}</a>{splitNote.mid}</p>}
   </header>
   {reqRows.length > 0 && <Requisites client:idle rows={reqRows} note={reqNote} />}
@@ -71,4 +74,6 @@ const splitNote = sibling
   p { margin: 0; color: var(--muted); font-size: 17px; }
   .split { flex-basis: 100%; margin-top: var(--s1); font-size: 15px; }
   .split a { color: var(--accent); }
+  .outlink { display: inline-flex; align-items: center; min-height: 44px; margin-left: auto; font-size: 15px; font-weight: 600; color: var(--accent); text-decoration: none; }
+  .outlink:hover { text-decoration: underline; }
 </style>

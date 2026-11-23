@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignSlugs, buildProfessors, profSlug, splitInstructors, type ProfCourseInput } from './professors';
+import { assignSlugs, buildProfessors, isUnscheduledUnbid, profSlug, splitInstructors, type ProfCourseInput } from './professors';
 
 describe('splitInstructors', () => {
   it('splits on comma between multi-word names', () => {
@@ -218,3 +218,38 @@ describe('buildProfessors historyComplete', () => {
     expect(may(course([row('MAY LIM')], 'MAY LIM / BOB TAN')).historyComplete).toBe(false);
   });
 });
+
+describe('unscheduled, unbid rows', () => {
+  const row = (section: string, days: string, start: string, end: string, medianCents: number | null, instructor = 'TAN, A') =>
+    ({ term: '2025-26 Term 1', window: 'Round 1 Window 1', instructor, medianCents, minCents: medianCents, section, days, start, end });
+
+  it('flags only rows with no time and no bid', () => {
+    expect(isUnscheduledUnbid(row('G1', 'TBA', 'TBA', 'TBA', null))).toBe(true);
+    expect(isUnscheduledUnbid(row('G1', '', '', '', null))).toBe(true);
+    expect(isUnscheduledUnbid(row('G1', 'TBA', 'TBA', 'TBA', 1500))).toBe(false);
+    expect(isUnscheduledUnbid(row('G1', 'MON', '08:15', '11:30', null))).toBe(false);
+    expect(isUnscheduledUnbid({ medianCents: null })).toBe(false);
+  });
+
+  it('leaves them out of courses taught and past terms, but keeps them for a professor with nothing else', () => {
+    const profs = buildProfessors([
+      { code: 'WS1', title: 'Work-study', sectionsNow: [], history: [row('G6', 'TBA', 'TBA', 'TBA', null, 'MOK, A'), row('G7', 'MON', '08:15', '11:30', null, 'LIM, B')] },
+      { code: 'IS1', title: 'Programming', sectionsNow: [], history: [row('G1', 'TUE', '12:00', '15:15', 2000, 'MOK, A')] },
+      { code: 'WS2', title: 'Other', sectionsNow: [], history: [row('G1', 'TBA', 'TBA', 'TBA', null, 'ONLY, C')] },
+    ] as ProfCourseInput[], '2026-27 Term 2');
+    const mok = profs.find((p) => p.name.startsWith('Mok'))!;
+    expect(mok.courses.map((c) => c.code)).toEqual(['IS1']);
+    expect(mok.pastTerms.flatMap((t) => t.sections.map((s) => s.code))).toEqual(['IS1']);
+    expect(profs.find((p) => p.name.startsWith('Lim'))!.courses.map((c) => c.code)).toEqual(['WS1']);
+    expect(profs.find((p) => p.name.startsWith('Only'))!.courses.map((c) => c.code)).toEqual(['WS2']);
+  });
+  it('on a team-taught hidden row, drops it for a professor with other rows and keeps it for one without', () => {
+    const profs = buildProfessors([
+      { code: 'WS1', title: 'Work-study', sectionsNow: [], history: [row('G1', 'TBA', 'TBA', 'TBA', null, 'TAN, ALICE / KOH, BEN')] },
+      { code: 'IS1', title: 'Programming', sectionsNow: [], history: [row('G1', 'TUE', '12:00', '15:15', 2000, 'TAN, ALICE')] },
+    ] as ProfCourseInput[], '2026-27 Term 2');
+    expect(profs.find((p) => p.name.startsWith('Tan'))!.courses.map((c) => c.code)).toEqual(['IS1']);
+    expect(profs.find((p) => p.name.startsWith('Koh'))!.courses.map((c) => c.code)).toEqual(['WS1']);
+  });
+});
+

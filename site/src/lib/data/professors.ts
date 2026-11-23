@@ -2,7 +2,7 @@
 import { dataMeta, getCourseIndex } from './index';
 import { getCourse } from './server';
 import { instructorKey, titleName } from './format';
-import { sortTerms } from '../../components/course/history';
+import { sortTerms, timeText } from '../../components/course/history';
 import { windowRank } from '../../components/explore/browse';
 import type { HistoryRow, Meeting, Section, LiveSeats } from './types';
 
@@ -157,6 +157,11 @@ interface ProfAcc {
   courses: Map<string, CourseAcc>;
 }
 
+/** True for a history row with no meeting time and no bid, e.g. a work-study supervision section. Professor pages leave these out (owner, 24 Nov). Rows without time fields are kept. */
+export function isUnscheduledUnbid(row: Pick<ProfCourseInput['history'][number], 'medianCents' | 'days' | 'start' | 'end'>): boolean {
+  return row.medianCents === null && row.start !== undefined && timeText(row.days ?? '', row.start, row.end ?? '') === 'Time not set';
+}
+
 /** Pure: builds every professor from the course rows. Pass the current term so teaching-now terms count. */
 export function buildProfessors(courses: readonly ProfCourseInput[], currentTerm?: string): Professor[] {
   const byKey = new Map<string, ProfAcc>();
@@ -171,6 +176,14 @@ export function buildProfessors(courses: readonly ProfCourseInput[], currentTerm
     return c;
   };
 
+  const hidden: { course: ProfCourseInput; row: ProfCourseInput['history'][number] }[] = [];
+  const addRow = (name: string, course: ProfCourseInput, row: ProfCourseInput['history'][number]) => {
+    const c = accFor(name, course.code, course.title);
+    c.terms.add(row.term);
+    c.rows.push(row);
+    bump(c.queries, row.instructor);
+  };
+
   for (const course of courses) {
     for (const sec of course.sectionsNow) {
       for (const name of splitInstructors(sec.instructor)) {
@@ -182,13 +195,14 @@ export function buildProfessors(courses: readonly ProfCourseInput[], currentTerm
     }
     for (const row of course.history) {
       if (!row.instructor) continue;
-      for (const name of splitInstructors(row.instructor)) {
-        const c = accFor(name, course.code, course.title);
-        c.terms.add(row.term);
-        c.rows.push(row);
-        bump(c.queries, row.instructor);
-      }
+      if (isUnscheduledUnbid(row)) { hidden.push({ course, row }); continue; }
+      for (const name of splitInstructors(row.instructor)) addRow(name, course, row);
     }
+  }
+  const seen = new Set(byKey.keys());
+  // A professor with only unscheduled, unbid rows keeps them, so course pages never link to a missing profile.
+  for (const { course, row } of hidden) {
+    for (const name of splitInstructors(row.instructor)) if (!seen.has(profKey(name))) addRow(name, course, row);
   }
 
   const built = [...byKey].map(([key, p]) => {

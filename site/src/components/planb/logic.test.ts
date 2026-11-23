@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { affordableRows, avoidSlots, budgetLabel, countLabel, blockCodes, chunk, dedupeBlocks, effectiveRequisites, noFinalOnly, eText, moneyText, noteFor, otherRows, prunedCourses, pseudoBlock, capTooLow, blockTabs, resolveTab, tabKeyTarget, unmetLast, withNotes } from './logic';
 import type { PlanRow } from './logic';
+import { firstTagByKey, tagHref } from './logic';
 import { candidates, clearCandidateCache } from '../../lib/gradreq';
 import type { Candidate, OfferedCourse, Requisites, SectionOption } from '../../lib/gradreq';
 import type { Section } from '../../lib/data/types';
@@ -236,5 +237,19 @@ describe('filter button labels', () => {
     expect(budgetLabel(null)).toBe('Budget');
     expect(budgetLabel(2000)).toBe('Budget e$20');
     expect(budgetLabel(4250)).toBe('Budget e$42.50');
+  });
+});
+
+describe('Plan B catalogue tags', () => {
+  it('takes the first tag of each group, keyed like a block', () => {
+    const views = [{ view: { id: 'v1', groups: [{ id: 'g1', tagIds: ['area-a', 'area-b'] }, { id: 'g2' }, { id: 'g3', tagIds: [] }] } }];
+    const map = firstTagByKey(views);
+    expect(map.get('v1\u0000g1')).toBe('area-a');
+    expect(map.has('v1\u0000g2')).toBe(false);
+    expect(map.has('v1\u0000g3')).toBe(false);
+  });
+
+  it('links to the Browse tag filter', () => {
+    expect(tagHref('area-grad-req-sustainability-intake-2024-onwards')).toBe('/explore/?tag=area-grad-req-sustainability-intake-2024-onwards');
   });
 });

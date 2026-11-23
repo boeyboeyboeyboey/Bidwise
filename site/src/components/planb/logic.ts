@@ -264,3 +264,16 @@ export function tabKeyTarget(key: string, index: number, count: number): number 
   if (key === 'End') return count - 1;
   return null;
 }
+
+/** Browse link for a requirement block's SMU catalogue tag. */
+export const tagHref = (tagId: string): string => `/explore/?tag=${encodeURIComponent(tagId)}`;
+
+/** Block key (view id, NUL, group id: PlanB's keyOf) -> the group's first catalogue tag id. Groups without tagIds are absent. */
+export function firstTagByKey(views: readonly { view: { id: string; groups: readonly { id: string; tagIds?: readonly string[] }[] } }[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const lv of views) for (const g of lv.view.groups) {
+    const tag = g.tagIds?.[0];
+    if (tag) out.set(`${lv.view.id}\u0000${g.id}`, tag);
+  }
+  return out;
+}

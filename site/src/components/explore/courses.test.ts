@@ -176,7 +176,7 @@ describe('termChoices', () => {
 });
 
 describe('URL state', () => {
-  const full: BrowseState = { q: 'law', sub: 'COR-LAW', days: 0b00101, times: ['08:15', '19:00'], seats: true, nofinal: true, course: 'COR-LAW2243', term: '2025-26 Term 2', sec: 'G1' };
+  const full: BrowseState = { q: 'law', sub: 'COR-LAW', days: 0b00101, times: ['08:15', '19:00'], seats: true, nofinal: true, course: 'COR-LAW2243', term: '2025-26 Term 2', sec: 'G1', tag: 'area-x' };
   it('round-trips the filters and omits defaults', () => {
     const list = { ...full, course: '', term: '', sec: '' };
     expect(decodeBrowse(encodeBrowse(list))).toEqual(list);
@@ -205,7 +205,7 @@ describe('URL state', () => {
     expect(decodeBrowse('?v=browse&bi=ANN+LEE').q).toBe('ANN LEE');
   });
   it('counts filters but not the search text', () => {
-    expect(activeFilterCount(full)).toBe(5);
+    expect(activeFilterCount(full)).toBe(6);
     expect(activeFilterCount(browseDefaults())).toBe(0);
   });
 });
@@ -267,5 +267,30 @@ describe('codeFromNickname (Explore Builder)', () => {
     expect(codeFromNickname(man, 'nothing')).toBeNull();
     expect(codeFromNickname(man, '')).toBeNull();
     expect(codeFromNickname(['IS112'], 'statx')).toBeNull();
+  });
+});
+
+describe('catalogue tag filter', () => {
+  const tagged = new Set(['ECON111', 'ACCT101']);
+  it('round-trips the tag through the URL and omits it when empty', () => {
+    expect(encodeBrowse({ ...browseDefaults(), tag: 'area-sustainability' })).toBe('tag=area-sustainability');
+    expect(decodeBrowse('?tag=area-sustainability').tag).toBe('area-sustainability');
+    expect(decodeBrowse(encodeBrowse({ ...browseDefaults(), tag: 'area-x' }))).toEqual({ ...browseDefaults(), tag: 'area-x' });
+    expect(decodeBrowse('').tag).toBe('');
+  });
+  it('counts a tag as one active filter', () => {
+    expect(activeFilterCount({ ...browseDefaults(), tag: 'area-x' })).toBe(1);
+    expect(activeFilterCount({ ...browseDefaults(), tag: 'area-x', seats: true })).toBe(2);
+  });
+  it('keeps only the tag codes when the state has a tag', () => {
+    expect(codes(filterCourses(courses, { ...browseDefaults(), tag: 'area-x' }, tagged))).toEqual(['ACCT101', 'ECON111']);
+    expect(codes(filterCourses(courses, { ...browseDefaults(), tag: 'area-x', sub: 'ECON' }, tagged))).toEqual(['ECON111']);
+  });
+  it('does not filter when the state has no tag', () => {
+    expect(codes(filterCourses(courses, browseDefaults(), tagged))).toEqual(codes(filterCourses(courses, browseDefaults())));
+  });
+  it('does not filter while the tag is unknown or tags are loading (null set)', () => {
+    expect(codes(filterCourses(courses, { ...browseDefaults(), tag: 'area-x' }, null))).toEqual(codes(filterCourses(courses, browseDefaults())));
+    expect(codes(filterCourses(courses, { ...browseDefaults(), tag: 'area-x' }))).toEqual(codes(filterCourses(courses, browseDefaults())));
   });
 });

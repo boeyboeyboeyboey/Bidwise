@@ -3,6 +3,8 @@
   import { onMount, tick } from 'svelte';
   import { scanDayText } from '../../lib/data/seats';
   import { fetchIndex } from '../../lib/data/client';
+  import { fetchTags } from '../../lib/tags/client';
+  import type { Tag, TagKind } from '../../lib/tags/types';
   import MultiSelect from '../ui/MultiSelect.svelte';
   import type { ClassesPayload } from '../classes/logic';
   import {
@@ -26,7 +28,21 @@
   const dayChoices = $derived(dayOptions(courses, bs.days));
   const timeList = $derived(timeOptions(courses, bs.times));
   const timeChoices = $derived(timeList.map((label, i) => ({ bit: 1 << i, label })));
-  const hits = $derived(filterCourses(courses, bs));
+  // Catalogue tags, loaded once. A tag from the URL filters only after the tags load and only if it exists.
+  let tags = $state.raw<Tag[]>([]);
+  let tagStatus = $state<'loading' | 'ready' | 'error'>('loading');
+  const tagGroups: { kind: TagKind; label: string }[] = [
+    { kind: 'gradreq', label: 'Graduation requirements' },
+    { kind: 'core', label: 'Core Curriculum' },
+    { kind: 'area', label: 'Majors and electives' },
+    { kind: 'track', label: 'Tracks' },
+  ];
+  const tagsOf = (kind: TagKind) => tags.filter((t) => t.kind === kind);
+  const tagOf = $derived(tags.find((t) => t.id === bs.tag) ?? null);
+  const tagCodes = $derived(tagOf ? new Set(tagOf.codes) : null);
+  const tagUnknown = $derived(!!bs.tag && tagStatus === 'ready' && !tagOf);
+  const tagInList = $derived(tagCodes ? courses.filter((c) => tagCodes.has(c.code)).length : 0);
+  const hits = $derived(filterCourses(courses, bs, tagCodes));
   const count = $derived(activeFilterCount(bs));
   const filtered = $derived(sectionFilterOn(bs));
   const scanText = $derived(scanDayText(scannedAt));
@@ -70,6 +86,13 @@
   }
 
   onMount(() => {
+    fetchTags().then((d) => {
+      tags = d?.tags ?? [];
+      tagStatus = d ? 'ready' : 'error';
+    });
+  });
+
+  onMount(() => {
     bs = decodeBrowse(location.search);
     // Old course links (/explore/?course=IS214) now open the course page; location.replace keeps Back from looping.
     const to = bs.course && !bs.term ? courseRedirect(bs, '') : null;
@@ -92,7 +115,8 @@
     }
   });
 
-  const clear = () => (bs = { ...bs, sub: '', days: 0, times: [], seats: false, nofinal: false });
+  const clear = () => (bs = { ...bs, sub: '', days: 0, times: [], seats: false, nofinal: false, tag: '' });
+  const clearTag = () => (bs = { ...bs, tag: '' });
   const secLabel = (n: number, total: number) => (n === total ? `${n} ${n === 1 ? 'section' : 'sections'}` : `${n} of ${total} sections`);
 </script>
 
@@ -126,6 +150,18 @@
             {#each subjects as s (s)}<option value={s}>{s}</option>{/each}
           </select>
         </label>
+        <label class="g tagf"><span>Course tag</span>
+          <select value={bs.tag} disabled={tagStatus !== 'ready'} onchange={(e) => (bs = { ...bs, tag: e.currentTarget.value })}>
+            <option value="">Any</option>
+            {#each tagGroups as g (g.kind)}
+              {#if tagsOf(g.kind).length}
+                <optgroup label={g.label}>
+                  {#each tagsOf(g.kind) as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+                </optgroup>
+              {/if}
+            {/each}
+          </select>
+        </label>
         <div class="g"><MultiSelect label="Day" options={dayChoices} value={bs.days} onchange={(m) => (bs = { ...bs, days: m })} anyLabel="Any day" noun="days" /></div>
         <div class="g"><MultiSelect label="Start time" options={timeChoices} value={timesToMask(timeList, bs.times)} onchange={(m) => (bs = { ...bs, times: maskToTimes(timeList, m) })} anyLabel="Any start time" noun="start times" listMax={3} /></div>
         <div class="checks">
@@ -135,6 +171,14 @@
         {#if count}<button type="button" class="btn clearf" onclick={clear}>Clear filters</button>{/if}
       </div>
     </div>
+
+    {#if tagOf}
+      <p class="tagline"><span>{tagOf.name}: {tagInList === tagOf.total ? `${tagOf.total} tagged courses.` : `${tagInList} of ${tagOf.total} tagged courses have bid data here.`}</span> <button type="button" class="link" onclick={clearTag}>Clear</button></p>
+    {:else if tagUnknown}
+      <p class="tagline"><span>That course tag no longer exists.</span> <button type="button" class="link" onclick={clearTag}>Clear</button></p>
+    {:else if tagStatus === 'error' && bs.tag}
+      <p class="tagline"><span>Course tags could not load.</span> <button type="button" class="link" onclick={clearTag}>Clear</button></p>
+    {/if}
 
     <p class="meta" aria-live="polite">
       {hits[0]?.close ? 'No exact match. Close matches: ' : ''}{hits.length} {hits.length === 1 ? 'course' : 'courses'}{scanText ? ` · seats as of ${scanText}` : ''}
@@ -183,7 +227,8 @@
   .filters { display: none; flex-wrap: wrap; gap: var(--s3); align-items: flex-end; padding-top: var(--s3); border-top: 1px solid var(--rule); }
   .filters.open { display: flex; }
   .g { display: grid; gap: var(--s1); min-width: 0; flex: 1 1 calc(50% - var(--s3)); }
-  .g.sub { flex-basis: 100%; }
+  .g.sub, .g.tagf { flex-basis: 100%; }
+  .tagline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); margin: 0; font-size: var(--fs-sm); }
   .g > span { font-size: var(--fs-xs); color: var(--muted); }
   .g select { width: 100%; }
   .checks { display: flex; flex-wrap: wrap; gap: var(--s3); flex: 1 1 100%; }
@@ -212,7 +257,7 @@
     .fbtn { display: none; }
     .filters { display: flex; }
     .g { flex: 1 1 150px; }
-    .g.sub { flex: 1.3 1 200px; }
+    .g.sub, .g.tagf { flex: 1.3 1 200px; }
     .checks { flex: 0 0 auto; flex-wrap: nowrap; }
     .chk { flex: 0 0 auto; }
   }

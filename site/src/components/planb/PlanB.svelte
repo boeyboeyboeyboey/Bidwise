@@ -21,7 +21,7 @@
   import { styleName } from '../../lib/sim/presets';
   import {
     ALL_TAB, MIN_BID_CENTS, OTHER_TAB, affordableRows, blockCodes, blockTabs, capTooLow, chunk, dedupeBlocks, effectiveRequisites, eText,
-    avoidSlots, budgetLabel, countLabel, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, resolveTab, tabKeyTarget, uniqueByCode, unmetLast, withNotes,
+    avoidSlots, budgetLabel, countLabel, moneyText, noFinalOnly, otherRows, parseMoney, prunedCourses, pseudoBlock, firstTagByKey, resolveTab, tabKeyTarget, tagHref, uniqueByCode, unmetLast, withNotes,
     type PlanRow,
   } from './logic';
 
@@ -370,6 +370,9 @@
   );
   let selectedTab = $state(ALL_TAB);
   const tab = $derived(resolveTab(tabs, selectedTab));
+  // Each requirement block's catalogue tag, for its "All courses with this SMU tag" link.
+  const tagByKey = $derived(loaded ? firstTagByKey(loaded.views) : new Map<string, string>());
+  const tagOf = (b: Block): string | undefined => tagByKey.get(keyOf(b));
   const tabBlock = $derived(tabBlocks.find((x) => keyOf(x.b) === tab)?.b ?? null);
   let tablistEl = $state<HTMLElement | null>(null);
   async function onTabKey(e: KeyboardEvent, i: number) {
@@ -397,6 +400,7 @@
 
 {#snippet blockHead(b: Block)}
   <div class="bh"><h4>{b.name}</h4>{#if blockLeftText(b)}<span class="num left">{blockLeftText(b)}</span>{/if}</div>
+  {#if tagOf(b)}<p class="small"><a class="tag-link" href={tagHref(tagOf(b) ?? '')}>All courses with this SMU tag</a></p>{/if}
   {#if noQuantityTrack(b)}<p class="small">All from one track</p>{/if}
   {#if b.unnamed.length}
     <ul class="plain">{#each b.unnamed as t (t)}<li>Find on BOSS: {t}</li>{/each}</ul>
@@ -695,6 +699,8 @@
   .tabs > button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
   .tabs > button:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
   .note, .small { margin: 0; color: var(--muted); font-size: var(--fs-xs); }
+  .tag-link { color: var(--muted); text-decoration: underline; }
+  .tag-link:hover { color: var(--text); }
   .note { font-size: var(--fs-sm); }
   .err { color: var(--danger); }
   .foot { padding-top: var(--s2); border-top: 1px solid var(--rule); }

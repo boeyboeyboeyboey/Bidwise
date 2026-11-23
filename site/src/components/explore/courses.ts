@@ -59,16 +59,18 @@ export interface BrowseState {
   term: string;
   /** Section of an old link. */
   sec: string;
+  /** Catalogue tag id (`tag=` in the URL, see tags/types.ts); '' for none. Filters only when the page knows the tag. */
+  tag: string;
 }
 
-export const browseDefaults = (): BrowseState => ({ q: '', sub: '', days: 0, times: [], seats: false, nofinal: false, course: '', term: '', sec: '' });
+export const browseDefaults = (): BrowseState => ({ q: '', sub: '', days: 0, times: [], seats: false, nofinal: false, course: '', term: '', sec: '', tag: '' });
 
 /** Day, time, seats and exam filters describe sections of this term, so they hide courses with no section this term. */
 export const sectionFilterOn = (f: Pick<BrowseState, 'days' | 'times' | 'seats' | 'nofinal'>): boolean => !!(f.days || f.times.length || f.seats || f.nofinal);
 
 /** Number of filters set, for the Filters button (search text not counted). */
-export const activeFilterCount = (f: Pick<BrowseState, 'sub' | 'days' | 'times' | 'seats' | 'nofinal'>): number =>
-  (f.sub ? 1 : 0) + (f.days ? 1 : 0) + (f.times.length ? 1 : 0) + (f.seats ? 1 : 0) + (f.nofinal ? 1 : 0);
+export const activeFilterCount = (f: Pick<BrowseState, 'sub' | 'days' | 'times' | 'seats' | 'nofinal' | 'tag'>): number =>
+  (f.sub ? 1 : 0) + (f.days ? 1 : 0) + (f.times.length ? 1 : 0) + (f.seats ? 1 : 0) + (f.nofinal ? 1 : 0) + (f.tag ? 1 : 0);
 
 /** Every word of `q` must appear in `hay`, punctuation ignored ("&" reads as "and"). "econ 111" and "econ111" both find ECON111. */
 export function matchesWords(hay: string, q: string): boolean {
@@ -97,22 +99,24 @@ export interface CourseHit {
   close?: true;
 }
 
-/** Courses matching the search text (code, title, nickname or a professor of this term) and subject, with at least one section passing the section filters when any is set. An exact nickname comes first, then courses whose code starts with the text. When nothing matches exactly, close (typo) matches of code, title or nickname, marked `close`. */
-export function filterCourses(courses: readonly CourseEntry[], f: BrowseState): CourseHit[] {
+/** Courses matching the search text (code, title, nickname or a professor of this term) and subject, with at least one section passing the section filters when any is set. An exact nickname comes first, then courses whose code starts with the text. When nothing matches exactly, close (typo) matches of code, title or nickname, marked `close`. `tagCodes` are the codes of the chosen tag; they narrow the list only when `f.tag` is set and `tagCodes` is given (null while the tag is unknown or still loading). */
+export function filterCourses(courses: readonly CourseEntry[], f: BrowseState, tagCodes: ReadonlySet<string> | null = null): CourseHit[] {
   const on = sectionFilterOn(f);
+  const inTag = (c: CourseEntry) => !(f.tag && tagCodes) || tagCodes.has(c.code);
   const hits: CourseHit[] = [];
   let textHit = false;
   for (const c of courses) {
     if (!matchesWords(`${c.code} ${c.title} ${c.professors.join(' ')} ${aliasesOf(c.code).join(' ')}`, f.q)) continue;
     textHit = true;
     if (f.sub && c.subject !== f.sub) continue;
+    if (!inTag(c)) continue;
     const sections = on ? c.sections.filter((r) => sectionMatches(r, f)) : c.sections;
     if (on && !sections.length) continue;
     hits.push({ course: c, sections });
   }
   const q = flatText(f.q);
   // Close matches only when no course at all matches the text (not when the filters hid the exact ones).
-  if (q && !textHit) return closeHits(courses, f, on);
+  if (q && !textHit) return closeHits(courses, f, on, inTag);
   if (q) {
     const rank = (h: CourseHit) => (aliasesOf(h.course.code).includes(q) ? 0 : flatText(h.course.code).startsWith(q) ? 1 : 2);
     return hits.map((h, i) => [h, i] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
@@ -120,10 +124,11 @@ export function filterCourses(courses: readonly CourseEntry[], f: BrowseState): 
   return hits;
 }
 
-function closeHits(courses: readonly CourseEntry[], f: BrowseState, on: boolean): CourseHit[] {
+function closeHits(courses: readonly CourseEntry[], f: BrowseState, on: boolean, inTag: (c: CourseEntry) => boolean): CourseHit[] {
   const close: { hit: CourseHit; cost: number; i: number }[] = [];
   courses.forEach((c, i) => {
     if (f.sub && c.subject !== f.sub) return;
+    if (!inTag(c)) return;
     const cost = closeCost(c.code, c.title, f.q);
     if (cost < 0) return;
     const sections = on ? c.sections.filter((r) => sectionMatches(r, f)) : c.sections;
@@ -202,6 +207,7 @@ export function encodeBrowse(st: BrowseState): string {
   if (st.times.length) p.set('time', encodeTimes([...st.times].sort()));
   if (st.seats) p.set('seats', '1');
   if (st.nofinal) p.set('nofinal', '1');
+  if (st.tag) p.set('tag', st.tag);
   return p.toString().replace(/%2C/g, ',');
 }
 
@@ -230,6 +236,7 @@ export function decodeBrowse(search: string): BrowseState {
     times: decodeTimes(p.get('time')),
     seats: p.get('seats') === '1',
     nofinal: p.get('nofinal') === '1',
+    tag: (p.get('tag') ?? '').trim(),
     course,
     term: course ? (p.get('term') ?? '') : '',
     sec: course ? (p.get('sec') ?? '') : '',

@@ -41,6 +41,8 @@ export interface GradGroup {
   members: GradMember[];
   /** Indices into `members`: completing one member of a set satisfies the set. */
   choiceSets?: { id: string; members: number[] }[];
+  /** SMU catalogue tag ids (Browse ?tag=) whose courses match this group; absent when none. */
+  tagIds?: string[];
 }
 
 export interface GradView {

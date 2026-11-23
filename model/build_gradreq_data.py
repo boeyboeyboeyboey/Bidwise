@@ -1147,6 +1147,80 @@ def write_output(out_dir: Path, index, views, requisites, course_requisites=None
     write_json(out_dir / "index.json", index)
 
 
+# ---------------------------------------------------------------- tags
+
+TAG_KIND_ORDER = {"gradreq": 0, "core": 1, "area": 2, "track": 3}
+
+
+def tag_slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def build_tags(attr_rows, resolver):
+    """Undergraduate Active catalogue AREA/TRCK attributes -> public tag list.  `codes` holds the site keys of
+    the tag's courses; `total` counts every distinct catalogue course, including those without a site page."""
+    by_attr = {}
+    for r in attr_rows:
+        if r.get("career") != "Undergraduate" or r.get("status") != "Active":
+            continue
+        attr = (r.get("attribute") or "").strip()
+        if not (attr.startswith("AREA - ") or attr.startswith("TRCK - ")):
+            continue
+        by_attr.setdefault(attr, set()).add((r.get("course_code") or "").strip())
+    tags = []
+    for attr, catalogue_codes in by_attr.items():
+        prefix = "TRCK - " if attr.startswith("TRCK - ") else "AREA - "
+        name = attr[len(prefix):]
+        if name.startswith("Grad Req - "):
+            kind = "gradreq"
+        elif name.startswith(("Capabilities", "Communities", "Civilisations")):
+            kind = "core"
+        elif prefix == "TRCK - ":
+            kind = "track"
+        else:
+            kind = "area"
+        codes = set()
+        for code in catalogue_codes:
+            key = resolver.resolve(code)[0]
+            if key in resolver.site_keys:
+                codes.add(key)
+        if not codes:
+            continue
+        tags.append({"id": tag_slug(attr), "name": name, "kind": kind,
+                     "codes": sorted(codes), "total": len(catalogue_codes)})
+    tags.sort(key=lambda t: (TAG_KIND_ORDER[t["kind"]], t["name"]))
+    return tags
+
+
+EXPLICIT_NOTE = "explicit list takes precedence"
+EXPLICIT_STATUSES = {"required", "listed_option", "unresolved_title"}
+
+
+def attach_tag_ids(views, group_courses, area_rows, tags):
+    """Adds `tagIds` to each exported group whose catalogue tags (area_group_map.csv) exist in the built tag list.
+    Groups whose handbook list wins (map note 'explicit list takes precedence' and a listed membership row) get none."""
+    tag_ids = {t["id"] for t in tags}
+    explicit_groups = {r["group_id"] for r in area_rows if EXPLICIT_NOTE in (r.get("notes") or "").lower()}
+    explicit_groups &= {r["group_id"] for r in group_courses if r.get("membership_status") in EXPLICIT_STATUSES}
+    by_group = defaultdict(list)
+    for r in area_rows:
+        if r["group_id"] in explicit_groups:
+            continue
+        for prefix in ("AREA - ", "TRCK - "):
+            tid = tag_slug(prefix + (r.get("area") or "").strip())
+            if tid in tag_ids and tid not in by_group[public_id(r["group_id"])]:
+                by_group[public_id(r["group_id"])].append(tid)
+    seen = set()
+    for v in views:
+        for g in v["groups"]:
+            if id(g) in seen:
+                continue
+            seen.add(id(g))
+            ids = by_group.get(g["id"])
+            if ids:
+                g["tagIds"] = list(ids)
+
+
 def summarise(views, stats, resolver_site, conflicts, orphans, data):
     lines = [f"views: {len(views)}"]
     bad_sum = bad_comp = 0
@@ -1195,7 +1269,17 @@ def main(argv=None) -> int:
     index, views, requisites, stats, conflicts, orphans = build(data, site_courses)
     resolver = Resolver(data["courses"], site_courses, data.get("title_aliases", []))
     course_requisites = build_course_requisites(data["requisites"], data["courses"], site_courses, resolver)
+    attr_path = args.data / "course_attributes.csv"
+    tags = None
+    if attr_path.exists():
+        tags = build_tags(read_csv(attr_path), resolver)
+        area_path = args.data / "area_group_map.csv"
+        area_rows = read_csv(area_path) if area_path.exists() else []
+        attach_tag_ids(views, data["group_courses"], area_rows, tags)
     write_output(args.out, index, views, requisites, course_requisites)
+    if tags is not None:
+        write_json(args.out / "tags.json", {"generator": GENERATOR, "tags": tags})
+        print(f"tags: {len(tags)}")
     print(summarise(views, stats, site_courses, conflicts, orphans, data))
     return 0
 

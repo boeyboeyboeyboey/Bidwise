@@ -3,15 +3,18 @@
   import { flatText, isExactCode, searchCourses } from '../lib/search/courseSearch';
   import { bossCodeOf } from '../lib/data/bossCode';
   import { findProfs, type ProfEntry } from '../lib/search/profSearch';
+  import { searchTags, type TagEntry } from '../lib/search/tagSearch';
 
   /**
    * `suffix` is appended to every course link (e.g. '?mode=swap' to open course pages in Swap mode).
    * `profs` adds a Professors group (links to /prof/<slug>/); none when omitted.
+   * `tags` adds a Course tags group (links to /explore/?tag=<id>); none when omitted.
    */
   let {
     index,
     suffix = '',
     profs = [],
+    tags = [],
     profTerm = '',
     label = 'Search for a course by code, title or nickname',
     placeholder = 'Code, title or nickname',
@@ -19,6 +22,7 @@
     index: SearchEntry[];
     suffix?: string;
     profs?: ProfEntry[];
+    tags?: TagEntry[];
     /** Short name of the bidding term, e.g. "Term 2"; used for course and professor rows. */
     profTerm?: string;
     label?: string;
@@ -26,6 +30,7 @@
   } = $props();
   const LIMIT = 12;
   const PROF_LIMIT = 5;
+  const TAG_LIMIT = 4;
 
   let query = $state('');
   // Ranked by courseRank (code, nickname, title). Offered-now courses come before all not-offered ones (those sit in a
@@ -33,12 +38,15 @@
   // When nothing matches exactly, `found.close` marks typo matches.
   const found = $derived(searchCourses(index, query, (e) => [e[0], e[1]]));
   const profFound = $derived(findProfs(profs, query));
+  // Tag hits count as exact: a name or nickname match is never a typo guess.
+  const tagHits = $derived(searchTags(tags, query, TAG_LIMIT));
   // Close (typo) matches of either kind show only when neither kind matches exactly, so an exact hit is never
   // pushed below or mixed with typo guesses. `allClose` is then true and one "No exact match" line covers both groups.
-  const anyExact = $derived((found.items.length > 0 && !found.close) || (profFound.items.length > 0 && !profFound.close));
+  const anyExact = $derived((found.items.length > 0 && !found.close) || (profFound.items.length > 0 && !profFound.close) || tagHits.length > 0);
   const matches = $derived(found.close && anyExact ? [] : found.items);
   const profHits = $derived(profFound.close && anyExact ? [] : profFound.items);
   const allClose = $derived(!anyExact && (matches.length > 0 || profHits.length > 0));
+  const listIds = $derived([tagHits.length ? 'q-tag-list' : '', 'q-list', profHits.length ? 'q-prof-list' : ''].filter(Boolean).join(' '));
   const offered = $derived(matches.filter((e) => e[2] > 0));
   const notOffered = $derived(matches.filter((e) => e[2] <= 0));
   let showAll = $state(false);
@@ -49,8 +57,8 @@
   const results = $derived(showNot ? [...shown, ...notOffered] : shown);
   const profShown = $derived(showAllProfs ? profHits : profHits.slice(0, PROF_LIMIT));
   const searching = $derived(query.trim().length > 0);
-  // Arrow keys run through the course rows, then the professor rows. Professor rows take the ids after the courses.
-  const total = $derived(results.length + profShown.length);
+  // Arrow keys run through the tag rows, then the course rows, then the professor rows (the visual order).
+  const total = $derived(results.length + profShown.length + tagHits.length);
 
   // The highlighted result is the default: it starts on the first one, arrow keys move it, Enter opens it.
   // Typing resets it. If the text is exactly a course code and the arrows were not used, that course opens.
@@ -70,11 +78,14 @@
       const exact = moved ? undefined : index.find((e) => isExactCode(e[0], query));
       if (exact) {
         location.href = `/course/${exact[0]}${suffix}`;
-      } else if (active < results.length) {
-        const target = results[active];
+      } else if (active < tagHits.length) {
+        const tag = tagHits[active];
+        if (tag) location.href = `/explore/?tag=${tag[0]}`;
+      } else if (active < tagHits.length + results.length) {
+        const target = results[active - tagHits.length];
         if (target) location.href = `/course/${target[0]}${suffix}`;
       } else {
-        const prof = profShown[active - results.length];
+        const prof = profShown[active - tagHits.length - results.length];
         if (prof) location.href = `/prof/${prof[1]}/`;
       }
     }
@@ -97,7 +108,7 @@
       bind:value={query}
       role="combobox"
       aria-expanded={searching && total > 0}
-      aria-controls={profHits.length ? 'q-list q-prof-list' : 'q-list'}
+      aria-controls={listIds}
       aria-autocomplete="list"
       aria-activedescendant={searching && total ? `q-opt-${active}` : undefined}
       onkeydown={onKey}
@@ -106,12 +117,27 @@
 
   {#if searching}
     {#if allClose}<p class="close" aria-live="polite">No exact match. Close matches:</p>{/if}
+    {#if tagHits.length}
+      <h2 class="group">Course tags</h2>
+      <ul class="list" id="q-tag-list" role="listbox" aria-label="Matching course tags">
+        {#each tagHits as [id, name, , n], k (id)}
+          <li id={`q-opt-${k}`} role="option" aria-selected={k === active} class:active={k === active} class="tag-row">
+            <a class="row-link" href={`/explore/?tag=${id}`} tabindex="-1">
+              <span class="code">{name}</span>
+              <span class="count">{n} {n === 1 ? 'course' : 'courses'}</span>
+              <span class="open">Open <span aria-hidden="true">›</span></span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if matches.length}
       {#if results.length}
-      {#if profHits.length}<h2 class="group">Courses</h2>{/if}
+      {#if profHits.length || tagHits.length}<h2 class="group">Courses</h2>{/if}
       <ul class="list" id="q-list" role="listbox" aria-label="Matching courses">
         {#each results as [code, title, n, boss], i (code)}
-          <li id={`q-opt-${i}`} role="option" aria-selected={i === active} class:active={i === active}>
+          {@const oi = tagHits.length + i}
+          <li id={`q-opt-${oi}`} role="option" aria-selected={oi === active} class:active={oi === active}>
             <a class="row-link" href={`/course/${code}${suffix}`} tabindex="-1">
               <span class="code">{bossCodeOf(code, boss)}</span>
               <span class="title">{title}</span>
@@ -137,7 +163,8 @@
       <h2 class="group">Professors</h2>
       <ul class="list" id="q-prof-list" role="listbox" aria-label="Matching professors">
         {#each profShown as [name, slug, n, now], j (slug)}
-          <li id={`q-opt-${results.length + j}`} role="option" aria-selected={results.length + j === active} class:active={results.length + j === active} class="prof-row">
+          {@const pi = tagHits.length + results.length + j}
+          <li id={`q-opt-${pi}`} role="option" aria-selected={pi === active} class:active={pi === active} class="prof-row">
             <a class="row-link" href={`/prof/${slug}/`} tabindex="-1">
               <span class="code">{name}</span>
               <span class="count">{n} {n === 1 ? 'course' : 'courses'}{now ? ` · in ${profTerm || 'the bidding term'}` : ''}</span>
@@ -152,7 +179,7 @@
         </div>
       {/if}
     {/if}
-    {#if !matches.length && !profHits.length}
+    {#if !matches.length && !profHits.length && !tagHits.length}
       <p class="empty" aria-live="polite">{profs.length ? 'No courses or professors found' : 'No courses found'}</p>
     {/if}
   {/if}
@@ -177,5 +204,5 @@
   .empty { color: var(--muted); margin-top: var(--s4); }
   .group { margin: var(--s4) 0 0; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
   .group + .list { margin-top: var(--s2); }
-  li.prof-row a { grid-template-columns: minmax(0, 1fr) auto auto; }
+  li.prof-row a, li.tag-row a { grid-template-columns: minmax(0, 1fr) auto auto; }
 </style>

@@ -1,0 +1,77 @@
+---
+import type { Tag, TagKind } from '../../lib/tags/types';
+
+interface Props {
+  /** Tags already filtered to this course. */
+  tags: Tag[];
+}
+
+const { tags } = Astro.props;
+
+const GROUPS: { kind: TagKind; label: string }[] = [
+  { kind: 'gradreq', label: 'Graduation requirements' },
+  { kind: 'core', label: 'Core Curriculum' },
+  { kind: 'area', label: 'Majors and electives' },
+  { kind: 'track', label: 'Tracks' },
+];
+
+const byKind = (kind: TagKind) => tags.filter((t) => t.kind === kind).sort((a, b) => a.name.localeCompare(b.name));
+const groups = GROUPS.map((g) => ({ ...g, items: byKind(g.kind) })).filter((g) => g.items.length > 0);
+// Area and track tags are folded away when there are more than two of them, so a 15-tag course does not bury the page.
+const foldable = groups.filter((g) => g.kind === 'area' || g.kind === 'track');
+const foldCount = foldable.reduce((n, g) => n + g.items.length, 0);
+const fold = foldCount > 2;
+---
+{groups.length > 0 && (
+  <section class="counts" aria-labelledby="counts-heading">
+    <h2 id="counts-heading">Counts toward</h2>
+    {groups.map((g) => {
+      if (fold && (g.kind === 'area' || g.kind === 'track')) return null;
+      return (
+        <div class="group">
+          <h3>{g.label}</h3>
+          <ul class="tags">
+            {g.items.map((t) => (
+              <li><a href={`/explore/?tag=${encodeURIComponent(t.id)}`}>{t.name}</a></li>
+            ))}
+          </ul>
+        </div>
+      );
+    })}
+    {fold && (
+      <details class="more">
+        <summary>{foldCount} more tags</summary>
+        {foldable.map((g) => (
+          <div class="group">
+            <h3>{g.label}</h3>
+            <ul class="tags">
+              {g.items.map((t) => (
+                <li><a href={`/explore/?tag=${encodeURIComponent(t.id)}`}>{t.name}</a></li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </details>
+    )}
+    <p class="note">From SMU's course catalogue. Check your own degree's rules in <a href="/plan-b/">Plan B</a>.</p>
+  </section>
+)}
+
+<style>
+  .counts { padding: var(--s3) 0; }
+  h2 { font-size: 17px; font-weight: 600; margin-bottom: var(--s2); }
+  h3 { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); margin: var(--s3) 0 var(--s1); }
+  .group + .group, .more { margin-top: 0; }
+  .tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .tags a {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--s3);
+    border: 1px solid var(--rule); border-radius: var(--r-md); background: var(--surface);
+    font-size: var(--fs-sm); color: var(--accent); text-decoration: none; overflow-wrap: anywhere;
+  }
+  .tags a:hover { background: var(--accent-soft); }
+  .more { margin-top: var(--s2); }
+  .more summary { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 600; cursor: pointer; font-size: 15px; }
+  .more summary:hover { text-decoration: underline; }
+  .note { margin: var(--s3) 0 0; font-size: var(--fs-xs); line-height: 20px; color: var(--muted); }
+  .note a { color: var(--accent); }
+</style>

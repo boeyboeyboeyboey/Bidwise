@@ -12,6 +12,8 @@ import { readRequisites } from '../../lib/requisites/server';
 import { buildRows, catalogueNote } from '../../lib/requisites/render';
 import { hasOutline } from '../../lib/data/outlines';
 import { courseDataset, courseDescription, courseFacts } from '../../lib/courseFacts';
+import CourseTags from '../../components/course/CourseTags.astro';
+import { readTags } from '../../lib/gradreq/server';
 
 export function getStaticPaths() {
   return getCourseIndex().map((c) => ({ params: { code: c.code } }));
@@ -40,6 +42,9 @@ const reqRows = reqData
 const reqNote = reqData && reqRows.length ? catalogueNote(reqEntry, reqData.asOf) : [];
 // A course split into two site pages (Rosie Ching's SMU-X statistics sections) says how the two relate.
 const outlineHref = hasOutline(course.code) ? `/course/${course.code}/outline/` : null;
+// Catalogue tags (build-time, empty when tags.json is absent) that carry this page's code.
+const ALL_TAGS = readTags();
+const courseTags = ALL_TAGS.filter((t) => t.codes.includes(course.code));
 const siblingCode = splitSibling(course.code);
 const sibling = siblingCode ? getCourseIndex().find((c) => c.code === siblingCode) : undefined;
 const splitNote = sibling
@@ -56,6 +61,7 @@ const splitNote = sibling
     {splitNote && <p class="split">{splitNote.lead}<a href={`/course/${splitNote.to}/`}>{splitNote.link}</a>{splitNote.mid}</p>}
   </header>
   {reqRows.length > 0 && <Requisites client:idle rows={reqRows} note={reqNote} />}
+  <CourseTags tags={courseTags} />
   <!-- A visitor who chose another window sees "Calculating" in the seeded cells until the page has recomputed (CourseView removes the class). -->
   <script is:inline define:vars={{ seedWindow: rowSeed.window }}>
     try {

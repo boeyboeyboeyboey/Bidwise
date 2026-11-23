@@ -29,3 +29,12 @@ export function gradreqViewIds(): string[] {
   }
   return [...ids];
 }
+
+/** Catalogue tags for build-time use (course pages, the home search). Empty when tags.json is absent. */
+export function readTags(): import('../tags/types').Tag[] {
+  try {
+    return (JSON.parse(readGradreqText('tags')) as import('../tags/types').TagsFile).tags;
+  } catch {
+    return [];
+  }
+}

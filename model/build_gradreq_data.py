@@ -96,6 +96,8 @@ BBM_ID = "lkcsb-bbm"
 SCIS_DEGREES = {"cs": "scis-cs", "is": "scis-is", "cl": "scis-cl", "se": "scis-se-wsd"}
 # second-major workbook (double_count_rules.scope) per offering school
 WORKBOOK = {"LKCSB": "LKCSB", "SCIS": "SCIS", "SoA": "SOA", "SoE": "SOE", "YPHSL": "SOL", "SoSS": "SOSS"}
+# group_courses rows confirmed by the public SMU course catalogue (scripts/scrape_catalog_areas.py, apply_catalog_tags.py)
+CATALOG_SOURCE_PREFIX = "smu-catalog-attributes"
 RANK = {"required": 7, "listed_option": 6, "unresolved_title": 5, "area_tagged": 4, "tagged_candidate": 3,
         "published_example": 2}
 CLS = {"required": "rule", "listed_option": "rule", "unresolved_title": "rule", "area_tagged": "tagged",
@@ -261,7 +263,11 @@ def build_members(rows, resolver, view_set, stats=None):
             dkey = ("t", norm_title(r.get("course_title", "")))
         intakes = None
         if cls == "tagged":
-            intakes = parse_area_intakes(r.get("notes", "")) & view_set
+            if CATALOG_SOURCE_PREFIX in r.get("source_ids", ""):
+                # SMU catalogue tag: the tag name and area_group_map already scope the intake, so the whole view
+                intakes = set(view_set)
+            else:
+                intakes = parse_area_intakes(r.get("notes", "")) & view_set
             if not intakes:
                 if stats is not None:
                     stats["tagged_no_intake"] += 1

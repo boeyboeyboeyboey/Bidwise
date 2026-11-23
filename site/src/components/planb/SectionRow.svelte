@@ -26,7 +26,7 @@
     <span><i>Seats</i> {seatText(s)}{#if badge}<span class="chg">{' · '}<SeatDelta {badge} /></span>{/if}</span>
   </span>
   <span class="l3">{titleName(s.instructor) || 'Instructor not listed'} · <span class="num">{s.times || 'Time not set'}</span></span>
-  {#if row.cls === 'tagged'}<small>From BOSS course tags</small>{/if}
+  {#if row.cls === 'tagged'}<small>From SMU course tags</small>{/if}
 </a>
 
 <style>

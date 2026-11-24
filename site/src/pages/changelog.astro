@@ -1,0 +1,134 @@
+---
+import Base from '../layouts/Base.astro';
+
+// What changed on the site, newest first, in plain words. Inline links are written [text](url), as on the guide page.
+// Add an entry for each user-visible change; leave out internal fixes students can't see.
+const log: { date: string; items: string[] }[] = [
+  {
+    date: '24 Nov 2026',
+    items: [
+      'Find courses by SMU course tag, such as TSS, CMW, SG & Asia Studies or Sustainability: type the name in the [home search](/), or pick it from the new Course tag filter in [Browse](/explore/).',
+      "Browse's search box suggests matching course tags as you type.",
+      'Course pages show which requirements the course counts toward, from the SMU course catalogue.',
+      '[Plan B](/plan-b/) links each requirement to the courses that carry its SMU tag.',
+      'Course search says "Not offered in Term 2" instead of "this term".',
+      'Professor pages hide past sections that have no class time and no bids.',
+      'New changelog page (this one), linked in the footer.',
+    ],
+  },
+  {
+    date: '23 Nov 2026',
+    items: [
+      'Course outline pages: grading, exams and weekly topics for each section, with the outline PDF. For example, [ACCT101](/course/ACCT101/outline/).',
+      'Professor search forgives typos.',
+    ],
+  },
+  {
+    date: '22 Nov 2026',
+    items: ['Search for a professor from the [home page](/) and open their page: the courses they teach and their past bids.'],
+  },
+  {
+    date: '21 Nov 2026',
+    items: [
+      'Removed group bids from the site.',
+      'Fixed how the [Bid planner](/planner) splits your budget, and how it treats windows with little data.',
+    ],
+  },
+  {
+    date: '20 Nov 2026',
+    items: ['The SMU-X statistics course shows as COR-STAT1202.'],
+  },
+  {
+    date: '19 Nov 2026',
+    items: [
+      'Each suggested bid now says how often a bid like it won in past windows.',
+      'The [Bid planner](/planner) only shows a total when every course in the plan has a price.',
+    ],
+  },
+  {
+    date: '18 Nov 2026',
+    items: [
+      'Course search understands nicknames (like "econs" or "FA") and suggests close matches when you mistype.',
+      'Course pages list prerequisites, corequisites and courses you can\'t take together, with a link to the SMU catalogue page.',
+      'Browse opens straight into a course page; past terms moved to the course\'s history page.',
+      '[Plan B](/plan-b/) asks for your degree first, lets you mark courses you\'ve cleared, and lets you block out busy times.',
+      'Forecasts for later windows are labelled low confidence.',
+    ],
+  },
+  {
+    date: '17 Nov 2026',
+    items: [
+      'Bidwise is public.',
+      'Bid styles Cheap, Balanced and Safe now target a 70%, 85% and 90% chance of winning a seat, set per round, and course pages show how often each style won before.',
+      'The [Bid planner](/planner) warns when a plan goes over e$125.',
+    ],
+  },
+  {
+    date: '16 Nov 2026',
+    items: [
+      'New [guide to BOSS bidding](/guide): e$, rounds and windows, and how the winning bid is decided.',
+      'Course pages load their numbers straight away.',
+      'Past results open on the latest window with enough data.',
+    ],
+  },
+  {
+    date: '15 Nov 2026',
+    items: [
+      'Choose a bid style: Cheap, Balanced (the default) or Safe.',
+      'The [Bid planner](/planner) lets you group courses where you only need one of them.',
+    ],
+  },
+  {
+    date: '14 Nov 2026',
+    items: [
+      'Seat counts show when they were last updated and how many changed since.',
+      '[Plan B](/plan-b/) covers Accountancy, Economics, Social Sciences and Law degrees.',
+      'Filter by "No final exam listed".',
+    ],
+  },
+  {
+    date: '13 Nov 2026',
+    items: [
+      'New [Plan B](/plan-b/): after a missed bid, find other courses that count toward your degree, within your budget.',
+      'Course pages show the chance of a seat at each bid and a chart for each window.',
+    ],
+  },
+  {
+    date: '9 Nov 2026',
+    items: [
+      'First version: course search, [Browse](/explore/), the [Bid planner](/planner), [Swap](/swap/), [Schedule](/schedule) and [How it works](/method).',
+      'Class times shown by start time; filter by exam date and day.',
+    ],
+  },
+];
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (s: string) => esc(s).replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+---
+<Base title="Changelog · Bidwise" description="What changed on Bidwise, newest first." width="text" windowPicker={false}>
+  <header class="head">
+    <h1>Changelog</h1>
+    <p class="src">What changed on Bidwise, newest first.</p>
+  </header>
+
+  <div class="stack">
+    {log.map((d) => (
+      <section class="card">
+        <h2><time>{d.date}</time></h2>
+        <ul class="bul">{d.items.map((i) => <li set:html={inline(i)} />)}</ul>
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  h1 { font-size: 30px; font-weight: 600; }
+  .head { display: grid; justify-items: center; gap: var(--s2); text-align: center; margin: var(--s4) 0 var(--s6); }
+  .src { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+  .stack { display: grid; gap: var(--s4); margin-bottom: var(--s6); }
+  .card { background: var(--surface); border-radius: var(--r-lg); padding: var(--s5) var(--s4); display: grid; gap: var(--s3); min-width: 0; }
+  .card h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .bul { margin: 0; padding: 0 0 0 1.2em; display: grid; gap: var(--s2); list-style: disc; }
+  .bul li { display: list-item; margin: 0; line-height: 1.45; font-size: var(--fs-sm); }
+  .card a { color: var(--accent); }
+</style>

@@ -99,7 +99,7 @@ const tabs = allTabs.filter((t) => PLANNER_ENABLED || t.id !== 'planner');
       <slot />
       <footer class="sitefoot">
         <p class="foot-line"><span>Not affiliated with SMU</span><span>Data: BOSS Overall Results, Nov 2026</span></p>
-        <p class="foot-line"><a href="/method">How it works</a><a href="/contact">Contact</a>{LINKEDIN_URL && (<a class="ext" href={LINKEDIN_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={LINKEDIN_ICON} /></svg>LinkedIn</a>)}{GITHUB_URL !== 'https://github.com/' && (<a class="ext" href={GITHUB_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={GITHUB_ICON} /></svg>Source code</a>)}</p>
+        <p class="foot-line"><a href="/method">How it works</a><a href="/contact">Contact</a><a href="/changelog">Changelog</a>{LINKEDIN_URL && (<a class="ext" href={LINKEDIN_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={LINKEDIN_ICON} /></svg>LinkedIn</a>)}{GITHUB_URL !== 'https://github.com/' && (<a class="ext" href={GITHUB_URL} target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={GITHUB_ICON} /></svg>Source code</a>)}</p>
       </footer>
     </main>
 

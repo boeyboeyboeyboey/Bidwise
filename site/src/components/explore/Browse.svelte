@@ -5,6 +5,7 @@
   import { fetchIndex } from '../../lib/data/client';
   import { fetchTags } from '../../lib/tags/client';
   import type { Tag, TagKind } from '../../lib/tags/types';
+  import { searchTags, tagEntries } from '../../lib/search/tagSearch';
   import MultiSelect from '../ui/MultiSelect.svelte';
   import type { ClassesPayload } from '../classes/logic';
   import {
@@ -41,6 +42,10 @@
   const tagOf = $derived(tags.find((t) => t.id === bs.tag) ?? null);
   const tagCodes = $derived(tagOf ? new Set(tagOf.codes) : null);
   const tagUnknown = $derived(!!bs.tag && tagStatus === 'ready' && !tagOf);
+  // Tags whose name or nickname matches the search text, offered as one-tap filters (none once a tag is chosen).
+  const tagIndex = $derived(tagEntries(tags));
+  const tagSuggest = $derived(tagStatus === 'ready' && !bs.tag ? searchTags(tagIndex, bs.q, 3) : []);
+  const pickTag = (id: string) => { bs = { ...bs, tag: id, q: '' }; document.getElementById('b-q')?.focus(); };
   const tagInList = $derived(tagCodes ? courses.filter((c) => tagCodes.has(c.code)).length : 0);
   const hits = $derived(filterCourses(courses, bs, tagCodes));
   const count = $derived(activeFilterCount(bs));
@@ -174,6 +179,11 @@
 
     {#if tagOf}
       <p class="tagline"><span>{tagOf.name}: {tagInList === tagOf.total ? `${tagOf.total} tagged courses.` : `${tagInList} of ${tagOf.total} tagged courses have bid data here.`}</span> <button type="button" class="link" onclick={clearTag}>Clear</button></p>
+    {:else if tagSuggest.length}
+      <div class="tagsug" role="group" aria-label="Matching course tags">
+        <span>Filter by course tag:</span>
+        {#each tagSuggest as t (t[0])}<button type="button" class="chip" onclick={() => pickTag(t[0])}>{t[1]}</button>{/each}
+      </div>
     {:else if tagUnknown}
       <p class="tagline"><span>That course tag no longer exists.</span> <button type="button" class="link" onclick={clearTag}>Clear</button></p>
     {:else if tagStatus === 'error' && bs.tag}
@@ -212,6 +222,10 @@
 <style>
   .cs { width: 100%; display: grid; gap: var(--s3); min-width: 0; align-content: start; }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tagsug { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--muted); }
+  .tagsug .chip { min-height: 36px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+  .tagsug .chip:hover { background: var(--bg); }
+  .tagsug .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .meta, .empty, .note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   .note { font-size: var(--fs-xs); }
   .link { font: inherit; color: var(--accent); background: none; border: 0; padding: 0 var(--s2); min-height: 44px; text-decoration: underline; cursor: pointer; }

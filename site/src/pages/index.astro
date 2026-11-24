@@ -64,7 +64,7 @@ const builtAt = Date.now();
     .paths { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (min-width: 1024px) {
-    .home { padding-top: 16vh; gap: var(--s5); }
+    .home { flex: 1; align-content: center; padding: 0 0 calc(var(--s5) + 30px); gap: var(--s5); } /* Bottom padding matches the page top padding plus the seats line, so the block sits midway between header and footer. */
     h1 { font-size: var(--fs-hero); }
   }
 </style>

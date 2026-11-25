@@ -82,6 +82,19 @@
     @keyframes pulse { from { transform: scale(1); opacity: 0.55; } to { transform: scale(3); opacity: 0; } }
     @keyframes tick { from { opacity: 0.25; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
   }
+  /* Phones: a slim card that sits just above the tab bar (owner, 25 Nov): what and when on the left, time left on
+     the right, so the centred heading and search stay the focus. */
+  @media (max-width: 767px) {
+    .countdown {
+      grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'lead figure' 'when figure';
+      justify-items: start; align-items: center; column-gap: var(--s3); row-gap: 0; min-height: 0;
+      text-align: left; padding: var(--s3) var(--s4);
+      background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+    }
+    .lead { grid-area: lead; color: var(--text); font-weight: 600; }
+    .when { grid-area: when; font-size: var(--fs-xs); }
+    .figure { grid-area: figure; font-size: 22px; line-height: 28px; height: 28px; gap: 0.25em; }
+  }
   @media (min-width: 1024px) {
     .countdown { min-height: 120px; }
     .figure { font-size: 34px; line-height: 44px; height: 44px; }

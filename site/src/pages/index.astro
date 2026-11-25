@@ -49,16 +49,21 @@ const builtAt = Date.now();
   .big { min-height: 52px; flex-direction: column; gap: 0; text-align: center; }
   .big small { font-size: var(--fs-xs); font-weight: 400; }
   @media (max-width: 767px) {
-    /* Lead and buttons as one block, centred in the visible area between header and tab bar (a flex column; the old
-       1fr grid rows grew to the button stack's height and left an empty band at the top). */
+    /* Phones: heading and search centred, the countdown card just above the tab bar; no path buttons, since the tab
+       bar already links those four pages (owner, 25 Nov). */
     .home {
       min-height: calc(100dvh - var(--topbar-h) - var(--s5) - var(--tabbar-h) - env(safe-area-inset-bottom) - 48px);
-      display: flex; flex-direction: column; justify-content: center;
-      gap: var(--s6); padding-top: 0;
+      display: flex; flex-direction: column;
+      gap: 0; padding-top: 0;
       /* Pushes the footer below the tab bar, so it starts below the fold. */
       margin-bottom: calc(var(--tabbar-h) + var(--s5));
     }
-    .lead { display: grid; gap: var(--s4); }
+    .home::before { content: ''; flex: 1 0 var(--s4); order: 0; }
+    h1 { order: 1; }
+    .find { order: 2; margin-top: var(--s4); }
+    .home::after { content: ''; flex: 1 0 var(--s5); order: 3; }
+    .status { order: 4; display: block; }
+    .paths { display: none; }
   }
   @media (min-width: 768px) {
     .paths { grid-template-columns: repeat(2, minmax(0, 1fr)); }

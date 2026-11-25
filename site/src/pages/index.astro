@@ -49,16 +49,20 @@ const builtAt = Date.now();
   .big { min-height: 52px; flex-direction: column; gap: 0; text-align: center; }
   .big small { font-size: var(--fs-xs); font-weight: 400; }
   @media (max-width: 767px) {
-    /* Fill the visible area between header and tab bar: empty top row, lead centred in the middle row, buttons at the bottom. */
+    /* Fill the visible area between header and tab bar: buttons at the bottom, the lead a third of the way down the
+       space above them. Flex spacers, not 1fr grid rows: with an auto-height container equal fr rows both grow to the
+       button stack's height, which left a large empty band at the top. */
     .home {
-      min-height: calc(100dvh - var(--topbar-h) - var(--s5) - var(--tabbar-h) - env(safe-area-inset-bottom) - 16px);
-      grid-template-rows: 1fr auto 1fr;
+      min-height: calc(100dvh - var(--topbar-h) - var(--s5) - var(--tabbar-h) - env(safe-area-inset-bottom) - 48px);
+      display: flex; flex-direction: column;
       gap: 0; padding-top: 0;
       /* Pushes the footer below the tab bar, so it starts below the fold. */
       margin-bottom: calc(var(--tabbar-h) + var(--s5));
     }
-    .lead { display: grid; gap: var(--s4); grid-row: 2; }
-    .paths { grid-row: 3; align-self: end; }
+    .home::before { content: ''; flex: 1 0 0; }
+    .lead { display: grid; gap: var(--s4); order: 1; }
+    .home::after { content: ''; flex: 2 0 var(--s5); order: 2; }
+    .paths { order: 3; }
   }
   @media (min-width: 768px) {
     .paths { grid-template-columns: repeat(2, minmax(0, 1fr)); }

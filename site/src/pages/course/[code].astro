@@ -6,6 +6,7 @@ import ResultsNotice from '../../components/ResultsNotice.svelte';
 import Requisites from '../../components/course/Requisites.svelte';
 import { bossCodeOf, dataMeta, getCourseIndex, getForecastMeta, getWindow, splitSibling, windowLabel } from '../../lib/data';
 import { getCourse } from '../../lib/data/server';
+import { scanDay } from '../../lib/data/scanTime';
 import { buildRowSeed } from '../../components/course/rowSeed';
 import { DEFAULT_STYLE } from '../../lib/sim/presets';
 import { readRequisites } from '../../lib/requisites/server';
@@ -71,7 +72,7 @@ const splitNote = sibling
   </script>
   <RecordView client:load code={course.code} />
   <ResultsNotice partial={dataMeta.resultsPartial ?? null} />
-  <CourseView client:load code={course.code} bossCode={bossCode} title={course.title} sections={sections} {windowName} currentTerm={dataMeta.currentTerm} latestWindow={dataMeta.latestResultsWindow} resultsPartial={dataMeta.resultsPartial ?? null} openScanAt={dataMeta.seats?.openScanAt ?? null} prevScanAt={dataMeta.seats?.prevScanAt ?? null} {forecastMeta} {rowSeed} />
+  <CourseView client:load code={course.code} bossCode={bossCode} title={course.title} sections={sections} {windowName} currentTerm={dataMeta.currentTerm} latestWindow={dataMeta.latestResultsWindow} resultsPartial={dataMeta.resultsPartial ?? null} openScanAt={scanDay(dataMeta.seats?.openScanAt)} prevScanAt={scanDay(dataMeta.seats?.prevScanAt)} {forecastMeta} {rowSeed} />
 </Base>
 
 <style>

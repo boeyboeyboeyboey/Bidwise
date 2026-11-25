@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { dataMeta, getCourseIndex } from '../../lib/data';
 import { latestScan } from '../../lib/data/seats';
+import { scanDay } from '../../lib/data/scanTime';
 import { getCourse } from '../../lib/data/server';
 import { buildRows, type ClassesPayload } from '../../components/classes/logic';
 
@@ -10,6 +11,6 @@ export const GET: APIRoute = () => {
     .filter((c) => c.offeredNow)
     .map((c) => getCourse(c.code))
     .filter((c): c is NonNullable<typeof c> => !!c);
-  const payload: ClassesPayload = { scannedAt: latestScan(courses.flatMap((c) => c.sectionsNow)), rows: buildRows(courses), term: dataMeta.currentTerm };
+  const payload: ClassesPayload = { scannedAt: scanDay(latestScan(courses.flatMap((c) => c.sectionsNow))), rows: buildRows(courses), term: dataMeta.currentTerm };
   return new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json' } });
 };

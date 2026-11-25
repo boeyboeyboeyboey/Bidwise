@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import highlights from '../../data/real/highlights.json';
 import { getCourseIndex } from './index';
 import { topFreed, type FreedRow } from './seatDeltas';
+import { coarsenCourse } from './scanTime';
 import type { CourseData, ForecastHighlights, WindowHighlights } from './types';
 
 // Astro builds run from site/; import.meta.url points at a bundled chunk, so resolve from cwd.
@@ -15,7 +16,8 @@ export function readCourseText(code: string): string {
 
 export function getCourse(code: string): CourseData | undefined {
   try {
-    return JSON.parse(readCourseText(code)) as CourseData;
+    // Seat update times cut to the day before any page, island prop or public JSON sees them.
+    return coarsenCourse(JSON.parse(readCourseText(code)) as CourseData);
   } catch {
     return undefined;
   }

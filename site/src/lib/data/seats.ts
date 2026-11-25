@@ -1,5 +1,5 @@
 // Which seat count to show for a current-term section. Pure, so it is unit tested (seats.test.ts).
-// Live = scanned in ClassSearch. Approx = not listed in ClassSearch for this section, taken from the previous
+// Live = from the live seat data. Approx = no live count for this section, taken from the previous
 // window's after-process vacancy. Last = no availability file, so the last results window's vacancy.
 import type { LiveSeats } from './types';
 
@@ -15,7 +15,7 @@ export interface SeatsView {
   left: number;
   total: number;
   source: SeatSource;
-  /** ISO time of the scan, null when there is no live data. */
+  /** Day of the live update (pages get it cut to the day; see scanTime.ts), null when there is no live data. */
   capturedAt: string | null;
 }
 
@@ -37,9 +37,9 @@ export function seatsLeftNow(s: SeatInput): number {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "7 Nov": the calendar day of an ISO stamp, read as written (the scanner stamps SGT), so it does not depend on the viewer's zone. Empty when missing or unreadable. */
+/** "7 Nov": the calendar day of an ISO date or stamp, read as written (stamps are SGT), so it does not depend on the viewer's zone. Empty when missing or unreadable. */
 export function scanDayText(iso: string | null | undefined): string {
-  const m = /^\d{4}-(\d{2})-(\d{2})T\d{2}:\d{2}/.exec(iso ?? '');
+  const m = /^\d{4}-(\d{2})-(\d{2})(?:$|T\d{2}:\d{2})/.exec(iso ?? '');
   if (!m || +m[1] < 1 || +m[1] > 12) return '';
   return `${+m[2]} ${MONTHS[+m[1] - 1]}`;
 }

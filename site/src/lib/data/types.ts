@@ -37,7 +37,7 @@ export interface Meeting {
 export interface LiveSeats {
   available: number;
   total: number;
-  /** live: seen in ClassSearch. approx: estimated from the previous window's after-process vacancy. */
+  /** live: from the live seat data. approx: estimated from the previous window's after-process vacancy. */
   source: 'live' | 'approx';
   capturedAt: string;
   window: string;

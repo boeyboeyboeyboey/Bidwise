@@ -4,7 +4,7 @@
 import { parseWhen } from './window';
 import { scanDayText } from './seats';
 
-/** Scan times as baked at build time (ISO, SGT). */
+/** Update times as baked at build time (SGT), already coarsened by scanTime.publicSeatMeta: scanAt and capturedAt to the hour, the others to the day. */
 export interface SeatMeta {
   scanAt?: string | null;
   capturedAt?: string | null;
